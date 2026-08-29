@@ -102,6 +102,22 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'water_import_from_europa', 'Water Import from Europa', 25, '{jovian}', null,
         '{"becomes_active": true, "action": {"cost": {"mc": 12}, "gains": {"place_oceans": 1}}}'::jsonb
+    ),
+    (
+        'advanced_alloys', 'Advanced Alloys', 9, '{science}', null,
+        '{"passive": {"steel_value_bonus": 1, "titanium_value_bonus": 1}}'::jsonb
+    ),
+    (
+        'media_group', 'Media Group', 6, '{}', null,
+        '{"passive": {"on_event_played": {"mc_delta": 3}}}'::jsonb
+    ),
+    (
+        'optimal_aerobraking', 'Optimal Aerobraking', 7, '{}', null,
+        '{"passive": {"tag_filter": "space", "on_event_played": {"mc_delta": 3, "heat_delta": 3}}}'::jsonb
+    ),
+    (
+        'mass_converter', 'Mass Converter', 8, '{science}', '{"min_tag_count": {"tag": "science", "count": 5}}'::jsonb,
+        '{"passive": {"tag_filter": "space", "card_cost_discount_mc": 2}, "becomes_active": true, "action": {"cost": {"energy": 6}, "gains": {"production_deltas": {"energy_production": 6}}}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -109,3 +125,8 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Marca como "Event" (dispara bonus pasivos "on_event_played" de otras
+-- cartas al jugarse) las cartas que corresponden en el juego real.
+update cards set is_event = true
+where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid');

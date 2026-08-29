@@ -34,6 +34,13 @@ from app.agent.rules_engine import (
     check_card_requirements,
     register_active_card,
     use_card_action,
+    increment_tags_played,
+    register_passive_effect,
+    compute_conversion_rates,
+    compute_card_cost_discount,
+    apply_event_played_bonuses,
+    STEEL_VALUE_MC,
+    TITANIUM_VALUE_MC,
 )
 
 
@@ -728,3 +735,114 @@ def test_water_import_from_europa_action_places_ocean_for_12_mc():
     assert new_player["mc"] == 0
     assert new_globals["oceans_placed"] == 1
     assert new_player["tr"] == TR_START + 1
+
+
+# ---------------------------------------------------------------------------
+# Tags jugados y efectos pasivos permanentes (bloque de logica faltante:
+# Advanced Alloys, Mass Converter, Media Group, Optimal Aerobraking)
+# ---------------------------------------------------------------------------
+
+def test_increment_tags_played_counts_each_tag():
+    player = new_player_state()
+    player = increment_tags_played(player, ("science", "power"))
+    player = increment_tags_played(player, ("science",))
+    assert player["tags_played"] == {"science": 2, "power": 1}
+
+
+def test_mass_converter_requires_5_science_tags():
+    player = new_player_state()
+    for _ in range(4):
+        player = increment_tags_played(player, ("science",))
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "science", "count": 5}}, new_global_parameters(), player)
+
+    player = increment_tags_played(player, ("science",))
+    check_card_requirements(
+        {"min_tag_count": {"tag": "science", "count": 5}}, new_global_parameters(), player
+    )  # no debe lanzar
+
+
+def test_min_tag_count_requires_player_argument():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "science", "count": 5}}, new_global_parameters())
+
+
+def test_advanced_alloys_raises_steel_and_titanium_conversion_rates():
+    player = new_player_state()
+    steel_before, titanium_before = compute_conversion_rates(player)
+    assert (steel_before, titanium_before) == (STEEL_VALUE_MC, TITANIUM_VALUE_MC)
+
+    player = register_passive_effect(
+        player, "advanced_alloys", {"steel_value_bonus": 1, "titanium_value_bonus": 1}
+    )
+    steel_after, titanium_after = compute_conversion_rates(player)
+    assert steel_after == STEEL_VALUE_MC + 1
+    assert titanium_after == TITANIUM_VALUE_MC + 1
+
+
+def test_advanced_alloys_changes_calculate_card_payment_result():
+    player = register_passive_effect(
+        new_player_state(), "advanced_alloys", {"steel_value_bonus": 1, "titanium_value_bonus": 1}
+    )
+    steel_rate, titanium_rate = compute_conversion_rates(player)
+    # sin Advanced Alloys, 3 acero cubririan 6 MC (building, costo 10 -> falta)
+    # con Advanced Alloys, 3 acero cubren 9 MC
+    change = calculate_card_payment(
+        card_cost=9, mc_to_pay=0, steel_to_pay=3, card_tags=("building",),
+        steel_value_mc=steel_rate, titanium_value_mc=titanium_rate,
+    )
+    assert change == 0  # pago exacto: 3 * 3 MC = 9
+
+
+def test_media_group_gives_3_mc_when_event_card_is_played():
+    player = register_passive_effect(new_player_state(), "media_group", {"on_event_played": {"mc_delta": 3}})
+    new_player = apply_event_played_bonuses(player, played_card_tags=())
+    assert new_player["mc"] == 3
+
+
+def test_optimal_aerobraking_only_triggers_on_space_events():
+    player = register_passive_effect(
+        new_player_state(), "optimal_aerobraking",
+        {"tag_filter": "space", "on_event_played": {"mc_delta": 3, "heat_delta": 3}},
+    )
+    # evento sin tag space: no dispara
+    unaffected = apply_event_played_bonuses(player, played_card_tags=("earth",))
+    assert unaffected["mc"] == 0
+    assert unaffected["heat"] == 0
+
+    # evento con tag space: si dispara
+    affected = apply_event_played_bonuses(player, played_card_tags=("space",))
+    assert affected["mc"] == 3
+    assert affected["heat"] == 3
+
+
+def test_multiple_passive_effects_stack():
+    player = register_passive_effect(new_player_state(), "media_group", {"on_event_played": {"mc_delta": 3}})
+    player = register_passive_effect(
+        player, "optimal_aerobraking",
+        {"tag_filter": "space", "on_event_played": {"mc_delta": 3, "heat_delta": 3}},
+    )
+    new_player = apply_event_played_bonuses(player, played_card_tags=("space",))
+    assert new_player["mc"] == 6  # 3 (Media Group) + 3 (Optimal Aerobraking)
+    assert new_player["heat"] == 3
+
+
+def test_mass_converter_gives_2_mc_discount_on_space_cards():
+    player = register_passive_effect(
+        new_player_state(), "mass_converter", {"tag_filter": "space", "card_cost_discount_mc": 2}
+    )
+    discount = compute_card_cost_discount(player, card_tags=("space",))
+    assert discount == 2
+
+
+def test_mass_converter_discount_does_not_apply_to_non_space_cards():
+    player = register_passive_effect(
+        new_player_state(), "mass_converter", {"tag_filter": "space", "card_cost_discount_mc": 2}
+    )
+    discount = compute_card_cost_discount(player, card_tags=("building",))
+    assert discount == 0
+
+
+def test_compute_card_cost_discount_with_no_passive_effects_is_0():
+    player = new_player_state()
+    assert compute_card_cost_discount(player, card_tags=("space",)) == 0

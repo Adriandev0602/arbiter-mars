@@ -26,8 +26,12 @@ Herramientas disponibles y cuando usarlas:
   elegir entre +1 produccion de plantas o +2 de energia) -- si la carta lo necesita y el
   usuario no lo dijo, pedile esa informacion antes de llamar a la tool. Algunas cartas
   ademas tienen un requisito de tablero (ej. Farming: temperatura +4C o mas, Nitrophilic
-  Moss: 3 oceanos colocados) -- si play_card falla porque el requisito no se cumple,
-  comunicaselo al usuario tal cual lo dice el error, no lo reformules.
+  Moss: 3 oceanos colocados, Mass Converter: 5 tags de ciencia ya jugados) -- si play_card
+  falla porque el requisito no se cumple, comunicaselo al usuario tal cual lo dice el error,
+  no lo reformules. Algunas cartas activas dan efectos pasivos permanentes que cambian el
+  resultado de jugadas futuras (ej. Advanced Alloys: acero/titanio valen mas MC; Media Group:
+  +3 MC al jugar un evento; Mass Converter: cartas espaciales cuestan 2 MC menos) -- estos
+  bonus se aplican automaticamente en la tool, no hace falta que el usuario los mencione.
 - use_card_action: cuando el usuario quiere usar la accion repetible de una carta que ya tiene
   jugada (ej. "usa la accion de Ironworks"). Solo funciona si la carta ya fue jugada con
   play_card y su accion no se uso todavia esta generacion. Algunas acciones piden un

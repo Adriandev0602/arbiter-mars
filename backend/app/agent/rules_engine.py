@@ -87,6 +87,19 @@ class PlayerState(TypedDict):
     heat_production: int
     active_cards: dict
 
+    # tags_played: {"<tag>": int} -- cuenta acumulada de tags en cartas ya
+    # jugadas por este jugador (ej. Mass Converter requiere 5 tags de
+    # ciencia). Se incrementa en tools.play_card segun los tags de cada
+    # carta pagada, nunca se resetea entre generaciones.
+    tags_played: dict
+
+    # passive_effects: [{"card_id": str, ...efecto...}, ...] -- cartas ya
+    # jugadas que modifican reglas futuras mientras estan en juego, sin ser
+    # una accion repetible (ej. Advanced Alloys: steel/titanio valen mas MC;
+    # Media Group: +3 MC al jugar un evento). Ver apply_passive_effects_*
+    # en este modulo.
+    passive_effects: list
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -108,7 +121,7 @@ def new_player_state() -> PlayerState:
         mc=0, steel=0, titanium=0, plants=0, energy=0, heat=0,
         mc_production=1, steel_production=1, titanium_production=1,
         plant_production=1, energy_production=1, heat_production=1,
-        active_cards={},
+        active_cards={}, tags_played={}, passive_effects=[],
     )
 
 
@@ -334,12 +347,19 @@ def calculate_card_payment(
     steel_to_pay: int = 0,
     titanium_to_pay: int = 0,
     card_tags: tuple[str, ...] = (),
+    steel_value_mc: int = STEEL_VALUE_MC,
+    titanium_value_mc: int = TITANIUM_VALUE_MC,
 ) -> int:
     """
     Verifica que una combinacion de MC + acero + titanio cubra el costo de
     una carta, respetando que acero solo vale para cartas con tag "building"
     y titanio solo para cartas con tag "space". No hay reembolso por pagar
     de mas (regla oficial).
+
+    steel_value_mc/titanium_value_mc son parametrizables (por defecto las
+    constantes oficiales 2/3) porque algunas cartas activas los suben de
+    forma permanente mientras estan en juego (ej. Advanced Alloys: +1 MC
+    extra por cada uno). Ver compute_conversion_rates.
 
     Devuelve el MC sobrante que el jugador de mas (0 si pago exacto o de mas).
     Lanza InsufficientResourcesError si no alcanza para cubrir el costo.
@@ -349,7 +369,7 @@ def calculate_card_payment(
     if titanium_to_pay > 0 and "space" not in card_tags:
         raise ValueError("El titanio solo puede pagar cartas con tag 'space'")
 
-    total_value = mc_to_pay + steel_to_pay * STEEL_VALUE_MC + titanium_to_pay * TITANIUM_VALUE_MC
+    total_value = mc_to_pay + steel_to_pay * steel_value_mc + titanium_to_pay * titanium_value_mc
 
     if total_value < card_cost:
         raise InsufficientResourcesError(
@@ -370,20 +390,39 @@ def _apply_production_floor(key: str, value: int) -> int:
     return max(MC_PRODUCTION_FLOOR if key == "mc_production" else 0, value)
 
 
-def check_card_requirements(requirements: dict | None, globals_: GlobalParameters) -> None:
+def check_card_requirements(
+    requirements: dict | None,
+    globals_: GlobalParameters,
+    player: PlayerState | None = None,
+) -> None:
     """
-    Valida que el estado de los parametros globales cumpla el requisito de la
-    carta (columna `requirements` en la tabla `cards`). Vocabulario soportado:
+    Valida que el estado del tablero cumpla el requisito de la carta
+    (columna `requirements` en la tabla `cards`). Vocabulario soportado:
 
       - "min_temperature": temperatura minima en grados C (ej. Farming: 4).
       - "min_oxygen": oxigeno minimo en % (ej. cartas que piden 8% o mas).
       - "min_oceans": cantidad minima de tiles de oceano colocados.
+      - "min_tag_count": {"tag": "<tag>", "count": N} -- requiere que el
+        jugador haya jugado al menos N cartas con ese tag (ej. Mass
+        Converter: 5 tags de ciencia). Requiere pasar `player`.
 
     requirements None o {} no exige nada. Lanza CardRequirementNotMetError
     si algun requisito no se cumple.
     """
     if not requirements:
         return
+
+    if "min_tag_count" in requirements:
+        spec = requirements["min_tag_count"]
+        if player is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado del jugador (tags_played)"
+            )
+        have = player["tags_played"].get(spec["tag"], 0)
+        if have < spec["count"]:
+            raise CardRequirementNotMetError(
+                f"Requiere {spec['count']} tags de '{spec['tag']}' jugados, hay {have}"
+            )
 
     if "min_temperature" in requirements and globals_["temperature"] < requirements["min_temperature"]:
         raise CardRequirementNotMetError(
@@ -630,3 +669,97 @@ def use_card_action(
     new_player["active_cards"] = new_active_cards
 
     return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
+
+
+# ---------------------------------------------------------------------------
+# Tags jugados y efectos pasivos permanentes
+# ---------------------------------------------------------------------------
+
+def increment_tags_played(player: PlayerState, card_tags: tuple[str, ...]) -> PlayerState:
+    """
+    Suma 1 a cada tag de `card_tags` en el contador `tags_played` del
+    jugador. Se llama una vez por cada carta pagada exitosamente (via
+    tools.play_card), nunca se resetea entre generaciones. Alimenta
+    requisitos como "requiere 5 tags de ciencia" (Mass Converter).
+    """
+    new_tags_played = dict(player["tags_played"])
+    for tag in card_tags:
+        new_tags_played[tag] = new_tags_played.get(tag, 0) + 1
+    return {**player, "tags_played": new_tags_played}
+
+
+def register_passive_effect(player: PlayerState, card_id: str, passive: dict) -> PlayerState:
+    """
+    Registra un efecto pasivo permanente de una carta recien jugada. A
+    diferencia de active_cards (accion repetible), un efecto pasivo no se
+    "usa" -- esta siempre activo mientras la carta siga en juego (que en
+    este motor es para siempre, no hay descarte). Vocabulario de `passive`:
+
+      - "steel_value_bonus" / "titanium_value_bonus": MC extra por unidad al
+        pagar OTRAS cartas con acero/titanio (ej. Advanced Alloys: +1 cada
+        uno). Ver compute_conversion_rates.
+      - "on_event_played": {"mc_delta": N, "heat_delta": N, ...} -- se suma
+        al jugador cada vez que juega una carta con `cards.is_event = true`
+        (ej. Media Group: +3 MC; Optimal Aerobraking: +3 MC y +3 calor, solo
+        para eventos con tag space -- ver "tag_filter" opcional).
+
+    No revisa duplicados: cada carta se juega una sola vez en este motor.
+    """
+    return {**player, "passive_effects": [*player["passive_effects"], {"card_id": card_id, **passive}]}
+
+
+def compute_conversion_rates(player: PlayerState) -> tuple[int, int]:
+    """
+    Devuelve (steel_value_mc, titanium_value_mc) sumando los bonus de todos
+    los efectos pasivos activos del jugador a las constantes oficiales
+    (ej. con Advanced Alloys en juego: 2+1=3 MC por acero, 3+1=4 por titanio).
+    """
+    steel_value = STEEL_VALUE_MC
+    titanium_value = TITANIUM_VALUE_MC
+    for effect in player["passive_effects"]:
+        steel_value += effect.get("steel_value_bonus", 0)
+        titanium_value += effect.get("titanium_value_bonus", 0)
+    return steel_value, titanium_value
+
+
+def compute_card_cost_discount(player: PlayerState, card_tags: tuple[str, ...]) -> int:
+    """
+    Suma los descuentos de costo ("card_cost_discount_mc") de todos los
+    efectos pasivos activos del jugador que apliquen a esta carta (segun
+    `tag_filter`, si el efecto lo tiene) (ej. Mass Converter: -2 MC en
+    cartas con tag "space"). Se resta del costo antes de calcular el pago
+    en tools.play_card -- nunca deja el costo por debajo de 0.
+    """
+    discount = 0
+    for effect in player["passive_effects"]:
+        bonus = effect.get("card_cost_discount_mc")
+        if bonus is None:
+            continue
+        tag_filter = effect.get("tag_filter")
+        if tag_filter is not None and tag_filter not in card_tags:
+            continue
+        discount += bonus
+    return discount
+
+
+def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str, ...] = ()) -> PlayerState:
+    """
+    Aplica los bonus "on_event_played" de todos los efectos pasivos activos
+    del jugador. Llamar UNA VEZ, justo despues de pagar y aplicar el efecto
+    de una carta cuyo `cards.is_event` sea true. `played_card_tags` filtra
+    bonus que solo aplican a un tag especifico del evento jugado (ej. Optimal
+    Aerobraking: "cuando juegues un EVENTO ESPACIAL" via
+    passive["tag_filter"] = "space" -- si el evento jugado no tiene ese tag,
+    ese bonus en particular no se aplica).
+    """
+    new_player: dict = dict(player)
+    for effect in player["passive_effects"]:
+        bonus = effect.get("on_event_played")
+        if bonus is None:
+            continue
+        tag_filter = effect.get("tag_filter")
+        if tag_filter is not None and tag_filter not in played_card_tags:
+            continue
+        new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
+        new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0)
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]

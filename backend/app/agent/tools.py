@@ -21,6 +21,8 @@ def _load_player(player_id: str) -> engine.PlayerState:
         titanium_production=row["titanium_production"], plant_production=row["plant_production"],
         energy_production=row["energy_production"], heat_production=row["heat_production"],
         active_cards=row.get("active_cards") or {},
+        tags_played=row.get("tags_played") or {},
+        passive_effects=row.get("passive_effects") or [],
     )
 
 
@@ -191,6 +193,14 @@ def play_card(
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
         regla oficial) y el estado actualizado del jugador si la jugada es legal.
 
+    Ademas de aplicar el efecto: incrementa `tags_played` del jugador con los
+    tags de esta carta (alimenta requisitos como "5 tags de ciencia"), y si
+    `cards.effects.passive` esta definido, registra un efecto pasivo
+    permanente (ej. Advanced Alloys: steel/titanio valen mas MC en pagos
+    futuros; Media Group: +MC cada vez que se juega un evento). Si
+    `cards.is_event` es true, dispara los bonus "on_event_played" de
+    cualquier efecto pasivo que el jugador ya tenga activo.
+
     TODO: el catalogo de cartas (`cards`) no viene precargado completo -- ver
     nota en rules_engine.py y en CLAUDE.md sobre por que no se generan datos
     de ~200 cartas automaticamente.
@@ -201,19 +211,24 @@ def play_card(
         raise ValueError(f"Carta '{card_id}' no encontrada en el catalogo")
 
     globals_ = _load_global_parameters()
-    engine.check_card_requirements(card.get("requirements"), globals_)
-
     player = _load_player(player_id)
+    engine.check_card_requirements(card.get("requirements"), globals_, player)
 
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:
         raise engine.InsufficientResourcesError("El jugador no tiene el stock declarado")
 
+    card_tags = tuple(card.get("tags", []))
+    steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
+    discount = engine.compute_card_cost_discount(player, card_tags)
+    effective_cost = max(0, card["cost"] - discount)
     change = engine.calculate_card_payment(
-        card_cost=card["cost"],
+        card_cost=effective_cost,
         mc_to_pay=mc_to_pay,
         steel_to_pay=steel_to_pay,
         titanium_to_pay=titanium_to_pay,
-        card_tags=tuple(card.get("tags", [])),
+        card_tags=card_tags,
+        steel_value_mc=steel_value_mc,
+        titanium_value_mc=titanium_value_mc,
     )
 
     paid_player = {
@@ -228,6 +243,12 @@ def play_card(
     )
     if effects.get("becomes_active"):
         new_player = engine.register_active_card(new_player, card_id)
+    if effects.get("passive"):
+        new_player = engine.register_passive_effect(new_player, card_id, effects["passive"])
+
+    new_player = engine.increment_tags_played(new_player, card_tags)
+    if card.get("is_event"):
+        new_player = engine.apply_event_played_bonuses(new_player, card_tags)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -236,6 +257,7 @@ def play_card(
         player_id, "play_card",
         {"card_id": card_id, "mc_to_pay": mc_to_pay, "steel_to_pay": steel_to_pay,
          "titanium_to_pay": titanium_to_pay, "change_not_refunded": change,
+         "cost_discount_applied": discount,
          "effect_amount": effect_amount, "effect_choice": effect_choice},
     )
 

@@ -16,6 +16,17 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists tags_played jsonb not null default '{}'::jsonb;
+    alter table if exists players add column if not exists passive_effects jsonb not null default '[]'::jsonb;
+exception when undefined_table then null;
+end $$;
+
+do $$ begin
+    alter table if exists cards add column if not exists is_event boolean not null default false;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -47,6 +58,16 @@ create table if not exists players (
     -- rules_engine.use_card_action / register_active_card.
     active_cards jsonb not null default '{}'::jsonb,
 
+    -- Cuenta acumulada de tags en cartas ya jugadas (ej. Mass Converter
+    -- requiere 5 tags de ciencia). Nunca se resetea entre generaciones.
+    tags_played jsonb not null default '{}'::jsonb,
+
+    -- Efectos pasivos permanentes de cartas ya jugadas que no son una
+    -- accion repetible (ej. Advanced Alloys, Media Group). Ver
+    -- rules_engine.register_passive_effect / compute_conversion_rates /
+    -- apply_event_played_bonuses.
+    passive_effects jsonb not null default '[]'::jsonb,
+
     created_at timestamptz not null default now()
 );
 
@@ -76,7 +97,8 @@ create table if not exists cards (
     cost integer not null,
     tags text[] not null default '{}',          -- ej. {'building'}, {'space'}, {'power'}
     requirements jsonb,                          -- ej. {"min_temperature": -20}
-    effects jsonb not null default '{}'::jsonb   -- estructura libre, definida al implementar cada carta
+    effects jsonb not null default '{}'::jsonb,  -- estructura libre, definida al implementar cada carta
+    is_event boolean not null default false      -- true = carta "Event" del juego real (dispara bonus pasivos de otras cartas al jugarse)
 );
 
 create table if not exists transactions (

@@ -41,6 +41,10 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `space_elevator` | Space Elevator | 013 | 27 MC | +1 producción titanio; acción repetible: -1 steel → +5 MC |
 | `equatorial_magnetizer` | Equatorial Magnetizer | 015 | 11 MC | Acción repetible: -1 producción energía → +1 TR |
 | `water_import_from_europa` | Water Import from Europa | 012 | 25 MC | Acción repetible: -12 MC → coloca 1 océano |
+| `advanced_alloys` | Advanced Alloys | 071 | 9 MC | Pasivo permanente: steel y titanio valen +1 MC extra al pagar cartas |
+| `media_group` | Media Group | 109 | 6 MC | Pasivo permanente: +3 MC cada vez que se juega un evento |
+| `optimal_aerobraking` | Optimal Aerobraking | 031 | 7 MC | Pasivo permanente: +3 MC y +3 calor cada vez que se juega un evento con tag space |
+| `mass_converter` | Mass Converter | 094 | 8 MC | Requiere 5 tags de ciencia jugados. Pasivo: cartas espaciales cuestan 2 MC menos; acción repetible: -6 energía → +6 producción energía |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -49,14 +53,10 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| 071 | Advanced Alloys | Efectos pasivos permanentes (modifica el valor de venta de steel/titanio en `calculate_card_payment` mientras la carta este activa). |
-| 109 | Media Group | Tracking de "tipo de carta jugada" (evento) para disparar bonus pasivos al jugar otras cartas. |
 | 190 | Local Heat Trapping | Elección que además targetea otra carta en juego del propio jugador (agregar recursos a una carta distinta a la que se está jugando). |
 | 006 | Inventors' Guild | Sistema de mazo/robo de cartas (ver top card del mazo, comprarla o descartarla). |
 | 014 | Development Center | Sistema de mano/robo de cartas (deck, mano del jugador, robar N cartas). |
-| 094 | Mass Converter | Tracking de tags jugados por el jugador (`tags_played` contador) para el requisito "5 tags de ciencia"; la parte de descuento pasivo depende de lo mismo que Advanced Alloys. |
 | 059 | Mangrove | Colocación de tiles en general — decisión explícita de mantener fuera de alcance del MVP (sección 6 de CLAUDE.md: sin mapa hexagonal). |
-| 031 | Optimal Aerobraking | Mismo tracking de "tipo de carta jugada" que Media Group. |
 
 ## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
 
@@ -144,6 +144,40 @@ trackea de quién es cada uno — no hay mapa hexagonal, ver CLAUDE.md sección 
 en `standard_project_city` y en cartas con `place_city_tiles` en `effects`. Suficiente para
 cartas que pagan "por cada ciudad en Marte" (ej. Martian Rails) sin necesitar el tablero
 completo con adyacencia.
+
+## Tags jugados (`PlayerState.tags_played`)
+
+Contador `{"<tag>": int}` que suma 1 por cada tag de cada carta pagada exitosamente (via
+`tools.play_card` → `rules_engine.increment_tags_played`), nunca se resetea entre
+generaciones. Alimenta el requisito `min_tag_count` en `check_card_requirements` (ej. Mass
+Converter: 5 tags de ciencia). `check_card_requirements` ahora acepta un tercer argumento
+opcional `player` -- requerido solo si la carta usa `min_tag_count`.
+
+## Efectos pasivos permanentes (`PlayerState.passive_effects`, `rules_engine.register_passive_effect`)
+
+Cartas que, al jugarse, modifican reglas futuras para siempre (no son una acción repetible
+como `active_cards` -- no hay "usarla", simplemente están activas). Se registran con
+`effects.passive` en `cards` (distinto de `effects.action`, que sí se usa explícitamente vía
+`use_card_action`). Vocabulario de `passive`:
+
+- `steel_value_bonus` / `titanium_value_bonus`: MC extra por unidad al pagar OTRAS cartas
+  con acero/titanio (ej. Advanced Alloys: +1 cada uno). Sumado en
+  `compute_conversion_rates(player)`, que `tools.play_card` usa para parametrizar
+  `calculate_card_payment` (antes hardcodeaba las constantes oficiales).
+- `on_event_played`: `{"mc_delta": N, "heat_delta": N}` -- se suma al jugador cada vez que
+  juega una carta con `cards.is_event = true` (ej. Media Group: +3 MC). Aplicado por
+  `apply_event_played_bonuses`, llamado desde `tools.play_card` solo si la carta recién
+  jugada es un evento.
+- `card_cost_discount_mc`: N -- descuenta N MC del costo de OTRAS cartas antes de cobrarlas
+  (ej. Mass Converter: -2 MC en cartas espaciales). Sumado en `compute_card_cost_discount`.
+- `tag_filter`: `"<tag>"` opcional en `on_event_played` o junto a `card_cost_discount_mc` --
+  limita el bonus/descuento a cartas que tengan ese tag (ej. Optimal Aerobraking: solo
+  eventos con tag `space`; Mass Converter: solo cartas con tag `space`).
+
+`cards.is_event` (boolean, default false) marca las cartas "Event" del juego real (se
+juegan una vez, no quedan con producción propia) -- necesario para saber cuándo disparar
+`on_event_played`. Cargado a mano por carta, verificado contra el scan (ninguna carta
+cargada hasta ahora tiene ambigüedad visible en el estilo del banner).
 
 ## Fuente de verificación
 
