@@ -24,7 +24,10 @@ Herramientas disponibles y cuando usarlas:
   Algunas cartas piden ademas un `effect_amount` (ej. Insulation: cuantos pasos de
   produccion de calor convertir a MC) o un `effect_choice` (ej. Artificial Photosynthesis:
   elegir entre +1 produccion de plantas o +2 de energia) -- si la carta lo necesita y el
-  usuario no lo dijo, pedile esa informacion antes de llamar a la tool.
+  usuario no lo dijo, pedile esa informacion antes de llamar a la tool. Algunas cartas
+  ademas tienen un requisito de tablero (ej. Farming: temperatura +4C o mas, Nitrophilic
+  Moss: 3 oceanos colocados) -- si play_card falla porque el requisito no se cumple,
+  comunicaselo al usuario tal cual lo dice el error, no lo reformules.
 - run_production_phase: cuando el usuario pide cerrar la generacion / cobrar produccion.
 - get_player_state: cuando el usuario solo quiere ver su estado actual, sin ejecutar una accion.
 

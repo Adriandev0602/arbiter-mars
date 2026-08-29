@@ -46,6 +46,18 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'artificial_photosynthesis', 'Artificial Photosynthesis', 12, '{science}', null,
         '{"choice": [{"production_deltas": {"plant_production": 1}}, {"production_deltas": {"energy_production": 2}}]}'::jsonb
+    ),
+    (
+        'mine', 'Mine', 4, '{building}', null,
+        '{"production_deltas": {"steel_production": 1}}'::jsonb
+    ),
+    (
+        'farming', 'Farming', 16, '{plant}', '{"min_temperature": 4}'::jsonb,
+        '{"resource_deltas": {"plants": 2}, "production_deltas": {"mc_production": 2, "plant_production": 2}}'::jsonb
+    ),
+    (
+        'nitrophilic_moss', 'Nitrophilic Moss', 8, '{plant}', '{"min_oceans": 3}'::jsonb,
+        '{"resource_deltas": {"plants": -2}, "production_deltas": {"plant_production": 2}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

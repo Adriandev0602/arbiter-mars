@@ -21,6 +21,9 @@ así no se vuelve a evaluar de cero.
 | `titanium_mine` | Titanium Mine | 144 | 7 MC | +1 producción titanio |
 | `solar_wind_power` | Solar Wind Power | 077 | 11 MC | +1 producción energía, +2 titanio (stock) |
 | `artificial_photosynthesis` | Artificial Photosynthesis | 115 | 12 MC | Elección: +1 producción plantas O +2 producción energía |
+| `mine` | Mine | 056 | 4 MC | +1 producción steel |
+| `farming` | Farming | 118 | 16 MC | Requiere +4°C o más. +2 producción MC, +2 producción plantas, +2 plantas (stock) |
+| `nitrophilic_moss` | Nitrophilic Moss | 146 | 8 MC | Requiere 3 océanos colocados. -2 plantas (costo obligatorio), +2 producción plantas |
 
 ## Descartadas (evaluadas, fuera de alcance del MVP actual)
 
@@ -34,6 +37,11 @@ así no se vuelve a evaluar de cero.
 | 101 | Ironworks | Acción repetible (gastar energía cada turno), no efecto inmediato al jugar — no hay sistema de "acciones de carta activa" todavía. |
 | 103 | Steelworks | Mismo motivo que Ironworks. |
 | 038 | Rover Construction | Efecto pasivo disparado por colocación de tile de ciudad de cualquier jugador — no modelado (sin tracking de tiles). |
+| 031 | Optimal Aerobraking | Efecto pasivo disparado al jugar eventos espaciales — no hay tracking de "tipo de carta jugada" todavía. |
+| 033 | Regolith Eaters | Usa un contador de "microbios" almacenado en la propia carta — no hay sistema de recursos-por-carta todavía. |
+| 059 | Mangrove | Coloca un tile de greenery en un espacio de océano — colocación de tiles fuera de alcance. |
+| 094 | Mass Converter | Requiere contar 5 tags de ciencia jugados (no trackeado) + tiene una acción repetible. |
+| 147 | Herbivores | Usa contador de "animales" en la carta + puede afectar la producción de otro jugador — no modelado. |
 
 ## Vocabulario de `effects` soportado hoy en `rules_engine.apply_card_effect`
 
@@ -47,9 +55,22 @@ así no se vuelve a evaluar de cero.
 - `choice`: lista de sub-effects (cualquiera de los de arriba); el jugador elige uno vía
   `effect_choice` (índice 0-based) (ej. Artificial Photosynthesis).
 
+Un `resource_deltas` negativo que dejaría el stock por debajo de 0 lanza
+`InsufficientResourcesError` — se trata como costo obligatorio de la carta, no como tope
+silencioso (ej. Nitrophilic Moss: "pierde 2 plantas" falla si el jugador tiene menos de 2).
+
 Para cartas nuevas preferí `production_deltas`/`resource_deltas` sobre las formas antiguas
 (son más generales). Si el efecto no encaja en este vocabulario, hay que extenderlo (con su
 test) antes de agregar la carta a `seed_cards.sql`.
+
+## Requisitos de cartas (columna `requirements`, validados en `check_card_requirements`)
+
+- `min_temperature`: temperatura mínima en grados C (ej. Farming: 4).
+- `min_oxygen`: oxígeno mínimo en % (ninguna carta cargada lo usa todavía, pero está soportado).
+- `min_oceans`: cantidad mínima de tiles de océano colocados (ej. Nitrophilic Moss: 3).
+
+`tools.play_card` valida el requisito contra `global_parameters` antes de cobrar la carta —
+si no se cumple, lanza `CardRequirementNotMetError` y no se paga nada.
 
 ## Fuente de verificación
 

@@ -9,6 +9,7 @@ from app.agent.rules_engine import (
     InsufficientResourcesError,
     GlobalParameterMaxedError,
     CardEffectError,
+    CardRequirementNotMetError,
     new_player_state,
     new_global_parameters,
     raise_temperature,
@@ -26,6 +27,7 @@ from app.agent.rules_engine import (
     adjust_mc_production,
     calculate_card_payment,
     apply_card_effect,
+    check_card_requirements,
 )
 
 
@@ -399,3 +401,67 @@ def test_artificial_photosynthesis_requires_valid_effect_choice():
         apply_card_effect(player, effects)
     with pytest.raises(CardEffectError):
         apply_card_effect(player, effects, effect_choice=5)
+
+
+def test_mine_gives_plus_1_steel_production():
+    player = new_player_state()
+    new_player = apply_card_effect(player, {"production_deltas": {"steel_production": 1}})
+    assert new_player["steel_production"] == 2
+
+
+def test_resource_deltas_negative_below_zero_raises():
+    player = new_player_state()  # plants = 0
+    with pytest.raises(InsufficientResourcesError):
+        apply_card_effect(player, {"resource_deltas": {"plants": -2}})
+
+
+def test_resource_deltas_negative_exact_stock_is_allowed():
+    player = {**new_player_state(), "plants": 2}
+    new_player = apply_card_effect(player, {"resource_deltas": {"plants": -2}})
+    assert new_player["plants"] == 0
+
+
+def test_nitrophilic_moss_loses_2_plants_and_gives_2_plant_production():
+    player = {**new_player_state(), "plants": 5}
+    new_player = apply_card_effect(
+        player,
+        {"resource_deltas": {"plants": -2}, "production_deltas": {"plant_production": 2}},
+    )
+    assert new_player["plants"] == 3
+    assert new_player["plant_production"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Requisitos de cartas (columna `requirements`)
+# ---------------------------------------------------------------------------
+
+def test_check_card_requirements_none_or_empty_is_a_noop():
+    globals_ = new_global_parameters()
+    check_card_requirements(None, globals_)
+    check_card_requirements({}, globals_)
+
+
+def test_farming_requires_temperature_4_or_warmer():
+    globals_ = {**new_global_parameters(), "temperature": 2}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": 4}, globals_)
+
+
+def test_farming_requirement_met_at_exactly_4():
+    globals_ = {**new_global_parameters(), "temperature": 4}
+    check_card_requirements({"min_temperature": 4}, globals_)  # no debe lanzar
+
+
+def test_nitrophilic_moss_requires_3_oceans():
+    globals_ = {**new_global_parameters(), "oceans_placed": 2}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 3}, globals_)
+
+    globals_met = {**new_global_parameters(), "oceans_placed": 3}
+    check_card_requirements({"min_oceans": 3}, globals_met)  # no debe lanzar
+
+
+def test_check_card_requirements_min_oxygen():
+    globals_ = {**new_global_parameters(), "oxygen": 5}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oxygen": 8}, globals_)

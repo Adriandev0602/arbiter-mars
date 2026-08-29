@@ -199,6 +199,8 @@ def play_card(
     if card is None:
         raise ValueError(f"Carta '{card_id}' no encontrada en el catalogo")
 
+    engine.check_card_requirements(card.get("requirements"), _load_global_parameters())
+
     player = _load_player(player_id)
 
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:

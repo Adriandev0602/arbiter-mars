@@ -117,6 +117,10 @@ class CardEffectError(Exception):
     """El efecto de la carta no se pudo aplicar con los parametros dados."""
 
 
+class CardRequirementNotMetError(Exception):
+    """El estado actual del tablero no cumple el requisito de la carta."""
+
+
 # ---------------------------------------------------------------------------
 # Parametros globales y Terraform Rating
 # ---------------------------------------------------------------------------
@@ -329,6 +333,37 @@ def _apply_production_floor(key: str, value: int) -> int:
     return max(MC_PRODUCTION_FLOOR if key == "mc_production" else 0, value)
 
 
+def check_card_requirements(requirements: dict | None, globals_: GlobalParameters) -> None:
+    """
+    Valida que el estado de los parametros globales cumpla el requisito de la
+    carta (columna `requirements` en la tabla `cards`). Vocabulario soportado:
+
+      - "min_temperature": temperatura minima en grados C (ej. Farming: 4).
+      - "min_oxygen": oxigeno minimo en % (ej. cartas que piden 8% o mas).
+      - "min_oceans": cantidad minima de tiles de oceano colocados.
+
+    requirements None o {} no exige nada. Lanza CardRequirementNotMetError
+    si algun requisito no se cumple.
+    """
+    if not requirements:
+        return
+
+    if "min_temperature" in requirements and globals_["temperature"] < requirements["min_temperature"]:
+        raise CardRequirementNotMetError(
+            f"Requiere temperatura >= {requirements['min_temperature']}C, "
+            f"hay {globals_['temperature']}C"
+        )
+    if "min_oxygen" in requirements and globals_["oxygen"] < requirements["min_oxygen"]:
+        raise CardRequirementNotMetError(
+            f"Requiere oxigeno >= {requirements['min_oxygen']}%, hay {globals_['oxygen']}%"
+        )
+    if "min_oceans" in requirements and globals_["oceans_placed"] < requirements["min_oceans"]:
+        raise CardRequirementNotMetError(
+            f"Requiere {requirements['min_oceans']} oceanos colocados, "
+            f"hay {globals_['oceans_placed']}"
+        )
+
+
 def apply_card_effect(
     player: PlayerState,
     effects: dict,
@@ -349,6 +384,9 @@ def apply_card_effect(
         Power: -2 produccion MC, +3 produccion energia).
       - "resource_deltas": {"<recurso>": delta, ...} -- forma generica para
         cambiar stock de uno o mas recursos (ej. Solar Wind Power: +2 titanio).
+        Un delta negativo que dejaria el stock por debajo de 0 lanza
+        InsufficientResourcesError (es un costo obligatorio de la carta, ej.
+        Nitrophilic Moss: perder 2 plantas).
       - "convert_production": {"from": "<recurso>_production", "to":
         "<recurso>_production"} convierte `effect_amount` (X, elegido por el
         jugador) pasos de produccion de un recurso a otro, limitado al stock
@@ -383,6 +421,10 @@ def apply_card_effect(
 
     if "resource_deltas" in effects:
         for key, delta in effects["resource_deltas"].items():
+            if delta < 0 and new_player[key] + delta < 0:
+                raise InsufficientResourcesError(
+                    f"No hay suficiente {key} ({new_player[key]}) para pagar el costo de {-delta}"
+                )
             new_player[key] = max(0, new_player[key] + delta)
 
     if "convert_production" in effects:
