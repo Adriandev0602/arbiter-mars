@@ -333,6 +333,7 @@ def apply_card_effect(
     player: PlayerState,
     effects: dict,
     effect_amount: int | None = None,
+    effect_choice: int | None = None,
 ) -> PlayerState:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
@@ -340,16 +341,32 @@ def apply_card_effect(
     cargadas hasta ahora (ver seed_cards.sql):
 
       - "mc_production_delta": entero fijo que se suma a la produccion de MC
-        (ej. Sponsors: +2, Acquired Company: +3).
-      - "mc_delta": entero fijo que se suma al stock de MC (ej. Investment
-        Loan: +10).
+        (forma antigua, mantenida por compatibilidad -- ej. Sponsors: +2).
+      - "mc_delta": entero fijo que se suma al stock de MC (forma antigua,
+        mantenida por compatibilidad -- ej. Investment Loan: +10).
+      - "production_deltas": {"<recurso>_production": delta, ...} -- forma
+        generica para cambiar una o mas producciones a la vez (ej. Nuclear
+        Power: -2 produccion MC, +3 produccion energia).
+      - "resource_deltas": {"<recurso>": delta, ...} -- forma generica para
+        cambiar stock de uno o mas recursos (ej. Solar Wind Power: +2 titanio).
       - "convert_production": {"from": "<recurso>_production", "to":
         "<recurso>_production"} convierte `effect_amount` (X, elegido por el
         jugador) pasos de produccion de un recurso a otro, limitado al stock
         de produccion disponible (ej. Insulation: -X calor, +X MC).
+      - "choice": lista de sub-effects (cualquiera de los de arriba); el
+        jugador elige uno via `effect_choice` (indice 0-based) (ej.
+        Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
 
     effects == {} no hace nada (carta sin efecto modelado todavia).
     """
+    if "choice" in effects:
+        options = effects["choice"]
+        if effect_choice is None or not (0 <= effect_choice < len(options)):
+            raise CardEffectError(
+                f"Esta carta requiere effect_choice entre 0 y {len(options) - 1}"
+            )
+        return apply_card_effect(player, options[effect_choice], effect_amount)
+
     new_player: dict = dict(player)
 
     if "mc_production_delta" in effects:
@@ -359,6 +376,14 @@ def apply_card_effect(
 
     if "mc_delta" in effects:
         new_player["mc"] = max(0, new_player["mc"] + effects["mc_delta"])
+
+    if "production_deltas" in effects:
+        for key, delta in effects["production_deltas"].items():
+            new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+
+    if "resource_deltas" in effects:
+        for key, delta in effects["resource_deltas"].items():
+            new_player[key] = max(0, new_player[key] + delta)
 
     if "convert_production" in effects:
         from_key = effects["convert_production"]["from"]

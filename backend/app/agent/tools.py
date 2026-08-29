@@ -162,6 +162,7 @@ def play_card(
     steel_to_pay: int = 0,
     titanium_to_pay: int = 0,
     effect_amount: int | None = None,
+    effect_choice: int | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -181,6 +182,9 @@ def play_card(
         effect_amount: parametro X que algunas cartas piden (ej. Insulation:
             cuantos pasos de produccion de calor convertir a MC). None si la
             carta no lo necesita.
+        effect_choice: indice (0-based) de la opcion elegida, para cartas con
+            efecto "OR" (ej. Artificial Photosynthesis: 0 = +1 produccion de
+            plantas, 1 = +2 produccion de energia). None si la carta no lo pide.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -214,14 +218,16 @@ def play_card(
         "steel": player["steel"] - steel_to_pay,
         "titanium": player["titanium"] - titanium_to_pay,
     }
-    new_player = engine.apply_card_effect(paid_player, card.get("effects") or {}, effect_amount)
+    new_player = engine.apply_card_effect(
+        paid_player, card.get("effects") or {}, effect_amount, effect_choice
+    )
 
     _save_player(player_id, new_player)
     _log_transaction(
         player_id, "play_card",
         {"card_id": card_id, "mc_to_pay": mc_to_pay, "steel_to_pay": steel_to_pay,
          "titanium_to_pay": titanium_to_pay, "change_not_refunded": change,
-         "effect_amount": effect_amount},
+         "effect_amount": effect_amount, "effect_choice": effect_choice},
     )
 
     return {"is_legal": True, "change_not_refunded": change, "player": dict(new_player)}

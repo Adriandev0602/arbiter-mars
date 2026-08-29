@@ -333,3 +333,69 @@ def test_apply_card_effect_with_no_effects_is_a_noop():
     player = new_player_state()
     new_player = apply_card_effect(player, {})
     assert new_player == player
+
+
+def test_nuclear_power_decreases_mc_production_and_increases_energy_production():
+    player = new_player_state()
+    new_player = apply_card_effect(
+        player, {"production_deltas": {"mc_production": -2, "energy_production": 3}}
+    )
+    assert new_player["mc_production"] == -1  # 1 - 2
+    assert new_player["energy_production"] == 4  # 1 + 3
+
+
+def test_solar_power_gives_plus_1_energy_production():
+    player = new_player_state()
+    new_player = apply_card_effect(player, {"production_deltas": {"energy_production": 1}})
+    assert new_player["energy_production"] == 2
+
+
+def test_titanium_mine_gives_plus_1_titanium_production():
+    player = new_player_state()
+    new_player = apply_card_effect(player, {"production_deltas": {"titanium_production": 1}})
+    assert new_player["titanium_production"] == 2
+
+
+def test_solar_wind_power_gives_energy_production_and_titanium_stock():
+    player = new_player_state()
+    new_player = apply_card_effect(
+        player,
+        {"production_deltas": {"energy_production": 1}, "resource_deltas": {"titanium": 2}},
+    )
+    assert new_player["energy_production"] == 2
+    assert new_player["titanium"] == 2
+
+
+def test_artificial_photosynthesis_choice_0_gives_plant_production():
+    player = new_player_state()
+    effects = {
+        "choice": [
+            {"production_deltas": {"plant_production": 1}},
+            {"production_deltas": {"energy_production": 2}},
+        ]
+    }
+    new_player = apply_card_effect(player, effects, effect_choice=0)
+    assert new_player["plant_production"] == 2
+    assert new_player["energy_production"] == 1  # sin cambios
+
+
+def test_artificial_photosynthesis_choice_1_gives_energy_production():
+    player = new_player_state()
+    effects = {
+        "choice": [
+            {"production_deltas": {"plant_production": 1}},
+            {"production_deltas": {"energy_production": 2}},
+        ]
+    }
+    new_player = apply_card_effect(player, effects, effect_choice=1)
+    assert new_player["plant_production"] == 1  # sin cambios
+    assert new_player["energy_production"] == 3
+
+
+def test_artificial_photosynthesis_requires_valid_effect_choice():
+    player = new_player_state()
+    effects = {"choice": [{"production_deltas": {"plant_production": 1}}]}
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, effects)
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, effects, effect_choice=5)

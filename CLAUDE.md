@@ -59,18 +59,19 @@ tiene ~200 cartas de proyecto y no se generaron datos al voleo (un número mal r
 precisión" del PRD) — se cargan a mano, carta por carta, verificadas contra el scan oficial de cada una
 (fuente usada: la base de datos de cartas de tm.hadronikle.com).
 
-Primeras 4 cartas implementadas en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con
-su efecto modelado en `rules_engine.apply_card_effect` y tests en `test_rules_engine.py`:
-- **Sponsors** (6 MC): +2 producción de MC.
-- **Acquired Company** (10 MC): +3 producción de MC.
-- **Investment Loan** (3 MC): -1 producción de MC, +10 MC al stock.
-- **Insulation** (2 MC): convierte X pasos de producción de calor en X pasos de producción de MC
-  (X lo elige el jugador — parámetro `effect_amount` en `play_card`).
+9 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
+efecto modelado en `rules_engine.apply_card_effect` y tests en `test_rules_engine.py` — ver el detalle
+completo en `backend/app/db/CARDS_LOG.md`. Resumen: Sponsors, Acquired Company e Investment Loan (cambios
+fijos de producción/stock de MC), Insulation (conversión calor→MC producción elegida por el jugador),
+Nuclear Power/Solar Power/Titanium Mine/Solar Wind Power (cambios de producción de energía/titanio, algunos
+con stock), Artificial Photosynthesis (elección entre dos efectos vía `effect_choice`).
 
 Se eligieron a propósito cartas de efecto inmediato sobre stock/producción, sin colocación de tiles,
-adyacencia ni interacción con otras cartas — eso sigue fuera de alcance del MVP (sección 6). El vocabulario
-de `effects` (jsonb) que soporta `apply_card_effect` hoy es: `mc_production_delta`, `mc_delta` y
-`convert_production`. Para cargar la próxima carta: leer el efecto en el scan oficial, ver si encaja en
+adyacencia, targeting de otros jugadores ni acciones repetibles — eso sigue fuera de alcance del MVP
+(sección 6). El vocabulario de `effects` (jsonb) que soporta `apply_card_effect` hoy es:
+`mc_production_delta`/`mc_delta` (formas antiguas), `production_deltas`/`resource_deltas` (formas
+genéricas, preferidas para cartas nuevas), `convert_production` y `choice`. Para cargar la próxima carta:
+revisar `CARDS_LOG.md` (para no repetir verificación), leer el efecto en el scan oficial, ver si encaja en
 ese vocabulario (si no, extenderlo) y agregar la fila en `seed_cards.sql` + un test con el número exacto.
 
 **Antes de cargar cartas nuevas, revisar `backend/app/db/CARDS_LOG.md`** — lleva el registro de qué
@@ -183,7 +184,7 @@ vocabulario real del juego (`prompts.py`), y el schema de Supabase (`schema.sql`
 
 1. Correr `schema.sql` y luego `seed_cards.sql` en un proyecto de Supabase real y completar `.env` con
    las credenciales.
-2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (38 tests hoy).
+2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (45 tests hoy).
 3. Seguir cargando cartas reales en `seed_cards.sql` (a mano, verificadas contra tu copia del juego) e
    implementar/extender su efecto en `rules_engine.apply_card_effect` + un test por carta.
 4. Probar `POST /api/chat` con casos reales ("quiero usar el proyecto estándar Ciudad", "cerrá mi fase
