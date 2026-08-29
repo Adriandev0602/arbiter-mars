@@ -73,6 +73,11 @@ de `effects` (jsonb) que soporta `apply_card_effect` hoy es: `mc_production_delt
 `convert_production`. Para cargar la próxima carta: leer el efecto en el scan oficial, ver si encaja en
 ese vocabulario (si no, extenderlo) y agregar la fila en `seed_cards.sql` + un test con el número exacto.
 
+**Antes de cargar cartas nuevas, revisar `backend/app/db/CARDS_LOG.md`** — lleva el registro de qué
+cartas ya están cargadas (para no repetir el trabajo de verificación) y cuáles se evaluaron y se
+descartaron a propósito por depender de mecánicas fuera de alcance (mano/robo de cartas, efectos pasivos
+permanentes, interacción con otras cartas), junto con el motivo de cada descarte.
+
 ## 4. Stack tecnológico
 
 | Capa | Tecnología | Notas |
