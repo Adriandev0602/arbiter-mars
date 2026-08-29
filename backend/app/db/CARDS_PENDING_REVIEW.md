@@ -119,4 +119,204 @@ Fuente: https://tm.hadronikle.com (base de datos no oficial, 668 escaneos full-r
 | 99 | Bribed Committee | Corporate Era | 112 | unreviewed |
 | 100 | Breathing Filters | Base | 114 | unreviewed |
 
+| 101 | Artificial Lake | Base | 116 | unreviewed |
+| 102 | Geothermal Power | Base | 117 | unreviewed |
+| 103 | Dust Seals | Base | 119 | unreviewed |
+| 104 | Urbanized Area | Base | 120 | unreviewed |
+| 105 | Sabotage | Corporate Era | 121 | unreviewed |
+| 106 | Moss | Base | 122 | unreviewed |
+| 107 | Industrial Center | Corporate Era | 123 | unreviewed |
+| 108 | Hired Raiders | Corporate Era | 124 | unreviewed |
+| 109 | Hackers | Corporate Era | 125 | unreviewed |
+| 110 | GHG Factories | Base | 126 | unreviewed |
+| 111 | Subterranean Reservoir | Base | 127 | unreviewed |
+| 112 | Ecological Zone | Base | 128 | unreviewed |
+| 113 | Zeppelins | Base | 129 | unreviewed |
+| 114 | Worms | Base | 130 | unreviewed |
+| 115 | Decomposers | Base | 131 | unreviewed |
+| 116 | Fusion Power | Base | 132 | unreviewed |
+| 117 | Symbiotic Fungus | Base | 133 | unreviewed |
+| 118 | Extreme-Cold Fungus | Base | 134 | unreviewed |
+| 119 | Advanced Ecosystems | Base | 135 | unreviewed |
+| 120 | Great Dam | Base | 136 | unreviewed |
+| 121 | Cartel | Corporate Era | 137 | unreviewed |
+| 122 | Strip Mine | Base | 138 | unreviewed |
+| 123 | Wave Power | Base | 139 | unreviewed |
+| 124 | Lava Flows | Base | 140 | unreviewed |
+| 125 | Power Plant | Base | 141 | unreviewed |
+| 126 | Mohole Area | Base | 142 | unreviewed |
+| 127 | Large Convoy | Base | 143 | unreviewed |
+| 128 | Tectonic Stress Power | Base | 145 | unreviewed |
+| 129 | Herbivores | Base | 147 | unreviewed |
+| 130 | Insects | Base | 148 | unreviewed |
+| 131 | CEO's Favorite Project | Corporate Era | 149 | unreviewed |
+| 132 | Anti-Gravity Technology | Corporate Era | 150 | unreviewed |
+| 133 | Adaptation Technology | Base | 153 | unreviewed |
+| 134 | Caretaker Contract | Corporate Era | 154 | unreviewed |
+| 135 | Designed Microorganisms | Base | 155 | unreviewed |
+| 136 | Standard Technology | Corporate Era | 156 | unreviewed |
+| 137 | Nitrite Reducing Bacteria | Base | 157 | unreviewed |
+| 138 | Industrial Microbes | Base | 158 | unreviewed |
+| 139 | Lichen | Base | 159 | unreviewed |
+| 140 | Power Supply Consortium | Corporate Era | 160 | unreviewed |
+| 141 | Convoy from Europa | Base | 161 | unreviewed |
+| 142 | Imported GHG | Base | 162 | unreviewed |
+| 143 | Imported Nitrogen | Base | 163 | unreviewed |
+| 144 | Micro-Mills | Base | 164 | unreviewed |
+| 145 | Magnetic Field Generators | Base | 165 | unreviewed |
+| 146 | Shuttles | Base | 166 | unreviewed |
+| 147 | Import of Advanced GHG | Base | 167 | unreviewed |
+| 148 | Windmills | Base | 168 | unreviewed |
+| 149 | Tundra Farming | Base | 169 | unreviewed |
+| 150 | Aerobraked Ammonia Asteroid | Base | 170 | unreviewed |
+| 151 | Magnetic Field Dome | Base | 171 | unreviewed |
+| 152 | Pets | Base | 172 | unreviewed |
+| 153 | Protected Habitats | Corporate Era | 173 | unreviewed |
+| 154 | Protected Valley | Base | 174 | unreviewed |
+| 155 | Satellites | Corporate Era | 175 | unreviewed |
+| 156 | Noctis Farming | Base | 176 | unreviewed |
+| 157 | Water Splitting Plant | Base | 177 | unreviewed |
+| 158 | Heat Trappers | Base | 178 | unreviewed |
+| 159 | Soil Factory | Base | 179 | unreviewed |
+| 160 | Fuel Factory | Corporate Era | 180 | unreviewed |
+| 161 | Ice Cap Melting | Base | 181 | unreviewed |
+| 162 | Corporate Stronghold | Corporate Era | 182 | unreviewed |
+| 163 | Biomass Combustors | Base | 183 | unreviewed |
+| 164 | Livestock | Base | 184 | unreviewed |
+| 165 | Olympus Conference | Corporate Era | 185 | unreviewed |
+| 166 | Rad-Suits | Corporate Era | 186 | unreviewed |
+| 167 | Aquifer Pumping | Base | 187 | unreviewed |
+| 168 | Flooding | Base | 188 | unreviewed |
+| 169 | Energy Saving | Base | 189 | unreviewed |
+| 170 | Local Heat Trapping | Base | 190 | unreviewed |
+| 171 | Permafrost Extraction | Base | 191 | unreviewed |
+| 172 | Invention Contest | Corporate Era | 192 | unreviewed |
+| 173 | Plantation | Base | 193 | unreviewed |
+| 174 | Power Infrastructure | Corporate Era | 194 | unreviewed |
+| 175 | Indentured Workers | Corporate Era | 195 | unreviewed |
+| 176 | Lagrange Observatory | Corporate Era | 196 | unreviewed |
+| 177 | Terraforming Ganymede | Corporate Era | 197 | unreviewed |
+| 178 | Immigration Shuttles | Base | 198 | unreviewed |
+| 179 | Restricted Area | Corporate Era | 199 | unreviewed |
+| 180 | Immigrant City | Base | 200 | unreviewed |
+| 181 | Energy Tapping | Corporate Era | 201 | unreviewed |
+| 182 | Underground Detonations | Base | 202 | unreviewed |
+| 183 | Soletta | Base | 203 | unreviewed |
+| 184 | Technology Demonstration | Corporate Era | 204 | unreviewed |
+| 185 | Rad-Chem Factory | Base | 205 | unreviewed |
+| 186 | Special Design | Base | 206 | unreviewed |
+| 187 | Medical Lab | Corporate Era | 207 | unreviewed |
+| 188 | AI Central | Corporate Era | 208 | unreviewed |
+| 189 | Small Asteroid | Promo | 209 | unreviewed |
+| 190 | Self-Replicating Robots | Promo | 210 | unreviewed |
+| 191 | Snow Algae | Promo | 211 | unreviewed |
+| 192 | Penguins | Promo | 212 | unreviewed |
+| 193 | Aerial Mappers | Venus Next | 213 | unreviewed |
+| 194 | Aerosport Tournament | Venus Next | 214 | unreviewed |
+| 195 | Air-Scrapping Expedition | Venus Next | 215 | unreviewed |
+| 196 | Atalanta Planitia Lab | Venus Next | 216 | unreviewed |
+| 197 | Atmoscoop | Venus Next | 217 | unreviewed |
+| 198 | Comet for Venus | Venus Next | 218 | unreviewed |
+| 199 | Corroder Suits | Venus Next | 219 | unreviewed |
+| 200 | Dawn City | Venus Next | 220 | unreviewed |
+| 201 | Deuterium Export | Venus Next | 221 | unreviewed |
+| 202 | Dirigibles | Venus Next | 222 | unreviewed |
+| 203 | Extractor Balloons | Venus Next | 223 | unreviewed |
+| 204 | Extremophiles | Venus Next | 224 | unreviewed |
+| 205 | Floating Habs | Venus Next | 225 | unreviewed |
+| 206 | Forced Precipitation | Venus Next | 226 | unreviewed |
+| 207 | Freyja Biodomes | Venus Next | 227 | unreviewed |
+| 208 | GHG Import from Venus | Venus Next | 228 | unreviewed |
+| 209 | Giant Solar Shade | Venus Next | 229 | unreviewed |
+| 210 | Gyropolis | Venus Next | 230 | unreviewed |
+| 211 | Hydrogen to Venus | Venus Next | 231 | unreviewed |
+| 212 | IO Sulphur Research | Venus Next | 232 | unreviewed |
+| 213 | Ishtar Mining | Venus Next | 233 | unreviewed |
+| 214 | Jet Stream Microscrappers | Venus Next | 234 | unreviewed |
+| 215 | Local Shading | Venus Next | 235 | unreviewed |
+| 216 | Luna Metropolis | Venus Next | 236 | unreviewed |
+| 217 | Luxury Foods | Venus Next | 237 | unreviewed |
+| 218 | Maxwell Base | Venus Next | 238 | unreviewed |
+| 219 | Mining Quota | Venus Next | 239 | unreviewed |
+| 220 | Neutralizer Factory | Venus Next | 240 | unreviewed |
+| 221 | Omnicourt | Venus Next | 241 | unreviewed |
+| 222 | Orbital Reflectors | Venus Next | 242 | unreviewed |
+| 223 | Rotator Impacts | Venus Next | 243 | unreviewed |
+| 224 | Sister Planet Support | Venus Next | 244 | unreviewed |
+| 225 | Solarnet | Venus Next | 245 | unreviewed |
+| 226 | Spin-Inducing Asteroid | Venus Next | 246 | unreviewed |
+| 227 | Sponsored Academies | Venus Next | 247 | unreviewed |
+| 228 | Stratopolis | Venus Next | 248 | unreviewed |
+| 229 | Stratospheric Birds | Venus Next | 249 | unreviewed |
+| 230 | Sulphur Exports | Venus Next | 250 | unreviewed |
+| 231 | Sulphur-Eating Bacteria | Venus Next | 251 | unreviewed |
+| 232 | Terraforming Contract | Venus Next | 252 | unreviewed |
+| 233 | Thermophiles | Venus Next | 253 | unreviewed |
+| 234 | Water to Venus | Venus Next | 254 | unreviewed |
+| 235 | Venus Governor | Venus Next | 255 | unreviewed |
+| 236 | Venus Magnetizer | Venus Next | 256 | unreviewed |
+| 237 | Venus Soils | Venus Next | 257 | unreviewed |
+| 238 | Venus Waystation | Venus Next | 258 | unreviewed |
+| 239 | Venusian Animals | Venus Next | 259 | unreviewed |
+| 240 | Venusian Insects | Venus Next | 260 | unreviewed |
+| 241 | Venusian Plants | Venus Next | 261 | unreviewed |
+| 242 | Airliners | Colonies | C01 | unreviewed |
+| 243 | Air Raid | Colonies | C02 | unreviewed |
+| 244 | Atmo Collectors | Colonies | C03 | unreviewed |
+| 245 | Community Services | Colonies | C04 | unreviewed |
+| 246 | Conscription | Colonies | C05 | unreviewed |
+| 247 | Corona Extractor | Colonies | C06 | unreviewed |
+| 248 | Cryo-Sleep | Colonies | C07 | unreviewed |
+| 249 | Earth Elevator | Colonies | C08 | unreviewed |
+| 250 | Ecology Research | Colonies | C09 | unreviewed |
+| 251 | Floater Leasing | Colonies | C10 | unreviewed |
+| 252 | Floater Prototypes | Colonies | C11 | unreviewed |
+| 253 | Floater Technology | Colonies | C12 | unreviewed |
+| 254 | Galilean Waystation | Colonies | C13 | unreviewed |
+| 255 | Heavy Taxation | Colonies | C14 | unreviewed |
+| 256 | Ice Moon Colony | Colonies | C15 | unreviewed |
+| 257 | Impactor Swarm | Colonies | C16 | unreviewed |
+| 258 | Interplanetary Colony Ship | Colonies | C17 | unreviewed |
+| 259 | Jovian Lanterns | Colonies | C18 | unreviewed |
+| 260 | Jupiter Floating Station | Colonies | C19 | unreviewed |
+| 261 | Luna Governor | Colonies | C20 | unreviewed |
+| 262 | Lunar Exports | Colonies | C21 | unreviewed |
+| 263 | Lunar Mining | Colonies | C22 | unreviewed |
+| 264 | Market Manipulation | Colonies | C23 | unreviewed |
+| 265 | Martian Zoo | Colonies | C24 | unreviewed |
+| 266 | Mining Colony | Colonies | C25 | unreviewed |
+| 267 | Minority Refuge | Colonies | C26 | unreviewed |
+| 268 | Molecular Printing | Colonies | C27 | unreviewed |
+| 269 | Nitrogen from Titan | Colonies | C28 | unreviewed |
+| 270 | Pioneer Settlement | Colonies | C29 | unreviewed |
+| 271 | Productive Outpost | Colonies | C30 | unreviewed |
+| 272 | Quantum Communications | Colonies | C31 | unreviewed |
+| 273 | Red Spot Observatory | Colonies | C32 | unreviewed |
+| 274 | Refugee Camps | Colonies | C33 | unreviewed |
+| 275 | Research Colony | Colonies | C34 | unreviewed |
+| 276 | Rim Freighters | Colonies | C35 | unreviewed |
+| 277 | Sky Docks | Colonies | C36 | unreviewed |
+| 278 | Solar Probe | Colonies | C37 | unreviewed |
+| 279 | Solar Reflectors | Colonies | C38 | unreviewed |
+| 280 | Space Port | Colonies | C39 | unreviewed |
+| 281 | Space Port Colony | Colonies | C40 | unreviewed |
+| 282 | Spin-Off Department | Colonies | C41 | unreviewed |
+| 283 | Sub-Zero Salt Fish | Colonies | C42 | unreviewed |
+| 284 | Titan Air-Scrapping | Colonies | C43 | unreviewed |
+| 285 | Titan Floating Launch-Pad | Colonies | C44 | unreviewed |
+| 286 | Titan Shuttles | Colonies | C45 | unreviewed |
+| 287 | Trade Envoys | Colonies | C46 | unreviewed |
+| 288 | Trading Colony | Colonies | C47 | unreviewed |
+| 289 | Urban Decomposers | Colonies | C48 | unreviewed |
+| 290 | Warp Drive | Colonies | C49 | unreviewed |
+| 291 | House Printing | Prelude | P36 | unreviewed |
+| 292 | Lava Tube Settlement | Prelude | P37 | unreviewed |
+| 293 | Martian Survey | Prelude | P38 | unreviewed |
+| 294 | Psychrophiles | Prelude | P39 | unreviewed |
+| 295 | Research Coordination | Prelude | P40 | unreviewed |
+| 296 | SF Memorial | Prelude | P41 | unreviewed |
+| 297 | Space Hotels | Prelude | P42 | unreviewed |
+| 298 | Ceres Tech Market | Venus Next | P68 | unreviewed |
+| 299 | Cloud Tourism | Venus Next | P69 | unreviewed |
+| 300 | Colonial Envoys | Prelude 2 | P70 | unreviewed |
 <!-- TABLE_END -->
