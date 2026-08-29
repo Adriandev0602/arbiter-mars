@@ -32,7 +32,8 @@ def _load_global_parameters(game_id: str = "default") -> engine.GlobalParameters
     res = supabase.table("global_parameters").select("*").eq("game_id", game_id).single().execute()
     row = res.data
     return engine.GlobalParameters(
-        temperature=row["temperature"], oxygen=row["oxygen"], oceans_placed=row["oceans_placed"]
+        temperature=row["temperature"], oxygen=row["oxygen"], oceans_placed=row["oceans_placed"],
+        city_tiles_placed=row.get("city_tiles_placed") or 0,
     )
 
 
@@ -82,8 +83,7 @@ def use_standard_project(player_id: str, project_name: str, num_cards_to_sell: i
     elif project_name == "greenery":
         new_player, new_globals = engine.standard_project_greenery(player, globals_)
     elif project_name == "city":
-        new_player = engine.standard_project_city(player)
-        new_globals = globals_
+        new_player, new_globals = engine.standard_project_city(player, globals_)
     else:
         raise ValueError(
             f"project_name debe ser uno de: sell_patents, power_plant, asteroid, "
@@ -200,7 +200,8 @@ def play_card(
     if card is None:
         raise ValueError(f"Carta '{card_id}' no encontrada en el catalogo")
 
-    engine.check_card_requirements(card.get("requirements"), _load_global_parameters())
+    globals_ = _load_global_parameters()
+    engine.check_card_requirements(card.get("requirements"), globals_)
 
     player = _load_player(player_id)
 
@@ -222,11 +223,15 @@ def play_card(
         "titanium": player["titanium"] - titanium_to_pay,
     }
     effects = card.get("effects") or {}
-    new_player = engine.apply_card_effect(paid_player, effects, effect_amount, effect_choice)
+    new_player, new_globals = engine.apply_card_effect(
+        paid_player, globals_, effects, effect_amount, effect_choice
+    )
     if effects.get("becomes_active"):
         new_player = engine.register_active_card(new_player, card_id)
 
     _save_player(player_id, new_player)
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
     _log_transaction(
         player_id, "play_card",
         {"card_id": card_id, "mc_to_pay": mc_to_pay, "steel_to_pay": steel_to_pay,
@@ -234,7 +239,10 @@ def play_card(
          "effect_amount": effect_amount, "effect_choice": effect_choice},
     )
 
-    return {"is_legal": True, "change_not_refunded": change, "player": dict(new_player)}
+    return {
+        "is_legal": True, "change_not_refunded": change,
+        "player": dict(new_player), "global_parameters": dict(new_globals),
+    }
 
 
 @tool

@@ -11,6 +11,11 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists global_parameters add column if not exists city_tiles_placed integer not null default 0;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -52,6 +57,7 @@ create table if not exists global_parameters (
     temperature integer not null default -30,  -- rango: -30 a 8, pasos de 2
     oxygen integer not null default 0,          -- rango: 0 a 14, pasos de 1
     oceans_placed integer not null default 0,   -- rango: 0 a 9
+    city_tiles_placed integer not null default 0,  -- ciudades colocadas por cualquier jugador
     generation integer not null default 1
 );
 

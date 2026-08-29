@@ -89,10 +89,16 @@ class PlayerState(TypedDict):
 
 
 class GlobalParameters(TypedDict):
-    """Estado compartido del tablero central -- no pertenece a un jugador."""
+    """Estado compartido del tablero central -- no pertenece a un jugador.
+
+    city_tiles_placed: cuenta total de tiles de ciudad colocados por CUALQUIER
+    jugador (no se trackea de quien es cada uno -- no hay mapa hexagonal, ver
+    CLAUDE.md seccion 6). Suficiente para cartas que pagan "por cada ciudad en
+    Marte" (ej. Martian Rails) sin necesitar el tablero completo."""
     temperature: int
     oxygen: int
     oceans_placed: int
+    city_tiles_placed: int
 
 
 def new_player_state() -> PlayerState:
@@ -107,7 +113,9 @@ def new_player_state() -> PlayerState:
 
 
 def new_global_parameters() -> GlobalParameters:
-    return GlobalParameters(temperature=TEMPERATURE_MIN, oxygen=OXYGEN_MIN, oceans_placed=0)
+    return GlobalParameters(
+        temperature=TEMPERATURE_MIN, oxygen=OXYGEN_MIN, oceans_placed=0, city_tiles_placed=0
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +177,16 @@ def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[Player
     return new_player, new_globals
 
 
+def place_city_tile(globals_: GlobalParameters) -> GlobalParameters:
+    """
+    Suma 1 al contador global de tiles de ciudad colocados (por cualquier
+    jugador -- no se trackea de quien es cada uno, ver GlobalParameters).
+    A diferencia de place_ocean, colocar una ciudad no otorga TR por si sola
+    (la regla oficial da TR por produccion de MC ganada, no por el tile).
+    """
+    return {**globals_, "city_tiles_placed": globals_["city_tiles_placed"] + 1}
+
+
 # ---------------------------------------------------------------------------
 # Los 6 proyectos estandar
 # ---------------------------------------------------------------------------
@@ -223,17 +241,20 @@ def standard_project_greenery(player: PlayerState, globals_: GlobalParameters) -
     return raise_oxygen(paid_player, globals_, steps=1)
 
 
-def standard_project_city(player: PlayerState) -> PlayerState:
-    """Paga 25 MC, coloca tile de ciudad, +1 produccion de MC."""
+def standard_project_city(
+    player: PlayerState, globals_: GlobalParameters
+) -> tuple[PlayerState, GlobalParameters]:
+    """Paga 25 MC, coloca tile de ciudad (+1 al contador global), +1 produccion de MC."""
     if player["mc"] < STANDARD_PROJECT_CITY_COST:
         raise InsufficientResourcesError(
             f"Se necesitan {STANDARD_PROJECT_CITY_COST} MC, hay {player['mc']}"
         )
-    return {
+    new_player = {
         **player,
         "mc": player["mc"] - STANDARD_PROJECT_CITY_COST,
         "mc_production": player["mc_production"] + 1,
     }
+    return new_player, place_city_tile(globals_)
 
 
 # ---------------------------------------------------------------------------
@@ -382,14 +403,17 @@ def check_card_requirements(requirements: dict | None, globals_: GlobalParameter
 
 def apply_card_effect(
     player: PlayerState,
+    globals_: GlobalParameters,
     effects: dict,
     effect_amount: int | None = None,
     effect_choice: int | None = None,
-) -> PlayerState:
+) -> tuple[PlayerState, GlobalParameters]:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
-    `effects` de la tabla `cards`. Vocabulario soportado por las cartas
-    cargadas hasta ahora (ver seed_cards.sql):
+    `effects` de la tabla `cards`. Siempre recibe y devuelve tambien los
+    parametros globales porque algunas cartas suben temperatura/oceanos
+    directamente (no solo cambian stock/produccion del jugador). Vocabulario
+    soportado por las cartas cargadas hasta ahora (ver seed_cards.sql):
 
       - "mc_production_delta": entero fijo que se suma a la produccion de MC
         (forma antigua, mantenida por compatibilidad -- ej. Sponsors: +2).
@@ -407,9 +431,21 @@ def apply_card_effect(
         "<recurso>_production"} convierte `effect_amount` (X, elegido por el
         jugador) pasos de produccion de un recurso a otro, limitado al stock
         de produccion disponible (ej. Insulation: -X calor, +X MC).
+      - "raise_temperature_steps": N -- sube la temperatura N pasos (+N TR),
+        via raise_temperature (ej. Comet: 1 paso).
+      - "raise_oxygen_steps": N -- sube el oxigeno N pasos (+N TR).
+      - "place_oceans": N -- coloca N tiles de oceano (+N TR) (ej. Comet: 1).
+      - "place_city_tiles": N -- suma N al contador global de ciudades, sin
+        TR (ej. Capital: 1).
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
+
+    NOTA sobre "remove up to N <recurso> from any player": varias cartas del
+    catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
+    (0 a N) para hostigar a otro jugador. Como el MVP es de un solo jugador y
+    elegir 0 siempre es legal, esta clausula se omite del todo -- el resto del
+    efecto (garantizado) si se aplica. Ver CARDS_LOG.md.
 
     effects == {} no hace nada (carta sin efecto modelado todavia).
     """
@@ -419,9 +455,10 @@ def apply_card_effect(
             raise CardEffectError(
                 f"Esta carta requiere effect_choice entre 0 y {len(options) - 1}"
             )
-        return apply_card_effect(player, options[effect_choice], effect_amount)
+        return apply_card_effect(player, globals_, options[effect_choice], effect_amount)
 
     new_player: dict = dict(player)
+    new_globals: dict = dict(globals_)
 
     if "mc_production_delta" in effects:
         new_player["mc_production"] = _apply_production_floor(
@@ -457,7 +494,30 @@ def apply_card_effect(
         new_player[from_key] = _apply_production_floor(from_key, new_player[from_key] - effect_amount)
         new_player[to_key] = _apply_production_floor(to_key, new_player[to_key] + effect_amount)
 
-    return PlayerState(**new_player)  # type: ignore[typeddict-item]
+    if "raise_temperature_steps" in effects:
+        p2, g2 = raise_temperature(
+            PlayerState(**new_player), GlobalParameters(**new_globals),  # type: ignore[typeddict-item]
+            steps=effects["raise_temperature_steps"],
+        )
+        new_player, new_globals = dict(p2), dict(g2)
+
+    if "raise_oxygen_steps" in effects:
+        p2, g2 = raise_oxygen(
+            PlayerState(**new_player), GlobalParameters(**new_globals),  # type: ignore[typeddict-item]
+            steps=effects["raise_oxygen_steps"],
+        )
+        new_player, new_globals = dict(p2), dict(g2)
+
+    if "place_oceans" in effects:
+        for _ in range(effects["place_oceans"]):
+            p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
+            new_player, new_globals = dict(p2), dict(g2)
+
+    if "place_city_tiles" in effects:
+        for _ in range(effects["place_city_tiles"]):
+            new_globals = dict(place_city_tile(GlobalParameters(**new_globals)))  # type: ignore[typeddict-item]
+
+    return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
 
 
 # ---------------------------------------------------------------------------
@@ -496,8 +556,15 @@ def use_card_action(
         Regolith Eaters: remover 2 microbios).
       - "gains": {"resource_deltas": {...}, "production_deltas": {...},
         "raise_oxygen_steps": N, "raise_temperature_steps": N,
-        "card_resource_delta": N} -- N > 0 en card_resource_delta agrega
-        recursos a la propia carta (ej. Regolith Eaters: agregar 1 microbio).
+        "card_resource_delta": N, "tr_delta": N, "mc_per_counter":
+        "<nombre del contador en GlobalParameters>"} -- N > 0 en
+        card_resource_delta agrega recursos a la propia carta (ej. Regolith
+        Eaters: agregar 1 microbio); tr_delta sube el TR directo sin pasar
+        por un parametro global (ej. Equatorial Magnetizer); mc_per_counter
+        da tanto MC como valga ese contador global (ej. Martian Rails: MC
+        por cada ciudad en Marte via "city_tiles_placed"); place_oceans: N
+        coloca N tiles de oceano (+N TR cada uno) (ej. Water Import from
+        Europa).
       - "choice": lista de action_spec alternativos; se elige uno con
         `effect_choice` (ej. Regolith Eaters: agregar microbio O gastar 2
         para subir oxigeno).
@@ -550,6 +617,14 @@ def use_card_action(
     if "raise_temperature_steps" in gains:
         p2, g2 = raise_temperature(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_temperature_steps"])  # type: ignore[typeddict-item]
         new_player, new_globals = dict(p2), dict(g2)
+    if "tr_delta" in gains:
+        new_player["tr"] = new_player["tr"] + gains["tr_delta"]
+    if "mc_per_counter" in gains:
+        new_player["mc"] = new_player["mc"] + new_globals[gains["mc_per_counter"]]
+    if "place_oceans" in gains:
+        for _ in range(gains["place_oceans"]):
+            p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
+            new_player, new_globals = dict(p2), dict(g2)
 
     new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
     new_player["active_cards"] = new_active_cards

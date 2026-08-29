@@ -7,6 +7,8 @@ import pytest
 
 from app.agent.rules_engine import (
     TR_START,
+    TEMPERATURE_MIN,
+    TEMPERATURE_STEP,
     InsufficientResourcesError,
     GlobalParameterMaxedError,
     CardEffectError,
@@ -16,6 +18,7 @@ from app.agent.rules_engine import (
     raise_temperature,
     raise_oxygen,
     place_ocean,
+    place_city_tile,
     standard_project_sell_patents,
     standard_project_power_plant,
     standard_project_asteroid,
@@ -154,9 +157,10 @@ def test_greenery_costs_23_mc_raises_oxygen_1_percent_and_1_tr():
 
 def test_city_costs_25_mc_and_gives_1_mc_production():
     player = {**new_player_state(), "mc": 25}
-    player = standard_project_city(player)
+    player, globals_ = standard_project_city(player, new_global_parameters())
     assert player["mc"] == 0
     assert player["mc_production"] == 2  # 1 base + 1
+    assert globals_["city_tiles_placed"] == 1
 
 
 # --- Conversiones del tablero de jugador ------------------------------------
@@ -281,33 +285,38 @@ def test_calculate_card_payment_overpaying_gives_no_refund_but_no_error():
 
 def test_sponsors_gives_plus_2_mc_production():
     player = new_player_state()
-    new_player = apply_card_effect(player, {"mc_production_delta": 2})
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"mc_production_delta": 2})
     assert new_player["mc_production"] == 3  # arranca en 1
 
 
 def test_acquired_company_gives_plus_3_mc_production():
     player = new_player_state()
-    new_player = apply_card_effect(player, {"mc_production_delta": 3})
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"mc_production_delta": 3})
     assert new_player["mc_production"] == 4
 
 
 def test_investment_loan_decreases_mc_production_and_gives_10_mc():
     player = new_player_state()
-    new_player = apply_card_effect(player, {"mc_production_delta": -1, "mc_delta": 10})
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"mc_production_delta": -1, "mc_delta": 10}
+    )
     assert new_player["mc_production"] == 0
     assert new_player["mc"] == 10
 
 
 def test_investment_loan_respects_mc_production_floor_of_minus_5():
     player = {**new_player_state(), "mc_production": -5}
-    new_player = apply_card_effect(player, {"mc_production_delta": -1, "mc_delta": 10})
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"mc_production_delta": -1, "mc_delta": 10}
+    )
     assert new_player["mc_production"] == -5
 
 
 def test_insulation_converts_heat_production_to_mc_production():
     player = {**new_player_state(), "heat_production": 3}
-    new_player = apply_card_effect(
+    new_player, _ = apply_card_effect(
         player,
+        new_global_parameters(),
         {"convert_production": {"from": "heat_production", "to": "mc_production"}},
         effect_amount=3,
     )
@@ -320,6 +329,7 @@ def test_insulation_cannot_convert_more_heat_production_than_available():
     with pytest.raises(InsufficientResourcesError):
         apply_card_effect(
             player,
+            new_global_parameters(),
             {"convert_production": {"from": "heat_production", "to": "mc_production"}},
             effect_amount=3,
         )
@@ -330,20 +340,24 @@ def test_insulation_requires_effect_amount():
     with pytest.raises(CardEffectError):
         apply_card_effect(
             player,
+            new_global_parameters(),
             {"convert_production": {"from": "heat_production", "to": "mc_production"}},
         )
 
 
 def test_apply_card_effect_with_no_effects_is_a_noop():
     player = new_player_state()
-    new_player = apply_card_effect(player, {})
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(player, globals_, {})
     assert new_player == player
+    assert new_globals == globals_
 
 
 def test_nuclear_power_decreases_mc_production_and_increases_energy_production():
     player = new_player_state()
-    new_player = apply_card_effect(
-        player, {"production_deltas": {"mc_production": -2, "energy_production": 3}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"mc_production": -2, "energy_production": 3}},
     )
     assert new_player["mc_production"] == -1  # 1 - 2
     assert new_player["energy_production"] == 4  # 1 + 3
@@ -351,20 +365,25 @@ def test_nuclear_power_decreases_mc_production_and_increases_energy_production()
 
 def test_solar_power_gives_plus_1_energy_production():
     player = new_player_state()
-    new_player = apply_card_effect(player, {"production_deltas": {"energy_production": 1}})
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"energy_production": 1}}
+    )
     assert new_player["energy_production"] == 2
 
 
 def test_titanium_mine_gives_plus_1_titanium_production():
     player = new_player_state()
-    new_player = apply_card_effect(player, {"production_deltas": {"titanium_production": 1}})
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"titanium_production": 1}}
+    )
     assert new_player["titanium_production"] == 2
 
 
 def test_solar_wind_power_gives_energy_production_and_titanium_stock():
     player = new_player_state()
-    new_player = apply_card_effect(
+    new_player, _ = apply_card_effect(
         player,
+        new_global_parameters(),
         {"production_deltas": {"energy_production": 1}, "resource_deltas": {"titanium": 2}},
     )
     assert new_player["energy_production"] == 2
@@ -379,7 +398,7 @@ def test_artificial_photosynthesis_choice_0_gives_plant_production():
             {"production_deltas": {"energy_production": 2}},
         ]
     }
-    new_player = apply_card_effect(player, effects, effect_choice=0)
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, effect_choice=0)
     assert new_player["plant_production"] == 2
     assert new_player["energy_production"] == 1  # sin cambios
 
@@ -392,7 +411,7 @@ def test_artificial_photosynthesis_choice_1_gives_energy_production():
             {"production_deltas": {"energy_production": 2}},
         ]
     }
-    new_player = apply_card_effect(player, effects, effect_choice=1)
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, effect_choice=1)
     assert new_player["plant_production"] == 1  # sin cambios
     assert new_player["energy_production"] == 3
 
@@ -401,37 +420,101 @@ def test_artificial_photosynthesis_requires_valid_effect_choice():
     player = new_player_state()
     effects = {"choice": [{"production_deltas": {"plant_production": 1}}]}
     with pytest.raises(CardEffectError):
-        apply_card_effect(player, effects)
+        apply_card_effect(player, new_global_parameters(), effects)
     with pytest.raises(CardEffectError):
-        apply_card_effect(player, effects, effect_choice=5)
+        apply_card_effect(player, new_global_parameters(), effects, effect_choice=5)
 
 
 def test_mine_gives_plus_1_steel_production():
     player = new_player_state()
-    new_player = apply_card_effect(player, {"production_deltas": {"steel_production": 1}})
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"steel_production": 1}}
+    )
     assert new_player["steel_production"] == 2
 
 
 def test_resource_deltas_negative_below_zero_raises():
     player = new_player_state()  # plants = 0
     with pytest.raises(InsufficientResourcesError):
-        apply_card_effect(player, {"resource_deltas": {"plants": -2}})
+        apply_card_effect(player, new_global_parameters(), {"resource_deltas": {"plants": -2}})
 
 
 def test_resource_deltas_negative_exact_stock_is_allowed():
     player = {**new_player_state(), "plants": 2}
-    new_player = apply_card_effect(player, {"resource_deltas": {"plants": -2}})
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"resource_deltas": {"plants": -2}}
+    )
     assert new_player["plants"] == 0
 
 
 def test_nitrophilic_moss_loses_2_plants_and_gives_2_plant_production():
     player = {**new_player_state(), "plants": 5}
-    new_player = apply_card_effect(
+    new_player, _ = apply_card_effect(
         player,
+        new_global_parameters(),
         {"resource_deltas": {"plants": -2}, "production_deltas": {"plant_production": 2}},
     )
     assert new_player["plants"] == 3
     assert new_player["plant_production"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Efectos globales inmediatos (bloque 2 de revision: Comet, Asteroid, Big
+# Asteroid, Capital) -- ver CARDS_LOG.md sobre la regla de "remove up to N
+# from any player" omitida por ser opcional en un solo jugador.
+# ---------------------------------------------------------------------------
+
+def test_comet_raises_temperature_and_places_ocean():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_, {"raise_temperature_steps": 1, "place_oceans": 1}
+    )
+    assert new_globals["temperature"] == TEMPERATURE_MIN + TEMPERATURE_STEP
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["tr"] == TR_START + 2  # 1 TR por temperatura, 1 TR por oceano
+
+
+def test_asteroid_card_raises_temperature_and_gives_titanium():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_, {"raise_temperature_steps": 1, "resource_deltas": {"titanium": 2}}
+    )
+    assert new_globals["temperature"] == TEMPERATURE_MIN + TEMPERATURE_STEP
+    assert new_player["titanium"] == 2
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_big_asteroid_raises_temperature_2_steps_and_gives_4_titanium():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_, {"raise_temperature_steps": 2, "resource_deltas": {"titanium": 4}}
+    )
+    assert new_globals["temperature"] == TEMPERATURE_MIN + 2 * TEMPERATURE_STEP
+    assert new_player["titanium"] == 4
+    assert new_player["tr"] == TR_START + 2
+
+
+def test_capital_requires_4_oceans_and_changes_production():
+    player = new_player_state()
+    globals_met = {**new_global_parameters(), "oceans_placed": 4}
+    check_card_requirements({"min_oceans": 4}, globals_met)  # no debe lanzar
+
+    globals_not_met = {**new_global_parameters(), "oceans_placed": 3}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 4}, globals_not_met)
+
+    new_player, new_globals = apply_card_effect(
+        player, globals_met,
+        {"production_deltas": {"energy_production": -2, "mc_production": 5}, "place_city_tiles": 1},
+    )
+    # energy_production arranca en 1, -2 lo dejaria en -1, pero el piso de
+    # produccion (0 salvo MC) lo clampea -- comportamiento correcto, no un bug
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 6
+    assert new_globals["city_tiles_placed"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -583,3 +666,65 @@ def test_regolith_eaters_choice_1_insufficient_card_resources_raises():
 
     with pytest.raises(InsufficientResourcesError):
         use_card_action(player, globals_, "regolith_eaters", action_spec, effect_choice=1)
+
+
+# ---------------------------------------------------------------------------
+# Contador global de ciudades y acciones que lo usan (bloque 2 de revision:
+# Martian Rails, Capital, Space Elevator, Equatorial Magnetizer, Water Import
+# from Europa)
+# ---------------------------------------------------------------------------
+
+def test_place_city_tile_increments_counter_without_tr():
+    globals_ = new_global_parameters()
+    new_globals = place_city_tile(globals_)
+    assert new_globals["city_tiles_placed"] == 1
+
+
+def test_martian_rails_action_gives_1_mc_per_city_tile():
+    player = register_active_card({**new_player_state(), "energy": 1}, "martian_rails")
+    globals_ = {**new_global_parameters(), "city_tiles_placed": 4}
+    action_spec = {"cost": {"energy": 1}, "gains": {"mc_per_counter": "city_tiles_placed"}}
+
+    new_player, _ = use_card_action(player, globals_, "martian_rails", action_spec)
+    assert new_player["energy"] == 0
+    assert new_player["mc"] == 4
+
+
+def test_martian_rails_action_gives_0_mc_with_no_cities():
+    player = register_active_card({**new_player_state(), "energy": 1}, "martian_rails")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 1}, "gains": {"mc_per_counter": "city_tiles_placed"}}
+
+    new_player, _ = use_card_action(player, globals_, "martian_rails", action_spec)
+    assert new_player["mc"] == 0
+
+
+def test_equatorial_magnetizer_action_trades_energy_production_for_tr():
+    player = register_active_card({**new_player_state(), "energy_production": 1}, "equatorial_magnetizer")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy_production": 1}, "gains": {"tr_delta": 1}}
+
+    new_player, _ = use_card_action(player, globals_, "equatorial_magnetizer", action_spec)
+    assert new_player["energy_production"] == 0
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_space_elevator_action_trades_steel_for_5_mc():
+    player = register_active_card({**new_player_state(), "steel": 1}, "space_elevator")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"steel": 1}, "gains": {"resource_deltas": {"mc": 5}}}
+
+    new_player, _ = use_card_action(player, globals_, "space_elevator", action_spec)
+    assert new_player["steel"] == 0
+    assert new_player["mc"] == 5
+
+
+def test_water_import_from_europa_action_places_ocean_for_12_mc():
+    player = register_active_card({**new_player_state(), "mc": 12}, "water_import_from_europa")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"mc": 12}, "gains": {"place_oceans": 1}}
+
+    new_player, new_globals = use_card_action(player, globals_, "water_import_from_europa", action_spec)
+    assert new_player["mc"] == 0
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["tr"] == TR_START + 1

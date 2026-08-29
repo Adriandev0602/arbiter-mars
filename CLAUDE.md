@@ -59,7 +59,7 @@ tiene ~200 cartas de proyecto y no se generaron datos al voleo (un número mal r
 precisión" del PRD) — se cargan a mano, carta por carta, verificadas contra el scan oficial de cada una
 (fuente usada: la base de datos de cartas de tm.hadronikle.com).
 
-15 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
+23 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
 efecto modelado en `rules_engine.py` y tests en `test_rules_engine.py` — ver el detalle completo en
 `backend/app/db/CARDS_LOG.md`.
 
@@ -190,7 +190,7 @@ vocabulario real del juego (`prompts.py`), y el schema de Supabase (`schema.sql`
 
 1. Correr `schema.sql` y luego `seed_cards.sql` en un proyecto de Supabase real y completar `.env` con
    las credenciales.
-2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (64 tests hoy).
+2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (74 tests hoy).
 3. Seguir cargando cartas reales en `seed_cards.sql` (a mano, verificadas contra tu copia del juego) e
    implementar/extender su efecto en `rules_engine.apply_card_effect` + un test por carta.
 4. Probar `POST /api/chat` con casos reales ("quiero usar el proyecto estándar Ciudad", "cerrá mi fase

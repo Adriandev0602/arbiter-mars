@@ -70,6 +70,38 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'regolith_eaters', 'Regolith Eaters', 13, '{science,microbe}', null,
         '{"becomes_active": true, "action": {"choice": [{"cost": {}, "gains": {"card_resource_delta": 1}}, {"cost": {"card_resource": 2}, "gains": {"raise_oxygen_steps": 1}}]}}'::jsonb
+    ),
+    (
+        'comet', 'Comet', 21, '{space}', null,
+        '{"raise_temperature_steps": 1, "place_oceans": 1}'::jsonb
+    ),
+    (
+        'asteroid_card', 'Asteroid', 14, '{space}', null,
+        '{"raise_temperature_steps": 1, "resource_deltas": {"titanium": 2}}'::jsonb
+    ),
+    (
+        'big_asteroid', 'Big Asteroid', 27, '{space}', null,
+        '{"raise_temperature_steps": 2, "resource_deltas": {"titanium": 4}}'::jsonb
+    ),
+    (
+        'capital', 'Capital', 26, '{building}', '{"min_oceans": 4}'::jsonb,
+        '{"production_deltas": {"energy_production": -2, "mc_production": 5}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'martian_rails', 'Martian Rails', 13, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"energy": 1}, "gains": {"mc_per_counter": "city_tiles_placed"}}}'::jsonb
+    ),
+    (
+        'space_elevator', 'Space Elevator', 27, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"steel": 1}, "gains": {"resource_deltas": {"mc": 5}}}, "production_deltas": {"titanium_production": 1}}'::jsonb
+    ),
+    (
+        'equatorial_magnetizer', 'Equatorial Magnetizer', 11, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"energy_production": 1}, "gains": {"tr_delta": 1}}}'::jsonb
+    ),
+    (
+        'water_import_from_europa', 'Water Import from Europa', 25, '{jovian}', null,
+        '{"becomes_active": true, "action": {"cost": {"mc": 12}, "gains": {"place_oceans": 1}}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
