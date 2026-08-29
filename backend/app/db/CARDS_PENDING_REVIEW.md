@@ -15,6 +15,13 @@ puntualmente cuando se revise cada una.
 
 Fuente: https://tm.hadronikle.com (base de datos no oficial, 668 escaneos full-res).
 
+**Prueba de capacidad de scraping (2026-08-29):** 3 tandas espaciadas, 402/402 descargas
+exitosas (HTTP 200), 0 fallos, sin señales de bloqueo — incluso ajustando el espaciado de
+2.5s a 1.5s entre pedidos. Con esto quedó descargada (sin revisar) prácticamente toda la
+categoría "Project" del catálogo que faltaba. Conclusión: el sitio tolera bien este volumen
+espaciado; no hace falta seguir con más tandas de prueba, el cuello de botella real de acá
+en adelante es el trabajo de revisión (leer cada scan y decidir su `effects`), no la descarga.
+
 <!-- TABLE_START -->
 | # | Nombre | Expansión | # scan | Estado |
 |---|---|---|---|---|
@@ -319,4 +326,106 @@ Fuente: https://tm.hadronikle.com (base de datos no oficial, 668 escaneos full-r
 | 298 | Ceres Tech Market | Venus Next | P68 | unreviewed |
 | 299 | Cloud Tourism | Venus Next | P69 | unreviewed |
 | 300 | Colonial Envoys | Prelude 2 | P70 | unreviewed |
+| 301 | Colonial Representation | Prelude 2 | P71 | unreviewed |
+| 302 | Envoys from Venus | Venus Next | P72 | unreviewed |
+| 303 | Floating Refinery | Venus Next | P73 | unreviewed |
+| 304 | Frontier Town | Prelude 2 | P74 | unreviewed |
+| 305 | GHG Shipment | Prelude 2 | P75 | unreviewed |
+| 306 | Ishtar Expedition | Venus Next | P76 | unreviewed |
+| 307 | Jovian Envoys | Prelude 2 | P77 | unreviewed |
+| 308 | L1 Trade Terminal | Venus Next | P78 | unreviewed |
+| 309 | Microgravity Nutrition | Prelude 2 | P79 | unreviewed |
+| 310 | Red Appeasement | Prelude 2 | P80 | unreviewed |
+| 311 | Soil Studies | Venus Next | P81 | unreviewed |
+| 312 | Special Permit | Prelude 2 | P82 | unreviewed |
+| 313 | Sponsoring Nation | Prelude 2 | P83 | unreviewed |
+| 314 | Stratospheric Expedition | Venus Next | P84 | unreviewed |
+| 315 | Summit Logistics | Prelude 2 | P85 | unreviewed |
+| 316 | Unexpected Application | Venus Next | P86 | unreviewed |
+| 317 | Venus Allies | Venus Next | P87 | unreviewed |
+| 318 | Venus Orbital Survey | Venus Next | P88 | unreviewed |
+| 319 | Venus Shuttles | Venus Next | P89 | unreviewed |
+| 320 | Venus Trade Hub | Venus Next | P90 | unreviewed |
+| 321 | WG Project | Prelude 2 | P91 | unreviewed |
+| 322 | Aerial Lenses | Turmoil | T01 | unreviewed |
+| 323 | Banned Delegate | Turmoil | T02 | unreviewed |
+| 324 | Cultural Metropolis | Turmoil | T03 | unreviewed |
+| 325 | Diaspora Movement | Turmoil | T04 | unreviewed |
+| 326 | Event Analysts | Turmoil | T05 | unreviewed |
+| 327 | GMO Contract | Turmoil | T06 | unreviewed |
+| 328 | Martian Media Center | Turmoil | T07 | unreviewed |
+| 329 | Parliament Hall | Turmoil | T08 | unreviewed |
+| 330 | PR Office | Turmoil | T09 | unreviewed |
+| 331 | Public Celebrations | Turmoil | T10 | unreviewed |
+| 332 | Recruitment | Turmoil | T11 | unreviewed |
+| 333 | Red Tourism Wave | Turmoil | T12 | unreviewed |
+| 334 | Sponsored Mohole | Turmoil | T13 | unreviewed |
+| 335 | Supported Research | Turmoil | T14 | unreviewed |
+| 336 | Wildlife Dome | Turmoil | T15 | unreviewed |
+| 337 | Vote of No Confidence | Turmoil | T16 | unreviewed |
+| 338 | Dusk Laser Mining | Promo | X01 | unreviewed |
+| 339 | Project Inspection | Promo | X02 | unreviewed |
+| 340 | Energy Market | Promo | X03 | unreviewed |
+| 341 | Hi-Tech Lab | Promo | X04 | unreviewed |
+| 342 | Interplanetary Trade | Promo | X05 | unreviewed |
+| 343 | Law Suit | Promo | X06 | unreviewed |
+| 344 | Mercurian Alloys | Promo | X07 | unreviewed |
+| 345 | Orbital Cleanup | Promo | X08 | unreviewed |
+| 346 | Political Alliance | Promo | X09 | unreviewed |
+| 347 | Rego Plastics | Promo | X10 | unreviewed |
+| 348 | Saturn Surfing | Promo | X11 | unreviewed |
+| 349 | Stanford Torus | Promo | X12 | unreviewed |
+| 350 | Advertising | Promo | X13 | unreviewed |
+| 351 | Asteroid Deflection System | Promo | X14 | unreviewed |
+| 352 | Asteroid Hollowing | Promo | X15 | unreviewed |
+| 353 | Comet Aiming | Promo | X16 | unreviewed |
+| 354 | Crash Site Cleanup | Promo | X17 | unreviewed |
+| 355 | Cutting Edge Technology | Promo | X18 | unreviewed |
+| 356 | Directed Impactors | Promo | X19 | unreviewed |
+| 357 | Diversity Support | Promo | X20 | unreviewed |
+| 358 | Field-Capped City | Promo | X21 | unreviewed |
+| 359 | Imported Nutrients | Promo | X22 | unreviewed |
+| 360 | Jovian Embassy | Promo | X23 | unreviewed |
+| 361 | Magnetic Shield | Promo | X24 | unreviewed |
+| 362 | Meat Industry | Promo | X25 | unreviewed |
+| 363 | Meltworks | Promo | X26 | unreviewed |
+| 364 | Mohole Lake | Promo | X27 | unreviewed |
+| 365 | Potatoes | Promo | X28 | unreviewed |
+| 366 | Sub-Crust Measurements | Promo | X29 | unreviewed |
+| 367 | Topsoil Contract | Promo | X30 | unreviewed |
+| 368 | Asteroid Rights | Promo | X34 | unreviewed |
+| 369 | Bactoviral Research | Promo | X35 | unreviewed |
+| 370 | Bio Printing Facility | Promo | X36 | unreviewed |
+| 371 | Harvest | Promo | X37 | unreviewed |
+| 372 | Outdoor Sports | Promo | X38 | unreviewed |
+| 373 | 16 Psyche | Promo | X44 | unreviewed |
+| 374 | Robot Pollinators | Promo | X45 | unreviewed |
+| 375 | Supercapacitors | Promo | X46 | unreviewed |
+| 376 | Icy Impactors | Promo | X47 | unreviewed |
+| 377 | Directed Heat Usage | Promo | X48 | unreviewed |
+| 378 | Aqueduct Systems | Promo | X50 | unreviewed |
+| 379 | Astra Mechanica | Promo | X51 | unreviewed |
+| 380 | Carbon Nanosystems | Promo | X52 | unreviewed |
+| 381 | Cyberia Systems | Promo | X53 | unreviewed |
+| 382 | Hermetic Order of Mars | Promo | X56 | unreviewed |
+| 383 | Homeostasis Bureau | Promo | X57 | unreviewed |
+| 384 | Kaguya Tech | Promo | X58 | unreviewed |
+| 385 | Mars Nomads | Promo | X59 | unreviewed |
+| 386 | Martian Lumber Corp | Promo | X60 | unreviewed |
+| 387 | Neptunian Power Consultants | Promo | X61 | unreviewed |
+| 388 | Red Ships | Promo | X62 | unreviewed |
+| 389 | Solar Logistics | Promo | X63 | unreviewed |
+| 390 | St. Joseph of Cupertino Mission | Promo | X64 | unreviewed |
+| 391 | Teslaract | Promo | X66 | unreviewed |
+| 392 | Soil Enrichment | Promo | X67 | unreviewed |
+| 393 | Supermarkets | Promo | X68 | unreviewed |
+| 394 | Hospitals | Promo | X69 | unreviewed |
+| 395 | Public Baths | Promo | X70 | unreviewed |
+| 396 | City Parks | Promo | X71 | unreviewed |
+| 397 | Casinos | Promo | X72 | unreviewed |
+| 398 | Protected Growth | Promo | X73 | unreviewed |
+| 399 | Static Harvesting | Promo | X74 | unreviewed |
+| 400 | Vermin | Promo | X75 | unreviewed |
+| 401 | Weather Balloons | Promo | X76 | unreviewed |
+| 402 | Sterling Vents | Promo | X79 | unreviewed |
 <!-- TABLE_END -->
