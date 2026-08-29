@@ -8,6 +8,7 @@ import pytest
 from app.agent.rules_engine import (
     InsufficientResourcesError,
     GlobalParameterMaxedError,
+    CardEffectError,
     new_player_state,
     new_global_parameters,
     raise_temperature,
@@ -24,6 +25,7 @@ from app.agent.rules_engine import (
     run_production_phase,
     adjust_mc_production,
     calculate_card_payment,
+    apply_card_effect,
 )
 
 
@@ -265,3 +267,69 @@ def test_calculate_card_payment_overpaying_gives_no_refund_but_no_error():
     assert change == 3  # el metodo devuelve el excedente informativamente,
     # pero la regla oficial es que no hay reembolso -- es responsabilidad de
     # quien llama a esta funcion no devolver ese cambio al stock del jugador
+
+
+# ---------------------------------------------------------------------------
+# Efectos de cartas cargadas en seed_cards.sql (numeros verificados contra
+# el scan oficial de cada carta)
+# ---------------------------------------------------------------------------
+
+def test_sponsors_gives_plus_2_mc_production():
+    player = new_player_state()
+    new_player = apply_card_effect(player, {"mc_production_delta": 2})
+    assert new_player["mc_production"] == 3  # arranca en 1
+
+
+def test_acquired_company_gives_plus_3_mc_production():
+    player = new_player_state()
+    new_player = apply_card_effect(player, {"mc_production_delta": 3})
+    assert new_player["mc_production"] == 4
+
+
+def test_investment_loan_decreases_mc_production_and_gives_10_mc():
+    player = new_player_state()
+    new_player = apply_card_effect(player, {"mc_production_delta": -1, "mc_delta": 10})
+    assert new_player["mc_production"] == 0
+    assert new_player["mc"] == 10
+
+
+def test_investment_loan_respects_mc_production_floor_of_minus_5():
+    player = {**new_player_state(), "mc_production": -5}
+    new_player = apply_card_effect(player, {"mc_production_delta": -1, "mc_delta": 10})
+    assert new_player["mc_production"] == -5
+
+
+def test_insulation_converts_heat_production_to_mc_production():
+    player = {**new_player_state(), "heat_production": 3}
+    new_player = apply_card_effect(
+        player,
+        {"convert_production": {"from": "heat_production", "to": "mc_production"}},
+        effect_amount=3,
+    )
+    assert new_player["heat_production"] == 0
+    assert new_player["mc_production"] == 4  # 1 base + 3 convertidos
+
+
+def test_insulation_cannot_convert_more_heat_production_than_available():
+    player = {**new_player_state(), "heat_production": 2}
+    with pytest.raises(InsufficientResourcesError):
+        apply_card_effect(
+            player,
+            {"convert_production": {"from": "heat_production", "to": "mc_production"}},
+            effect_amount=3,
+        )
+
+
+def test_insulation_requires_effect_amount():
+    player = new_player_state()
+    with pytest.raises(CardEffectError):
+        apply_card_effect(
+            player,
+            {"convert_production": {"from": "heat_production", "to": "mc_production"}},
+        )
+
+
+def test_apply_card_effect_with_no_effects_is_a_noop():
+    player = new_player_state()
+    new_player = apply_card_effect(player, {})
+    assert new_player == player

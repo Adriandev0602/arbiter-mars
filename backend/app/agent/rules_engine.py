@@ -113,6 +113,10 @@ class GlobalParameterMaxedError(Exception):
     """El parametro global ya esta en su tope; la accion no es legal."""
 
 
+class CardEffectError(Exception):
+    """El efecto de la carta no se pudo aplicar con los parametros dados."""
+
+
 # ---------------------------------------------------------------------------
 # Parametros globales y Terraform Rating
 # ---------------------------------------------------------------------------
@@ -312,3 +316,62 @@ def calculate_card_payment(
         )
 
     return total_value - card_cost
+
+
+# ---------------------------------------------------------------------------
+# Efectos de cartas de proyecto (catalogo cargado a mano, ver
+# backend/app/db/seed_cards.sql -- numeros verificados contra el scan oficial
+# de cada carta, uno por uno)
+# ---------------------------------------------------------------------------
+
+def _apply_production_floor(key: str, value: int) -> int:
+    """Todas las producciones tienen piso 0, salvo la de MC (piso -5)."""
+    return max(MC_PRODUCTION_FLOOR if key == "mc_production" else 0, value)
+
+
+def apply_card_effect(
+    player: PlayerState,
+    effects: dict,
+    effect_amount: int | None = None,
+) -> PlayerState:
+    """
+    Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
+    `effects` de la tabla `cards`. Vocabulario soportado por las cartas
+    cargadas hasta ahora (ver seed_cards.sql):
+
+      - "mc_production_delta": entero fijo que se suma a la produccion de MC
+        (ej. Sponsors: +2, Acquired Company: +3).
+      - "mc_delta": entero fijo que se suma al stock de MC (ej. Investment
+        Loan: +10).
+      - "convert_production": {"from": "<recurso>_production", "to":
+        "<recurso>_production"} convierte `effect_amount` (X, elegido por el
+        jugador) pasos de produccion de un recurso a otro, limitado al stock
+        de produccion disponible (ej. Insulation: -X calor, +X MC).
+
+    effects == {} no hace nada (carta sin efecto modelado todavia).
+    """
+    new_player: dict = dict(player)
+
+    if "mc_production_delta" in effects:
+        new_player["mc_production"] = _apply_production_floor(
+            "mc_production", new_player["mc_production"] + effects["mc_production_delta"]
+        )
+
+    if "mc_delta" in effects:
+        new_player["mc"] = max(0, new_player["mc"] + effects["mc_delta"])
+
+    if "convert_production" in effects:
+        from_key = effects["convert_production"]["from"]
+        to_key = effects["convert_production"]["to"]
+
+        if effect_amount is None or effect_amount < 0:
+            raise CardEffectError("Esta carta requiere effect_amount (X) >= 0")
+        if new_player[from_key] < effect_amount:
+            raise InsufficientResourcesError(
+                f"No hay suficiente {from_key} ({new_player[from_key]}) para convertir {effect_amount} pasos"
+            )
+
+        new_player[from_key] = _apply_production_floor(from_key, new_player[from_key] - effect_amount)
+        new_player[to_key] = _apply_production_floor(to_key, new_player[to_key] + effect_amount)
+
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]

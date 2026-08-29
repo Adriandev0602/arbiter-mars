@@ -161,12 +161,16 @@ def play_card(
     mc_to_pay: int,
     steel_to_pay: int = 0,
     titanium_to_pay: int = 0,
+    effect_amount: int | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
     `cards`, respetando que acero solo cubre cartas con tag 'building' y
-    titanio solo cartas con tag 'space'. No aplica el efecto de la carta
-    (eso depende de cada carta especifica -- ver TODO en rules_engine.py).
+    titanio solo cartas con tag 'space'. Despues del pago, aplica el efecto
+    inmediato de la carta segun su columna `effects` (ver
+    rules_engine.apply_card_effect) -- solo esta implementado para las
+    cartas cargadas en seed_cards.sql; una carta con effects={} se paga
+    pero no cambia nada mas del estado.
 
     Args:
         player_id: id del jugador.
@@ -174,14 +178,17 @@ def play_card(
         mc_to_pay: MC que el jugador declara pagar.
         steel_to_pay: acero que el jugador declara pagar (0 si no aplica).
         titanium_to_pay: titanio que el jugador declara pagar (0 si no aplica).
+        effect_amount: parametro X que algunas cartas piden (ej. Insulation:
+            cuantos pasos de produccion de calor convertir a MC). None si la
+            carta no lo necesita.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
         regla oficial) y el estado actualizado del jugador si la jugada es legal.
 
-    TODO: el catalogo de cartas (`cards`) no viene precargado -- ver nota en
-    rules_engine.py y en CLAUDE.md sobre por que no se generan datos de
-    ~200 cartas automaticamente.
+    TODO: el catalogo de cartas (`cards`) no viene precargado completo -- ver
+    nota en rules_engine.py y en CLAUDE.md sobre por que no se generan datos
+    de ~200 cartas automaticamente.
     """
     card_res = supabase.table("cards").select("*").eq("id", card_id).single().execute()
     card = card_res.data
@@ -201,18 +208,20 @@ def play_card(
         card_tags=tuple(card.get("tags", [])),
     )
 
-    new_player = {
+    paid_player = {
         **player,
         "mc": player["mc"] - mc_to_pay,
         "steel": player["steel"] - steel_to_pay,
         "titanium": player["titanium"] - titanium_to_pay,
     }
+    new_player = engine.apply_card_effect(paid_player, card.get("effects") or {}, effect_amount)
 
     _save_player(player_id, new_player)
     _log_transaction(
         player_id, "play_card",
         {"card_id": card_id, "mc_to_pay": mc_to_pay, "steel_to_pay": steel_to_pay,
-         "titanium_to_pay": titanium_to_pay, "change_not_refunded": change},
+         "titanium_to_pay": titanium_to_pay, "change_not_refunded": change,
+         "effect_amount": effect_amount},
     )
 
     return {"is_legal": True, "change_not_refunded": change, "player": dict(new_player)}
