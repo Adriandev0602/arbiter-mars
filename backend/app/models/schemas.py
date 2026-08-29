@@ -18,7 +18,18 @@ class ChatResponse(BaseModel):
 
 
 class PlayerState(BaseModel):
-    player_id: str
-    resources: dict[str, int]
-    active_cards: list[str]
-    transaction_history: list[dict]
+    """Stock, produccion y TR de un jugador -- misma forma plana que
+    agent.rules_engine.PlayerState / tools.get_player_state()."""
+    tr: int
+    mc: int
+    steel: int
+    titanium: int
+    plants: int
+    energy: int
+    heat: int
+    mc_production: int
+    steel_production: int
+    titanium_production: int
+    plant_production: int
+    energy_production: int
+    heat_production: int

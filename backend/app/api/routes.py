@@ -5,6 +5,7 @@ y db/, esto solo traduce HTTP <-> el grafo.
 from fastapi import APIRouter
 from langchain_core.messages import HumanMessage
 
+from app.agent import tools
 from app.agent.graph import compiled_graph
 from app.models.schemas import ChatRequest, ChatResponse, PlayerState
 
@@ -33,8 +34,5 @@ def chat(request: ChatRequest):
 
 @router.get("/state/{player_id}", response_model=PlayerState)
 def get_state(player_id: str):
-    """
-    Devuelve el estado actual del jugador para pintar el dashboard.
-    TODO: implementar el query real a Supabase (reutilizar get_player_state de tools.py).
-    """
-    raise NotImplementedError("Definir el schema de estado antes de implementar esto")
+    """Devuelve el estado actual del jugador para pintar el dashboard."""
+    return tools.get_player_state.invoke({"player_id": player_id})
