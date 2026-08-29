@@ -64,7 +64,14 @@ STANDARD_PROJECT_CITY_COST = 25          # coloca tile de ciudad, +1 produccion 
 # ---------------------------------------------------------------------------
 
 class PlayerState(TypedDict):
-    """Stock y produccion de recursos de un jugador, mas su Terraform Rating."""
+    """Stock y produccion de recursos de un jugador, mas su Terraform Rating.
+
+    active_cards: cartas jugadas que quedan "en juego" frente al jugador
+    porque tienen una accion repetible y/o guardan recursos propios (ej.
+    Ironworks: accion; Regolith Eaters: accion + microbios en la carta).
+    Forma: {card_id: {"resources": int, "action_used": bool}}. action_used
+    se resetea a False en cada fase de produccion (una accion por carta por
+    generacion, regla oficial)."""
     tr: int
     mc: int
     steel: int
@@ -78,6 +85,7 @@ class PlayerState(TypedDict):
     plant_production: int
     energy_production: int
     heat_production: int
+    active_cards: dict
 
 
 class GlobalParameters(TypedDict):
@@ -94,6 +102,7 @@ def new_player_state() -> PlayerState:
         mc=0, steel=0, titanium=0, plants=0, energy=0, heat=0,
         mc_production=1, steel_production=1, titanium_production=1,
         plant_production=1, energy_production=1, heat_production=1,
+        active_cards={},
     )
 
 
@@ -263,11 +272,17 @@ def run_production_phase(player: PlayerState) -> PlayerState:
          menor a -5, pero el resultado de MC en stock si puede terminar
          en 0 como minimo -- no se puede deber dinero).
       3. El resto de recursos suman su produccion correspondiente.
+      4. Las acciones de cartas activas (ej. Ironworks) vuelven a estar
+         disponibles -- una accion por carta por generacion.
     """
     heat_after_energy_conversion = player["heat"] + player["energy"]
 
     mc_income = player["tr"] + player["mc_production"]
     new_mc = max(0, player["mc"] + mc_income)
+
+    reset_active_cards = {
+        card_id: {**data, "action_used": False} for card_id, data in player["active_cards"].items()
+    }
 
     return {
         **player,
@@ -277,6 +292,7 @@ def run_production_phase(player: PlayerState) -> PlayerState:
         "plants": player["plants"] + player["plant_production"],
         "energy": player["energy_production"],  # arranca de 0 tras la conversion, mas la produccion nueva
         "heat": heat_after_energy_conversion + player["heat_production"],
+        "active_cards": reset_active_cards,
     }
 
 
@@ -442,3 +458,100 @@ def apply_card_effect(
         new_player[to_key] = _apply_production_floor(to_key, new_player[to_key] + effect_amount)
 
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
+# ---------------------------------------------------------------------------
+# Cartas activas: accion repetible (una vez por generacion) y/o recursos
+# propios de la carta (ej. Ironworks: accion; Regolith Eaters: accion +
+# microbios guardados en la carta)
+# ---------------------------------------------------------------------------
+
+def register_active_card(player: PlayerState, card_id: str) -> PlayerState:
+    """
+    Marca una carta recien jugada como "activa" -- queda en juego frente al
+    jugador porque tiene una accion repetible y/o guarda recursos propios.
+    Se llama despues de pagar la carta, solo si `effects.becomes_active` es
+    true en su fila de `cards`. Si la carta ya estaba activa (no deberia
+    pasar, cada carta se juega una vez), reinicia sus contadores.
+    """
+    new_active_cards = dict(player["active_cards"])
+    new_active_cards[card_id] = {"resources": 0, "action_used": False}
+    return {**player, "active_cards": new_active_cards}
+
+
+def use_card_action(
+    player: PlayerState,
+    globals_: GlobalParameters,
+    card_id: str,
+    action_spec: dict,
+    effect_choice: int | None = None,
+) -> tuple[PlayerState, GlobalParameters]:
+    """
+    Ejecuta la accion repetible de una carta activa (columna `effects.action`
+    en `cards`). Vocabulario de `action_spec`:
+
+      - "cost": {"<recurso>": N, ...} -- recursos de stock del jugador que se
+        gastan (ej. Ironworks: {"energy": 4}). La clave especial
+        "card_resource" gasta N recursos guardados en la propia carta (ej.
+        Regolith Eaters: remover 2 microbios).
+      - "gains": {"resource_deltas": {...}, "production_deltas": {...},
+        "raise_oxygen_steps": N, "raise_temperature_steps": N,
+        "card_resource_delta": N} -- N > 0 en card_resource_delta agrega
+        recursos a la propia carta (ej. Regolith Eaters: agregar 1 microbio).
+      - "choice": lista de action_spec alternativos; se elige uno con
+        `effect_choice` (ej. Regolith Eaters: agregar microbio O gastar 2
+        para subir oxigeno).
+
+    Lanza CardEffectError si la carta no esta activa para este jugador o si
+    su accion ya se uso esta generacion. Lanza InsufficientResourcesError si
+    falta stock (del jugador o de la propia carta) para pagar el costo.
+    """
+    if card_id not in player["active_cards"]:
+        raise CardEffectError(f"La carta '{card_id}' no esta activa para este jugador")
+    if player["active_cards"][card_id]["action_used"]:
+        raise CardEffectError(f"La accion de '{card_id}' ya se uso esta generacion")
+
+    if "choice" in action_spec:
+        options = action_spec["choice"]
+        if effect_choice is None or not (0 <= effect_choice < len(options)):
+            raise CardEffectError(
+                f"Esta accion requiere effect_choice entre 0 y {len(options) - 1}"
+            )
+        action_spec = options[effect_choice]
+
+    new_player: dict = dict(player)
+    new_active_cards = dict(player["active_cards"])
+    card_resources = new_active_cards[card_id]["resources"]
+
+    for key, amount in action_spec.get("cost", {}).items():
+        if key == "card_resource":
+            if card_resources < amount:
+                raise InsufficientResourcesError(
+                    f"'{card_id}' tiene {card_resources} recursos guardados, se necesitan {amount}"
+                )
+            card_resources -= amount
+        else:
+            if new_player[key] < amount:
+                raise InsufficientResourcesError(f"Se necesita {amount} de {key}, hay {new_player[key]}")
+            new_player[key] -= amount
+
+    gains = action_spec.get("gains", {})
+    new_globals: dict = dict(globals_)
+
+    for key, delta in gains.get("resource_deltas", {}).items():
+        new_player[key] = max(0, new_player[key] + delta)
+    for key, delta in gains.get("production_deltas", {}).items():
+        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+    if "card_resource_delta" in gains:
+        card_resources = max(0, card_resources + gains["card_resource_delta"])
+    if "raise_oxygen_steps" in gains:
+        p2, g2 = raise_oxygen(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_oxygen_steps"])  # type: ignore[typeddict-item]
+        new_player, new_globals = dict(p2), dict(g2)
+    if "raise_temperature_steps" in gains:
+        p2, g2 = raise_temperature(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_temperature_steps"])  # type: ignore[typeddict-item]
+        new_player, new_globals = dict(p2), dict(g2)
+
+    new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
+    new_player["active_cards"] = new_active_cards
+
+    return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]

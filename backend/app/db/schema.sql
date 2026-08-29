@@ -3,6 +3,14 @@
 -- jugador, parametros globales compartidos, catalogo de cartas y log de
 -- transacciones para auditar cada jugada.
 
+-- create table if not exists no agrega columnas a una tabla que ya existe --
+-- si corriste schema.sql antes de que existiera una columna nueva, este
+-- ALTER la agrega sin tocar los datos existentes.
+do $$ begin
+    alter table if exists players add column if not exists active_cards jsonb not null default '{}'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -26,6 +34,13 @@ create table if not exists players (
     plant_production integer not null default 1,
     energy_production integer not null default 1,
     heat_production integer not null default 1,
+
+    -- Cartas jugadas que quedan "activas" frente al jugador porque tienen
+    -- una accion repetible y/o guardan recursos propios (ej. Ironworks:
+    -- accion; Regolith Eaters: accion + microbios en la carta).
+    -- Forma: {card_id: {"resources": int, "action_used": bool}}. Ver
+    -- rules_engine.use_card_action / register_active_card.
+    active_cards jsonb not null default '{}'::jsonb,
 
     created_at timestamptz not null default now()
 );
@@ -61,7 +76,7 @@ create table if not exists cards (
 create table if not exists transactions (
     id uuid primary key default gen_random_uuid(),
     player_id uuid references players(id) on delete cascade,
-    action_type text not null,   -- 'standard_project' | 'convert_resources' | 'play_card' | 'production_phase'
+    action_type text not null,   -- 'standard_project' | 'convert_resources' | 'play_card' | 'use_card_action' | 'production_phase'
     detail jsonb not null,
     created_at timestamptz not null default now()
 );

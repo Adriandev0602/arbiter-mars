@@ -28,7 +28,12 @@ Herramientas disponibles y cuando usarlas:
   ademas tienen un requisito de tablero (ej. Farming: temperatura +4C o mas, Nitrophilic
   Moss: 3 oceanos colocados) -- si play_card falla porque el requisito no se cumple,
   comunicaselo al usuario tal cual lo dice el error, no lo reformules.
+- use_card_action: cuando el usuario quiere usar la accion repetible de una carta que ya tiene
+  jugada (ej. "usa la accion de Ironworks"). Solo funciona si la carta ya fue jugada con
+  play_card y su accion no se uso todavia esta generacion. Algunas acciones piden un
+  `effect_choice` (ej. Regolith Eaters: agregar 1 microbio O gastar 2 para subir oxigeno).
 - run_production_phase: cuando el usuario pide cerrar la generacion / cobrar produccion.
+  Tambien vuelve a habilitar las acciones de cartas activas para la nueva generacion.
 - get_player_state: cuando el usuario solo quiere ver su estado actual, sin ejecutar una accion.
 
 Reglas estrictas:

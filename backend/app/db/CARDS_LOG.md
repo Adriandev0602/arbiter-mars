@@ -4,9 +4,15 @@ Control de qué cartas del catálogo (~668 en la base de tm.hadronikle.com, ~200
 de proyecto) ya están en `seed_cards.sql` con efecto implementado y testeado, para
 no reverificar ni repetir trabajo en sesiones futuras.
 
-No borrar filas al implementar una carta nueva — solo agregar. Si una carta se
-descarta (efecto fuera de alcance del MVP), déjala en "Descartadas" con el motivo,
-así no se vuelve a evaluar de cero.
+No borrar filas al implementar una carta nueva — solo agregar.
+
+**Regla de oro: no descartar cartas por falta de mecánica.** Si un efecto no encaja en el
+vocabulario actual, la prioridad es extender el motor (nueva pieza en `apply_card_effect`,
+`use_card_action`, o lo que haga falta) y agregar la carta con su test — no dejarla afuera.
+"Descartada" es solo para el puñado de casos genuinamente irreducibles con el diseño actual
+(típicamente: requieren un segundo jugador/tablero — el MVP es de un solo jugador — o
+requieren el mapa hexagonal con adyacencia, que está fuera de alcance por decisión explícita
+de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el motor.
 
 ## Cargadas (en `seed_cards.sql`, con efecto en `apply_card_effect` y test)
 
@@ -24,24 +30,35 @@ así no se vuelve a evaluar de cero.
 | `mine` | Mine | 056 | 4 MC | +1 producción steel |
 | `farming` | Farming | 118 | 16 MC | Requiere +4°C o más. +2 producción MC, +2 producción plantas, +2 plantas (stock) |
 | `nitrophilic_moss` | Nitrophilic Moss | 146 | 8 MC | Requiere 3 océanos colocados. -2 plantas (costo obligatorio), +2 producción plantas |
+| `ironworks` | Ironworks | 101 | 11 MC | Acción repetible: -4 energía, +1 steel, +1 paso oxígeno |
+| `steelworks` | Steelworks | 103 | 15 MC | Acción repetible: -4 energía, +2 steel, +1 paso oxígeno |
+| `regolith_eaters` | Regolith Eaters | 033 | 13 MC | Acción repetible con elección: +1 microbio (en la carta) O -2 microbios/+1 paso oxígeno |
 
-## Descartadas (evaluadas, fuera de alcance del MVP actual)
+## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
+
+Estas NO son descartes definitivos — son casos donde ya se identificó qué falta agregar al
+motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la carta.
+
+| # scan | Nombre | Qué falta |
+|---|---|---|
+| 071 | Advanced Alloys | Efectos pasivos permanentes (modifica el valor de venta de steel/titanio en `calculate_card_payment` mientras la carta este activa). |
+| 109 | Media Group | Tracking de "tipo de carta jugada" (evento) para disparar bonus pasivos al jugar otras cartas. |
+| 190 | Local Heat Trapping | Elección que además targetea otra carta en juego del propio jugador (agregar recursos a una carta distinta a la que se está jugando). |
+| 014 | Development Center | Sistema de mano/robo de cartas (deck, mano del jugador, robar N cartas). |
+| 094 | Mass Converter | Tracking de tags jugados por el jugador (`tags_played` contador) para el requisito "5 tags de ciencia"; la parte de descuento pasivo depende de lo mismo que Advanced Alloys. |
+| 059 | Mangrove | Colocación de tiles en general — decisión explícita de mantener fuera de alcance del MVP (sección 6 de CLAUDE.md: sin mapa hexagonal). |
+| 031 | Optimal Aerobraking | Mismo tracking de "tipo de carta jugada" que Media Group. |
+
+## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
+
+Estas SÍ implican un jugador humano o IA adicional, o el mapa hexagonal con adyacencia —
+ambos excluidos explícitamente del MVP. Se reevalúan si el alcance del proyecto cambia.
 
 | # scan | Nombre | Motivo |
 |---|---|---|
-| 071 | Advanced Alloys | Efecto pasivo que modifica el valor de venta de steel/titanio — no hay mecánica de "efectos pasivos permanentes" en el motor todavía. |
-| 109 | Media Group | Depende de trackear cartas de tipo "evento" jugadas — no modelado. |
-| 190 | Local Heat Trapping | Acción con elección (plantas O animales en otra carta) que además requiere targetear otra carta en juego — no modelado. |
-| 014 | Development Center | Acción de gastar energía para robar carta — no hay sistema de mano/robo de cartas todavía. |
-| 011 | Big Asteroid | "Remove up to 4 plants from any player" requiere targetear a otro jugador — no hay modelo multi-jugador todavía. |
-| 101 | Ironworks | Acción repetible (gastar energía cada turno), no efecto inmediato al jugar — no hay sistema de "acciones de carta activa" todavía. |
-| 103 | Steelworks | Mismo motivo que Ironworks. |
-| 038 | Rover Construction | Efecto pasivo disparado por colocación de tile de ciudad de cualquier jugador — no modelado (sin tracking de tiles). |
-| 031 | Optimal Aerobraking | Efecto pasivo disparado al jugar eventos espaciales — no hay tracking de "tipo de carta jugada" todavía. |
-| 033 | Regolith Eaters | Usa un contador de "microbios" almacenado en la propia carta — no hay sistema de recursos-por-carta todavía. |
-| 059 | Mangrove | Coloca un tile de greenery en un espacio de océano — colocación de tiles fuera de alcance. |
-| 094 | Mass Converter | Requiere contar 5 tags de ciencia jugados (no trackeado) + tiene una acción repetible. |
-| 147 | Herbivores | Usa contador de "animales" en la carta + puede afectar la producción de otro jugador — no modelado. |
+| 011 | Big Asteroid | "Remove up to 4 plants from any player" targetea a otro jugador — el MVP es de un solo jugador. |
+| 038 | Rover Construction | Bonus disparado por colocación de tile de ciudad de **cualquier jugador** — depende de multi-jugador + tiles. |
+| 147 | Herbivores | Puede decrementar la producción de otro jugador — depende de multi-jugador. |
 
 ## Vocabulario de `effects` soportado hoy en `rules_engine.apply_card_effect`
 
@@ -62,6 +79,25 @@ silencioso (ej. Nitrophilic Moss: "pierde 2 plantas" falla si el jugador tiene m
 Para cartas nuevas preferí `production_deltas`/`resource_deltas` sobre las formas antiguas
 (son más generales). Si el efecto no encaja en este vocabulario, hay que extenderlo (con su
 test) antes de agregar la carta a `seed_cards.sql`.
+
+## Cartas activas: acción repetible + recursos propios (`rules_engine.use_card_action`)
+
+Algunas cartas quedan "en juego" después de pagarlas porque tienen una acción que se puede
+usar una vez por generación (ej. Ironworks) y/o guardan sus propios recursos (ej. microbios
+de Regolith Eaters). Se activan con `effects.becomes_active: true` en `cards`, y su acción
+vive en `effects.action`:
+
+- `cost`: `{"<recurso>": N, ...}` gastado del stock del jugador. La clave especial
+  `"card_resource"` gasta N recursos guardados en la propia carta.
+- `gains`: `resource_deltas`, `production_deltas` (igual que en `apply_card_effect`),
+  `raise_oxygen_steps` / `raise_temperature_steps` (suben el parámetro global y dan TR), y
+  `card_resource_delta` (agrega recursos a la propia carta).
+- `choice`: lista de sub-specs alternativos, elegidos con `effect_choice` (igual patrón que
+  en `apply_card_effect`).
+
+El tool `use_card_action(player_id, card_id, effect_choice)` la ejecuta. `action_used` se
+resetea a `False` en cada `run_production_phase` (una acción por carta por generación, regla
+oficial). `player.active_cards` (jsonb en Supabase) guarda `{card_id: {resources, action_used}}`.
 
 ## Requisitos de cartas (columna `requirements`, validados en `check_card_requirements`)
 

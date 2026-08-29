@@ -6,6 +6,7 @@ criterio de exito del PRD ("100% de precision en los calculos").
 import pytest
 
 from app.agent.rules_engine import (
+    TR_START,
     InsufficientResourcesError,
     GlobalParameterMaxedError,
     CardEffectError,
@@ -28,6 +29,8 @@ from app.agent.rules_engine import (
     calculate_card_payment,
     apply_card_effect,
     check_card_requirements,
+    register_active_card,
+    use_card_action,
 )
 
 
@@ -465,3 +468,118 @@ def test_check_card_requirements_min_oxygen():
     globals_ = {**new_global_parameters(), "oxygen": 5}
     with pytest.raises(CardRequirementNotMetError):
         check_card_requirements({"min_oxygen": 8}, globals_)
+
+
+# ---------------------------------------------------------------------------
+# Cartas activas: accion repetible + recursos propios de la carta
+# ---------------------------------------------------------------------------
+
+def test_register_active_card_starts_with_0_resources_and_action_available():
+    player = new_player_state()
+    new_player = register_active_card(player, "ironworks")
+    assert new_player["active_cards"] == {"ironworks": {"resources": 0, "action_used": False}}
+
+
+def test_ironworks_action_spends_4_energy_gives_1_steel_and_raises_oxygen():
+    player = register_active_card({**new_player_state(), "energy": 4}, "ironworks")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 4}, "gains": {"resource_deltas": {"steel": 1}, "raise_oxygen_steps": 1}}
+
+    new_player, new_globals = use_card_action(player, globals_, "ironworks", action_spec)
+
+    assert new_player["energy"] == 0
+    assert new_player["steel"] == 1
+    assert new_globals["oxygen"] == 1
+    assert new_player["tr"] == TR_START + 1  # raise_oxygen otorga 1 TR por paso
+    assert new_player["active_cards"]["ironworks"]["action_used"] is True
+
+
+def test_steelworks_action_gives_2_steel():
+    player = register_active_card({**new_player_state(), "energy": 4}, "steelworks")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 4}, "gains": {"resource_deltas": {"steel": 2}, "raise_oxygen_steps": 1}}
+
+    new_player, _ = use_card_action(player, globals_, "steelworks", action_spec)
+    assert new_player["steel"] == 2
+
+
+def test_card_action_insufficient_stock_raises():
+    player = register_active_card({**new_player_state(), "energy": 2}, "ironworks")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 4}, "gains": {"resource_deltas": {"steel": 1}}}
+
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(player, globals_, "ironworks", action_spec)
+
+
+def test_card_action_cannot_be_used_twice_same_generation():
+    player = register_active_card({**new_player_state(), "energy": 8}, "ironworks")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 4}, "gains": {"resource_deltas": {"steel": 1}}}
+
+    new_player, new_globals = use_card_action(player, globals_, "ironworks", action_spec)
+    with pytest.raises(CardEffectError):
+        use_card_action(new_player, new_globals, "ironworks", action_spec)
+
+
+def test_card_action_available_again_after_production_phase():
+    player = register_active_card({**new_player_state(), "energy": 8}, "ironworks")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 4}, "gains": {"resource_deltas": {"steel": 1}}}
+
+    used_player, _ = use_card_action(player, globals_, "ironworks", action_spec)
+    reset_player = run_production_phase(used_player)
+    assert reset_player["active_cards"]["ironworks"]["action_used"] is False
+
+
+def test_use_card_action_on_inactive_card_raises():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "ironworks", {"cost": {}, "gains": {}})
+
+
+def test_regolith_eaters_choice_0_adds_1_microbe_to_the_card():
+    player = register_active_card(new_player_state(), "regolith_eaters")
+    globals_ = new_global_parameters()
+    action_spec = {
+        "choice": [
+            {"cost": {}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_oxygen_steps": 1}},
+        ]
+    }
+
+    new_player, _ = use_card_action(player, globals_, "regolith_eaters", action_spec, effect_choice=0)
+    assert new_player["active_cards"]["regolith_eaters"]["resources"] == 1
+
+
+def test_regolith_eaters_choice_1_spends_2_microbes_to_raise_oxygen():
+    player = register_active_card(new_player_state(), "regolith_eaters")
+    player["active_cards"]["regolith_eaters"]["resources"] = 2
+    globals_ = new_global_parameters()
+    action_spec = {
+        "choice": [
+            {"cost": {}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_oxygen_steps": 1}},
+        ]
+    }
+
+    new_player, new_globals = use_card_action(
+        player, globals_, "regolith_eaters", action_spec, effect_choice=1
+    )
+    assert new_player["active_cards"]["regolith_eaters"]["resources"] == 0
+    assert new_globals["oxygen"] == 1
+
+
+def test_regolith_eaters_choice_1_insufficient_card_resources_raises():
+    player = register_active_card(new_player_state(), "regolith_eaters")  # 0 microbios
+    globals_ = new_global_parameters()
+    action_spec = {
+        "choice": [
+            {"cost": {}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_oxygen_steps": 1}},
+        ]
+    }
+
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(player, globals_, "regolith_eaters", action_spec, effect_choice=1)

@@ -59,30 +59,31 @@ tiene ~200 cartas de proyecto y no se generaron datos al voleo (un número mal r
 precisión" del PRD) — se cargan a mano, carta por carta, verificadas contra el scan oficial de cada una
 (fuente usada: la base de datos de cartas de tm.hadronikle.com).
 
-12 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
-efecto modelado en `rules_engine.apply_card_effect` y tests en `test_rules_engine.py` — ver el detalle
-completo (más ~13 cartas evaluadas y descartadas, con motivo) en `backend/app/db/CARDS_LOG.md`.
+15 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
+efecto modelado en `rules_engine.py` y tests en `test_rules_engine.py` — ver el detalle completo en
+`backend/app/db/CARDS_LOG.md`.
 
 **Meta:** cargar las ~200 cartas de proyecto del catálogo (de las 668 en la fuente usada), a este ritmo
 de tandas verificadas manualmente contra el scan oficial. Es un trabajo incremental de varias sesiones.
 
-Se eligieron a propósito cartas de efecto inmediato sobre stock/producción, sin colocación de tiles,
-adyacencia, targeting de otros jugadores, acciones repetibles ni contadores propios de la carta (tags
-jugados, microbios, animales) — eso sigue fuera de alcance del MVP (sección 6). El vocabulario de
-`effects` (jsonb) que soporta `apply_card_effect` hoy es: `mc_production_delta`/`mc_delta` (formas
-antiguas), `production_deltas`/`resource_deltas` (formas genéricas, preferidas para cartas nuevas),
-`convert_production` y `choice`. La columna `requirements` (validada en `check_card_requirements` antes
-de cobrar la carta) soporta `min_temperature`, `min_oxygen` y `min_oceans`. Para cargar la próxima carta:
-revisar `CARDS_LOG.md` (para no repetir verificación), leer el efecto en el scan oficial, ver si encaja en
-ese vocabulario (si no, extenderlo) y agregar la fila en `seed_cards.sql` + un test con el número exacto.
+**Regla de oro (explícita del usuario): no descartar cartas por falta de mecánica.** Cuando una carta no
+encaja en el motor actual, la prioridad es extenderlo (nueva pieza en `apply_card_effect`, en
+`use_card_action`, un nuevo tool, lo que haga falta) y cargarla con su test — no dejarla afuera. Ver
+`CARDS_LOG.md` para el detalle de qué se fue agregando por esta razón: cartas con efecto inmediato
+(`apply_card_effect`: `production_deltas`/`resource_deltas`/`convert_production`/`choice`), cartas con
+requisito de tablero (`check_card_requirements`: `min_temperature`/`min_oxygen`/`min_oceans`), y cartas
+con acción repetible y/o recursos propios (`use_card_action`/`register_active_card`, tool `use_card_action`
+además de `play_card`). Genuinamente fuera de alcance por diseño (sección 6, no por mecánica faltante):
+solo lo que requiere un segundo jugador o el mapa hexagonal con adyacencia — ver la sección correspondiente
+en `CARDS_LOG.md` antes de asumir que algo no se puede modelar.
 
 **Nota sobre la fuente de scans:** las descargas de imagen a `tm.hadronikle.com` deben espaciarse (varios
 segundos entre pedidos) para no arriesgar un bloqueo del sitio — no bajar cartas en paralelo ni en ráfaga.
 
 **Antes de cargar cartas nuevas, revisar `backend/app/db/CARDS_LOG.md`** — lleva el registro de qué
-cartas ya están cargadas (para no repetir el trabajo de verificación) y cuáles se evaluaron y se
-descartaron a propósito por depender de mecánicas fuera de alcance (mano/robo de cartas, efectos pasivos
-permanentes, interacción con otras cartas), junto con el motivo de cada descarte.
+cartas ya están cargadas (para no repetir el trabajo de verificación), cuáles están "pendientes" porque
+ya se identificó qué pieza de mecánica les falta (se resuelven agregando esa pieza, no evitándolas), y
+cuáles quedan fuera por diseño explícito del MVP (multi-jugador, mapa hexagonal).
 
 ## 4. Stack tecnológico
 
@@ -189,7 +190,7 @@ vocabulario real del juego (`prompts.py`), y el schema de Supabase (`schema.sql`
 
 1. Correr `schema.sql` y luego `seed_cards.sql` en un proyecto de Supabase real y completar `.env` con
    las credenciales.
-2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (54 tests hoy).
+2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (64 tests hoy).
 3. Seguir cargando cartas reales en `seed_cards.sql` (a mano, verificadas contra tu copia del juego) e
    implementar/extender su efecto en `rules_engine.apply_card_effect` + un test por carta.
 4. Probar `POST /api/chat` con casos reales ("quiero usar el proyecto estándar Ciudad", "cerrá mi fase

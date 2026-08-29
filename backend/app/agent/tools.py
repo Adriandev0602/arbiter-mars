@@ -20,6 +20,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         mc_production=row["mc_production"], steel_production=row["steel_production"],
         titanium_production=row["titanium_production"], plant_production=row["plant_production"],
         energy_production=row["energy_production"], heat_production=row["heat_production"],
+        active_cards=row.get("active_cards") or {},
     )
 
 
@@ -220,9 +221,10 @@ def play_card(
         "steel": player["steel"] - steel_to_pay,
         "titanium": player["titanium"] - titanium_to_pay,
     }
-    new_player = engine.apply_card_effect(
-        paid_player, card.get("effects") or {}, effect_amount, effect_choice
-    )
+    effects = card.get("effects") or {}
+    new_player = engine.apply_card_effect(paid_player, effects, effect_amount, effect_choice)
+    if effects.get("becomes_active"):
+        new_player = engine.register_active_card(new_player, card_id)
 
     _save_player(player_id, new_player)
     _log_transaction(
@@ -236,6 +238,51 @@ def play_card(
 
 
 @tool
+def use_card_action(player_id: str, card_id: str, effect_choice: int | None = None) -> dict:
+    """
+    Ejecuta la accion repetible de una carta que el jugador ya tiene activa
+    (jugada previamente, con `effects.action` en su fila de `cards` -- ej.
+    Ironworks: gastar 4 energia para ganar 1 acero y subir oxigeno 1 paso).
+    Cada carta activa permite usar su accion una sola vez por generacion;
+    run_production_phase la vuelve a habilitar.
+
+    Args:
+        player_id: id del jugador.
+        card_id: id de la carta activa cuya accion se ejecuta.
+        effect_choice: indice (0-based) de la opcion elegida, para acciones
+            con eleccion (ej. Regolith Eaters: agregar 1 microbio O gastar 2
+            para subir oxigeno). None si la accion no lo pide.
+
+    Returns:
+        dict con el estado actualizado del jugador y, si la accion afecto
+        parametros globales (ej. subir oxigeno), tambien esos.
+
+    Lanza CardEffectError si la carta no esta activa o su accion ya se uso
+    esta generacion, InsufficientResourcesError si falta stock para pagarla.
+    """
+    card_res = supabase.table("cards").select("*").eq("id", card_id).single().execute()
+    card = card_res.data
+    if card is None:
+        raise ValueError(f"Carta '{card_id}' no encontrada en el catalogo")
+
+    action_spec = (card.get("effects") or {}).get("action")
+    if action_spec is None:
+        raise ValueError(f"La carta '{card_id}' no tiene una accion definida")
+
+    player = _load_player(player_id)
+    globals_ = _load_global_parameters()
+
+    new_player, new_globals = engine.use_card_action(player, globals_, card_id, action_spec, effect_choice)
+
+    _save_player(player_id, new_player)
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
+    _log_transaction(player_id, "use_card_action", {"card_id": card_id, "effect_choice": effect_choice})
+
+    return {"player": dict(new_player), "global_parameters": dict(new_globals)}
+
+
+@tool
 def get_player_state(player_id: str) -> dict:
     """
     Devuelve el estado actual del jugador: recursos, produccion y TR.
@@ -246,4 +293,7 @@ def get_player_state(player_id: str) -> dict:
 
 
 # Lista de tools que se bindean al LLM en graph.py
-ALL_TOOLS = [use_standard_project, convert_resources, run_production_phase, play_card, get_player_state]
+ALL_TOOLS = [
+    use_standard_project, convert_resources, run_production_phase,
+    play_card, use_card_action, get_player_state,
+]

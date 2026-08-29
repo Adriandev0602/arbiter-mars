@@ -33,3 +33,4 @@ class PlayerState(BaseModel):
     plant_production: int
     energy_production: int
     heat_production: int
+    active_cards: dict

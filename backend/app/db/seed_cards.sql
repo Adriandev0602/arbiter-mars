@@ -58,6 +58,18 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'nitrophilic_moss', 'Nitrophilic Moss', 8, '{plant}', '{"min_oceans": 3}'::jsonb,
         '{"resource_deltas": {"plants": -2}, "production_deltas": {"plant_production": 2}}'::jsonb
+    ),
+    (
+        'ironworks', 'Ironworks', 11, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"energy": 4}, "gains": {"resource_deltas": {"steel": 1}, "raise_oxygen_steps": 1}}}'::jsonb
+    ),
+    (
+        'steelworks', 'Steelworks', 15, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"energy": 4}, "gains": {"resource_deltas": {"steel": 2}, "raise_oxygen_steps": 1}}}'::jsonb
+    ),
+    (
+        'regolith_eaters', 'Regolith Eaters', 13, '{science,microbe}', null,
+        '{"becomes_active": true, "action": {"choice": [{"cost": {}, "gains": {"card_resource_delta": 1}}, {"cost": {"card_resource": 2}, "gains": {"raise_oxygen_steps": 1}}]}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
