@@ -1025,3 +1025,11 @@ def test_black_polar_dust_places_ocean_and_changes_production():
     assert new_player["mc_production"] == -1
     assert new_player["heat_production"] == 4
     assert new_player["tr"] == TR_START + 1
+
+
+def test_release_of_inert_gases_raises_tr_2_steps_directly():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(player, globals_, {"tr_delta": 2})
+    assert new_player["tr"] == TR_START + 2
+    assert new_globals == globals_  # no toca parametros globales

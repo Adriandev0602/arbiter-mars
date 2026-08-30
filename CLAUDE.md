@@ -59,7 +59,7 @@ tiene ~200 cartas de proyecto y no se generaron datos al voleo (un número mal r
 precisión" del PRD) — se cargan a mano, carta por carta, verificadas contra el scan oficial de cada una
 (fuente usada: la base de datos de cartas de tm.hadronikle.com).
 
-37 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
+44 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
 efecto modelado en `rules_engine.py` y tests en `test_rules_engine.py` — ver el detalle completo en
 `backend/app/db/CARDS_LOG.md`.
 
@@ -184,7 +184,7 @@ de Supabase.
 
 ## 9. Estado actual del repo y próximos pasos
 
-**Ya implementado y testeado:** el motor de reglas completo (`rules_engine.py`, 105 tests), incluyendo
+**Ya implementado y testeado:** el motor de reglas completo (`rules_engine.py`, 106 tests), incluyendo
 el sistema de mazo/mano de cartas (`deck`/`hand`/`pending_research`, fase de investigación), efectos
 pasivos permanentes y tags jugados; las tools que lo conectan a Supabase (`tools.py`), el `StateGraph`
 (`graph.py`), el system prompt con el vocabulario real del juego (`prompts.py`), y el schema de
@@ -194,7 +194,7 @@ Supabase (`schema.sql`).
 
 1. Correr `schema.sql` y luego `seed_cards.sql` en un proyecto de Supabase real y completar `.env` con
    las credenciales.
-2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (105 tests hoy).
+2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (106 tests hoy).
 3. Seguir cargando cartas reales en `seed_cards.sql` (a mano, verificadas contra tu copia del juego) e
    implementar/extender su efecto en `rules_engine.apply_card_effect` + un test por carta.
    `play_card` ahora exige que la carta esté en `player.hand` — primero hay que llamar

@@ -158,6 +158,35 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'space_station', 'Space Station', 10, '{power}', null,
         '{"passive": {"tag_filter": "space", "card_cost_discount_mc": 2}}'::jsonb
+    ),
+    (
+        'interstellar_colony_ship', 'Interstellar Colony Ship', 24, '{science,earth}',
+        '{"min_tag_count": {"tag": "science", "count": 5}}'::jsonb,
+        '{}'::jsonb
+    ),
+    (
+        'security_fleet', 'Security Fleet', 12, '{power}', null,
+        '{"becomes_active": true, "action": {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'cupola_city', 'Cupola City', 16, '{building}', '{"max_oxygen": 9}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'lunar_beam', 'Lunar Beam', 13, '{earth,power}', null,
+        '{"production_deltas": {"mc_production": -2, "heat_production": 2, "energy_production": 2}}'::jsonb
+    ),
+    (
+        'underground_city', 'Underground City', 18, '{building}', null,
+        '{"production_deltas": {"energy_production": -2, "steel_production": 2}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'ghg_producing_bacteria', 'GHG Producing Bacteria', 8, '{science}', '{"min_oxygen": 4}'::jsonb,
+        '{"becomes_active": true, "action": {"choice": [{"cost": {}, "gains": {"card_resource_delta": 1}}, {"cost": {"card_resource": 2}, "gains": {"raise_temperature_steps": 1}}]}}'::jsonb
+    ),
+    (
+        'release_of_inert_gases', 'Release of Inert Gases', 14, '{}', null,
+        '{"tr_delta": 2}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -169,4 +198,4 @@ on conflict (id) do update set
 -- Marca como "Event" (dispara bonus pasivos "on_event_played" de otras
 -- cartas al jugarse) las cartas que corresponden en el juego real.
 update cards set is_event = true
-where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid');
+where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases');

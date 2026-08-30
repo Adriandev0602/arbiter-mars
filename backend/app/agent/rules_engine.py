@@ -526,6 +526,8 @@ def apply_card_effect(
       - "place_oceans": N -- coloca N tiles de oceano (+N TR) (ej. Comet: 1).
       - "place_city_tiles": N -- suma N al contador global de ciudades, sin
         TR (ej. Capital: 1).
+      - "tr_delta": N -- sube el TR directo, sin pasar por un parametro
+        global (ej. Release of Inert Gases: +2).
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
@@ -605,6 +607,9 @@ def apply_card_effect(
     if "place_city_tiles" in effects:
         for _ in range(effects["place_city_tiles"]):
             new_globals = dict(place_city_tile(GlobalParameters(**new_globals)))  # type: ignore[typeddict-item]
+
+    if "tr_delta" in effects:
+        new_player["tr"] = new_player["tr"] + effects["tr_delta"]
 
     return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
 

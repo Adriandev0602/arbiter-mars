@@ -55,6 +55,13 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `black_polar_dust` | Black Polar Dust | 022 | 15 MC | Coloca 1 océano, -2 producción MC, +3 producción calor |
 | `arctic_algae` | Arctic Algae | 023 | 12 MC | Requiere temperatura ≤-12°C. +1 planta. Pasivo: +2 plantas cada vez que se coloca un océano (cualquier fuente) |
 | `space_station` | Space Station | 025 | 10 MC | Pasivo: cartas espaciales cuestan 2 MC menos |
+| `interstellar_colony_ship` | Interstellar Colony Ship | 027 | 24 MC | Requiere 5 tags de ciencia jugados. Sin efecto de tablero (solo puntos, no trackeados) |
+| `security_fleet` | Security Fleet | 028 | 12 MC | Acción repetible: -1 titanio → +1 recurso en la carta |
+| `cupola_city` | Cupola City | 029 | 16 MC | Requiere oxígeno ≤9%. -1 producción energía, +3 producción MC, +1 ciudad |
+| `lunar_beam` | Lunar Beam | 030 | 13 MC | -2 producción MC, +2 producción calor, +2 producción energía |
+| `underground_city` | Underground City | 032 | 18 MC | -2 producción energía, +2 producción steel, +1 ciudad |
+| `ghg_producing_bacteria` | GHG Producing Bacteria | 034 | 8 MC | Requiere oxígeno ≥4%. Acción repetible con elección: +1 microbio (en la carta) O -2 microbios/+1 paso temperatura |
+| `release_of_inert_gases` | Release of Inert Gases | 036 | 14 MC | +2 TR directo (evento) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -66,7 +73,14 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 190 | Local Heat Trapping | Elección que además targetea otra carta en juego del propio jugador (agregar recursos a una carta distinta a la que se está jugando, no a la mano/mazo en general — el sistema de mazo ya está, esto es más específico). |
 | 019 | Imported Hydrogen | Misma pieza que Local Heat Trapping: 2 de 3 ramas de su elección agregan microbios/animales a OTRA carta específica. |
 | 024 | Predators | Misma pieza: su acción mueve 1 animal desde OTRA carta hacia esta — necesita elegir la carta origen. |
+| 026 | Eos Chasma National Park | Misma pieza: "add 1 animal to any animal card" — carta destino elegida por el jugador. |
+| 035 | Ants | Misma pieza que Predators: mueve 1 microbio desde OTRA carta. |
 | 059 | Mangrove | Colocación de tiles en general — decisión explícita de mantener fuera de alcance del MVP (sección 6 de CLAUDE.md: sin mapa hexagonal). |
+
+**Nota:** Local Heat Trapping, Imported Hydrogen, Predators, Eos Chasma National Park y Ants
+comparten la misma pieza faltante — "mover/agregar un recurso en una carta específica elegida
+por el jugador, distinta de la que se está jugando/usando". Vale la pena implementarla una
+sola vez y resolver las 5 juntas cuando se aborde.
 
 ## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
 
@@ -100,6 +114,7 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
 - `raise_temperature_steps` / `raise_oxygen_steps`: N pasos, otorgan N de TR (ej. Comet).
 - `place_oceans`: N — coloca N tiles de océano (+N TR) (ej. Comet).
 - `place_city_tiles`: N — suma N al contador global `city_tiles_placed`, sin TR (ej. Capital).
+- `tr_delta`: N — sube el TR directo, sin pasar por parámetro global (ej. Release of Inert Gases: +2).
 - `choice`: lista de sub-effects (cualquiera de los de arriba); el jugador elige uno vía
   `effect_choice` (índice 0-based) (ej. Artificial Photosynthesis).
 
