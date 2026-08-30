@@ -27,6 +27,13 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists deck jsonb not null default '[]'::jsonb;
+    alter table if exists players add column if not exists hand jsonb not null default '[]'::jsonb;
+    alter table if exists players add column if not exists pending_research jsonb not null default '[]'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -67,6 +74,15 @@ create table if not exists players (
     -- rules_engine.register_passive_effect / compute_conversion_rates /
     -- apply_event_played_bonuses.
     passive_effects jsonb not null default '[]'::jsonb,
+
+    -- Sistema de mazo/mano (ver rules_engine.py, seccion correspondiente).
+    -- deck: card_ids restantes por robar (deck[0] = tope). hand: card_ids
+    -- que el jugador posee y no jugo (play_card exige que la carta este
+    -- aca). pending_research: card_ids robados en una fase de investigacion
+    -- todavia sin resolver (start_research_phase / resolve_research_phase).
+    deck jsonb not null default '[]'::jsonb,
+    hand jsonb not null default '[]'::jsonb,
+    pending_research jsonb not null default '[]'::jsonb,
 
     created_at timestamptz not null default now()
 );

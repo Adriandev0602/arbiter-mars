@@ -59,7 +59,7 @@ tiene ~200 cartas de proyecto y no se generaron datos al voleo (un número mal r
 precisión" del PRD) — se cargan a mano, carta por carta, verificadas contra el scan oficial de cada una
 (fuente usada: la base de datos de cartas de tm.hadronikle.com).
 
-27 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
+29 cartas implementadas hoy en `backend/app/db/seed_cards.sql` (correr después de `schema.sql`), con su
 efecto modelado en `rules_engine.py` y tests en `test_rules_engine.py` — ver el detalle completo en
 `backend/app/db/CARDS_LOG.md`.
 
@@ -175,24 +175,31 @@ npm run dev
 
 ## 8. Modelo de datos (Supabase)
 
-Ver `backend/app/db/schema.sql`. Tablas: `players` (recursos + producción + TR por jugador),
-`global_parameters` (temperatura/oxígeno/océanos, compartido por todos — fila única `game_id='default'`
-para el MVP), `cards` (catálogo, **arranca vacío a propósito**, ver sección 3), `transactions`
-(log de cada jugada resuelta, para auditar). Correr el `.sql` completo en el SQL editor de Supabase.
+Ver `backend/app/db/schema.sql`. Tablas: `players` (recursos + producción + TR por jugador, más
+`deck`/`hand`/`pending_research` — sistema de mazo personal, ver sección 3 y `CARDS_LOG.md`),
+`global_parameters` (temperatura/oxígeno/océanos/ciudades colocadas, compartido por todos — fila única
+`game_id='default'` para el MVP), `cards` (catálogo, **arranca vacío a propósito**, ver sección 3),
+`transactions` (log de cada jugada resuelta, para auditar). Correr el `.sql` completo en el SQL editor
+de Supabase.
 
 ## 9. Estado actual del repo y próximos pasos
 
-**Ya implementado y testeado:** el motor de reglas completo (`rules_engine.py`), sus 30 tests, las
-tools que lo conectan a Supabase (`tools.py`), el `StateGraph` (`graph.py`), el system prompt con el
-vocabulario real del juego (`prompts.py`), y el schema de Supabase (`schema.sql`).
+**Ya implementado y testeado:** el motor de reglas completo (`rules_engine.py`, 99 tests), incluyendo
+el sistema de mazo/mano de cartas (`deck`/`hand`/`pending_research`, fase de investigación), efectos
+pasivos permanentes y tags jugados; las tools que lo conectan a Supabase (`tools.py`), el `StateGraph`
+(`graph.py`), el system prompt con el vocabulario real del juego (`prompts.py`), y el schema de
+Supabase (`schema.sql`).
 
 **Orden sugerido para seguir iterando con Claude Code:**
 
 1. Correr `schema.sql` y luego `seed_cards.sql` en un proyecto de Supabase real y completar `.env` con
    las credenciales.
-2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (85 tests hoy).
+2. Correr `pytest tests/ -v` para confirmar que el motor de reglas pasa en tu máquina (99 tests hoy).
 3. Seguir cargando cartas reales en `seed_cards.sql` (a mano, verificadas contra tu copia del juego) e
    implementar/extender su efecto en `rules_engine.apply_card_effect` + un test por carta.
+   `play_card` ahora exige que la carta esté en `player.hand` — primero hay que llamar
+   `deal_starting_hand` (mano inicial gratis) o pasar por `start_research_phase` /
+   `resolve_research_phase` (fase de investigación de cada generación) para conseguirla.
 4. Probar `POST /api/chat` con casos reales ("quiero usar el proyecto estándar Ciudad", "cerrá mi fase
    de producción", "quiero jugar Sponsors") y ajustar `prompts.py` si el LLM extrae mal los argumentos.
 5. Conectar el frontend (`Dashboard.tsx`, `SidebarChat.tsx`) a los endpoints reales, reemplazando los

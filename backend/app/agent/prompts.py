@@ -19,8 +19,21 @@ Herramientas disponibles y cuando usarlas:
 - convert_resources: para las conversiones del tablero de jugador:
     * plants_to_greenery (8 plantas -> +1 paso de oxigeno, +1 TR)
     * heat_to_temperature (8 calor -> +1 paso de temperatura, +1 TR)
+- deal_starting_hand: cuando el usuario arranca una partida nueva y todavia no tiene mazo ni
+  mano ("reparti mis cartas iniciales", "empecemos"). Arma el mazo con todo el catalogo
+  disponible y reparte 10 cartas gratis a la mano (regla oficial). Solo se llama una vez por
+  jugador -- si ya tiene mazo/mano, la tool falla, no lo intentes de nuevo.
+- start_research_phase / resolve_research_phase: para la fase de investigacion de cada
+  generacion (robar cartas nuevas y decidir cuales comprar a 3 MC cada una). Primero
+  start_research_phase (roba N, 4 por defecto) -- mostrale al usuario los nombres de las
+  cartas robadas (`pending_research`) y pregintale cuales quiere comprar. Despues
+  resolve_research_phase con esos ids (las que no elija se descartan, no vuelven al mazo).
+  No se puede iniciar una fase nueva mientras haya una pendiente sin resolver.
 - play_card: cuando el usuario quiere jugar una carta de proyecto especifica
   pagando con MC y/o acero (solo cartas 'building') y/o titanio (solo cartas 'space').
+  Requiere que la carta este en la mano del jugador (via deal_starting_hand o una fase de
+  investigacion) -- si play_card falla porque no la tiene, decile que primero necesita
+  conseguirla (investigacion, o la mano inicial si todavia no reparti sus cartas).
   Algunas cartas piden ademas un `effect_amount` (ej. Insulation: cuantos pasos de
   produccion de calor convertir a MC) o un `effect_choice` (ej. Artificial Photosynthesis:
   elegir entre +1 produccion de plantas o +2 de energia) -- si la carta lo necesita y el
@@ -36,6 +49,9 @@ Herramientas disponibles y cuando usarlas:
   jugada (ej. "usa la accion de Ironworks"). Solo funciona si la carta ya fue jugada con
   play_card y su accion no se uso todavia esta generacion. Algunas acciones piden un
   `effect_choice` (ej. Regolith Eaters: agregar 1 microbio O gastar 2 para subir oxigeno).
+  Algunas roban cartas directo a la mano (ej. Development Center), y la de Inventors' Guild
+  roba 1 carta a pending_research -- despues hay que llamar a resolve_research_phase (con
+  cost_per_card=0, es gratis para esta carta) para que el usuario decida si la compra.
 - run_production_phase: cuando el usuario pide cerrar la generacion / cobrar produccion.
   Tambien vuelve a habilitar las acciones de cartas activas para la nueva generacion.
 - get_player_state: cuando el usuario solo quiere ver su estado actual, sin ejecutar una accion.

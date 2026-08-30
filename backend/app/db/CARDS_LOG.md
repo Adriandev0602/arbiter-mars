@@ -45,6 +45,8 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `media_group` | Media Group | 109 | 6 MC | Pasivo permanente: +3 MC cada vez que se juega un evento |
 | `optimal_aerobraking` | Optimal Aerobraking | 031 | 7 MC | Pasivo permanente: +3 MC y +3 calor cada vez que se juega un evento con tag space |
 | `mass_converter` | Mass Converter | 094 | 8 MC | Requiere 5 tags de ciencia jugados. Pasivo: cartas espaciales cuestan 2 MC menos; acción repetible: -6 energía → +6 producción energía |
+| `inventors_guild` | Inventors' Guild | 006 | 9 MC | Acción repetible: roba 1 carta a investigación pendiente (compra a costo 0 vía `resolve_research_phase`) |
+| `development_center` | Development Center | 014 | 11 MC | Acción repetible: -1 energía → roba 1 carta directo a la mano |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -53,9 +55,7 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| 190 | Local Heat Trapping | Elección que además targetea otra carta en juego del propio jugador (agregar recursos a una carta distinta a la que se está jugando). |
-| 006 | Inventors' Guild | Sistema de mazo/robo de cartas (ver top card del mazo, comprarla o descartarla). |
-| 014 | Development Center | Sistema de mano/robo de cartas (deck, mano del jugador, robar N cartas). |
+| 190 | Local Heat Trapping | Elección que además targetea otra carta en juego del propio jugador (agregar recursos a una carta distinta a la que se está jugando, no a la mano/mazo en general — el sistema de mazo ya está, esto es más específico). |
 | 059 | Mangrove | Colocación de tiles en general — decisión explícita de mantener fuera de alcance del MVP (sección 6 de CLAUDE.md: sin mapa hexagonal). |
 
 ## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
@@ -178,6 +178,28 @@ como `active_cards` -- no hay "usarla", simplemente están activas). Se registra
 juegan una vez, no quedan con producción propia) -- necesario para saber cuándo disparar
 `on_event_played`. Cargado a mano por carta, verificado contra el scan (ninguna carta
 cargada hasta ahora tiene ambigüedad visible en el estilo del banner).
+
+## Sistema de mazo / mano (`PlayerState.deck` / `.hand` / `.pending_research`)
+
+Cada jugador tiene su propio mazo personal (barajado a partir de TODO el catálogo disponible
+en `cards`, sin compartir con otros jugadores — coherente con el MVP single-player) y su
+propia mano. **`play_card` ahora exige que la carta esté en `hand`** — antes se podía jugar
+cualquier `card_id` del catálogo sin poseerlo, eso ya no es legal.
+
+- `deal_starting_hand(player_id, hand_size=10)`: arma el mazo (barajado) y reparte la mano
+  inicial gratis (regla oficial: 10 cartas). Se llama una sola vez por jugador, al arrancar.
+- `start_research_phase(player_id, n=4)` / `resolve_research_phase(player_id,
+  card_ids_to_buy, cost_per_card=3)`: la fase de investigación de cada generación, en dos
+  pasos porque el usuario tiene que ver las cartas robadas antes de decidir. Las no
+  compradas se descartan (no vuelven al mazo). No se puede iniciar una fase nueva mientras
+  haya una pendiente sin resolver.
+- Vocabulario nuevo en `use_card_action.gains`: `draw_cards: N` (roba N directo a la mano,
+  ej. Development Center) y `start_research: {"n": N}` (roba N a `pending_research`, el
+  jugador resuelve después por separado — ej. Inventors' Guild, con `resolve_research_phase`
+  a `cost_per_card=0` porque su acción es gratis).
+
+Esto desbloqueó **Inventors' Guild** y **Development Center**, que antes estaban pendientes
+por "sistema de mazo/mano".
 
 ## Fuente de verificación
 

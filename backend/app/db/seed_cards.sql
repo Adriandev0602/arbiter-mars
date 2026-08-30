@@ -118,6 +118,14 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'mass_converter', 'Mass Converter', 8, '{science}', '{"min_tag_count": {"tag": "science", "count": 5}}'::jsonb,
         '{"passive": {"tag_filter": "space", "card_cost_discount_mc": 2}, "becomes_active": true, "action": {"cost": {"energy": 6}, "gains": {"production_deltas": {"energy_production": 6}}}}'::jsonb
+    ),
+    (
+        'inventors_guild', 'Inventors'' Guild', 9, '{science}', null,
+        '{"becomes_active": true, "action": {"cost": {}, "gains": {"start_research": {"n": 1}}}}'::jsonb
+    ),
+    (
+        'development_center', 'Development Center', 11, '{science,building}', null,
+        '{"becomes_active": true, "action": {"cost": {"energy": 1}, "gains": {"draw_cards": 1}}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

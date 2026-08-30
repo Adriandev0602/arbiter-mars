@@ -23,6 +23,9 @@ def _load_player(player_id: str) -> engine.PlayerState:
         active_cards=row.get("active_cards") or {},
         tags_played=row.get("tags_played") or {},
         passive_effects=row.get("passive_effects") or [],
+        deck=row.get("deck") or [],
+        hand=row.get("hand") or [],
+        pending_research=row.get("pending_research") or [],
     )
 
 
@@ -170,11 +173,16 @@ def play_card(
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
     `cards`, respetando que acero solo cubre cartas con tag 'building' y
-    titanio solo cartas con tag 'space'. Despues del pago, aplica el efecto
-    inmediato de la carta segun su columna `effects` (ver
-    rules_engine.apply_card_effect) -- solo esta implementado para las
-    cartas cargadas en seed_cards.sql; una carta con effects={} se paga
-    pero no cambia nada mas del estado.
+    titanio solo cartas con tag 'space'. Exige que la carta este en la mano
+    del jugador (`player.hand`, ver rules_engine seccion "Sistema de mazo /
+    mano") -- lanza CardNotInHandError si no la tiene; para tenerla, primero
+    hay que robarla via start_research_phase/resolve_research_phase, una
+    accion con `draw_cards`, o deal_starting_hand al arrancar la partida.
+    Despues del pago, aplica el efecto inmediato de la carta segun su
+    columna `effects` (ver rules_engine.apply_card_effect) -- solo esta
+    implementado para las cartas cargadas en seed_cards.sql; una carta con
+    effects={} se paga pero no cambia nada mas del estado. Al final, saca
+    la carta de la mano (ya se jugo).
 
     Args:
         player_id: id del jugador.
@@ -212,6 +220,8 @@ def play_card(
 
     globals_ = _load_global_parameters()
     player = _load_player(player_id)
+    if card_id not in player["hand"]:
+        raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano")
     engine.check_card_requirements(card.get("requirements"), globals_, player)
 
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:
@@ -249,6 +259,7 @@ def play_card(
     new_player = engine.increment_tags_played(new_player, card_tags)
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
+    new_player = engine.remove_card_from_hand(new_player, card_id)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -322,8 +333,114 @@ def get_player_state(player_id: str) -> dict:
     return dict(player)
 
 
+@tool
+def deal_starting_hand(player_id: str, hand_size: int = 10) -> dict:
+    """
+    Arma el mazo personal del jugador con TODO el catalogo disponible en
+    `cards` (barajado), reparte `hand_size` cartas gratis a la mano inicial
+    (regla oficial: 10 cartas al arrancar la partida, el jugador decide
+    despues cuales quedarse via play_card -- las que no juegue quedan en la
+    mano para siempre, no hay descarte de mano en este motor) y deja el
+    resto en el mazo para futuras fases de investigacion. Se llama UNA vez
+    por jugador, al arrancar la partida.
+
+    Solo tiene sentido llamarla si el jugador todavia no tiene mazo (mazo y
+    mano vacios) -- lanza CardEffectError si ya se repartio antes, para no
+    volver a barajar y perder la mano/mazo actuales por accidente.
+
+    Args:
+        player_id: id del jugador.
+        hand_size: cuantas cartas van directo a la mano (10 por regla oficial).
+
+    Returns:
+        dict con el estado actualizado del jugador.
+    """
+    player = _load_player(player_id)
+    if player["deck"] or player["hand"]:
+        raise engine.CardEffectError(
+            "El jugador ya tiene mazo/mano armados -- no se puede repartir de nuevo"
+        )
+
+    all_card_ids = [row["id"] for row in supabase.table("cards").select("id").execute().data]
+    deck = engine.initialize_deck(all_card_ids)
+    new_player = {**player, "deck": deck}
+    new_player = engine.draw_cards_to_hand(new_player, hand_size)
+
+    _save_player(player_id, new_player)
+    _log_transaction(player_id, "deal_starting_hand", {"hand_size": hand_size, "deck_size": len(all_card_ids)})
+
+    return {"player": dict(new_player)}
+
+
+@tool
+def start_research_phase(player_id: str, n: int = 4) -> dict:
+    """
+    Roba `n` cartas del tope del mazo del jugador a una zona "pendiente"
+    (`pending_research`), SIN cobrar nada todavia -- son las cartas que el
+    usuario va a ver y decidir cuales comprar. Regla oficial: 4 cartas al
+    inicio de cada generacion. Algunas cartas activas dan una version con
+    otro N (ej. Inventors' Guild: n=1).
+
+    Hay que llamar a resolve_research_phase despues para cerrar la fase
+    (comprar algunas a 3 MC cada una, descartar el resto) -- no se puede
+    iniciar una fase nueva mientras haya una pendiente sin resolver.
+
+    Args:
+        player_id: id del jugador.
+        n: cuantas cartas robar (4 por regla oficial en investigacion normal).
+
+    Returns:
+        dict con el estado del jugador y la lista `pending_research` (los
+        ids de las cartas robadas) para que el LLM se las muestre al usuario
+        y le pregunte cuales quiere comprar.
+    """
+    player = _load_player(player_id)
+    new_player = engine.start_research_phase(player, n)
+
+    _save_player(player_id, new_player)
+    _log_transaction(player_id, "start_research_phase", {"n": n, "drawn": new_player["pending_research"]})
+
+    return {"player": dict(new_player), "pending_research": new_player["pending_research"]}
+
+
+@tool
+def resolve_research_phase(player_id: str, card_ids_to_buy: list[str], cost_per_card: int = 3) -> dict:
+    """
+    Cierra una fase de investigacion iniciada con start_research_phase.
+    Compra las cartas en `card_ids_to_buy` (deben estar en
+    `pending_research`) a `cost_per_card` MC cada una -- pasan a la mano del
+    jugador. Las que no se compran se descartan (no vuelven al mazo). Elegir
+    comprar 0 cartas es valido (lista vacia).
+
+    Args:
+        player_id: id del jugador.
+        card_ids_to_buy: ids (subconjunto de pending_research) que el
+            usuario decidio comprar.
+        cost_per_card: MC por carta (3 en la investigacion normal; 0 para
+            acciones gratuitas como Inventors' Guild -- pasar el valor que
+            corresponda segun que disparo la fase).
+
+    Returns:
+        dict con el estado actualizado del jugador.
+
+    Lanza ValueError si algun id no estaba en pending_research,
+    InsufficientResourcesError si no alcanza el MC.
+    """
+    player = _load_player(player_id)
+    new_player = engine.resolve_research_phase(player, card_ids_to_buy, cost_per_card)
+
+    _save_player(player_id, new_player)
+    _log_transaction(
+        player_id, "resolve_research_phase",
+        {"card_ids_to_buy": card_ids_to_buy, "cost_per_card": cost_per_card},
+    )
+
+    return {"player": dict(new_player)}
+
+
 # Lista de tools que se bindean al LLM en graph.py
 ALL_TOOLS = [
     use_standard_project, convert_resources, run_production_phase,
     play_card, use_card_action, get_player_state,
+    deal_starting_hand, start_research_phase, resolve_research_phase,
 ]

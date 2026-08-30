@@ -20,6 +20,7 @@ estan precargadas aqui a proposito -- cada una tendria que verificarse
 contra la fuente antes de confiar en ella para no romper el objetivo de
 "100% de precision" del PRD. Ver seccion "Catalogo de cartas" en CLAUDE.md.
 """
+import random
 from typing import TypedDict
 
 
@@ -50,6 +51,11 @@ HEAT_PER_TEMPERATURE_STEP = 8  # 8 calor -> subir temperatura 1 paso
 
 # Produccion de MC es la unica que puede ser negativa, con piso en -5
 MC_PRODUCTION_FLOOR = -5
+
+# Fase de investigacion: costo estandar por carta comprada del mazo (regla
+# oficial). Algunas cartas activas (ej. Inventors' Guild) dan una version
+# gratuita de este mismo mecanismo -- ver start_research_phase.
+RESEARCH_PHASE_COST_MC = 3
 
 # Costos de los 6 proyectos estandar (siempre disponibles, en MC)
 STANDARD_PROJECT_POWER_PLANT_COST = 11   # +1 produccion de energia
@@ -100,6 +106,18 @@ class PlayerState(TypedDict):
     # en este modulo.
     passive_effects: list
 
+    # Sistema de mazo/mano (ver seccion correspondiente mas abajo):
+    #   deck: card_ids restantes por robar, orden = orden de robo (el tope
+    #     del mazo es deck[0]).
+    #   hand: card_ids que el jugador posee y todavia no jugo. play_card
+    #     ahora exige que la carta este aca antes de pagarla.
+    #   pending_research: card_ids "sobre la mesa", robados pero sin decidir
+    #     todavia si se compran (fase de investigacion en dos pasos: ver
+    #     start_research_phase / resolve_research_phase).
+    deck: list
+    hand: list
+    pending_research: list
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -122,6 +140,7 @@ def new_player_state() -> PlayerState:
         mc_production=1, steel_production=1, titanium_production=1,
         plant_production=1, energy_production=1, heat_production=1,
         active_cards={}, tags_played={}, passive_effects=[],
+        deck=[], hand=[], pending_research=[],
     )
 
 
@@ -149,6 +168,10 @@ class CardEffectError(Exception):
 
 class CardRequirementNotMetError(Exception):
     """El estado actual del tablero no cumple el requisito de la carta."""
+
+
+class CardNotInHandError(Exception):
+    """El jugador intenta jugar una carta que no tiene en la mano."""
 
 
 # ---------------------------------------------------------------------------
@@ -603,7 +626,11 @@ def use_card_action(
         da tanto MC como valga ese contador global (ej. Martian Rails: MC
         por cada ciudad en Marte via "city_tiles_placed"); place_oceans: N
         coloca N tiles de oceano (+N TR cada uno) (ej. Water Import from
-        Europa).
+        Europa); draw_cards: N roba N cartas del mazo directo a la mano,
+        sin fase de investigacion (ej. Development Center); start_research:
+        {"n": N} roba N cartas a pending_research -- el jugador todavia
+        tiene que resolver la compra por separado con resolve_research_phase
+        (tipicamente a costo 0, ej. Inventors' Guild: n=1).
       - "choice": lista de action_spec alternativos; se elige uno con
         `effect_choice` (ej. Regolith Eaters: agregar microbio O gastar 2
         para subir oxigeno).
@@ -664,6 +691,10 @@ def use_card_action(
         for _ in range(gains["place_oceans"]):
             p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
             new_player, new_globals = dict(p2), dict(g2)
+    if "draw_cards" in gains:
+        new_player = dict(draw_cards_to_hand(PlayerState(**new_player), gains["draw_cards"]))  # type: ignore[typeddict-item]
+    if "start_research" in gains:
+        new_player = dict(start_research_phase(PlayerState(**new_player), gains["start_research"]["n"]))  # type: ignore[typeddict-item]
 
     new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
     new_player["active_cards"] = new_active_cards
@@ -763,3 +794,115 @@ def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str,
         new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
         new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0)
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
+# ---------------------------------------------------------------------------
+# Sistema de mazo / mano
+#
+# Cada jugador tiene su propio mazo (barajado a partir del catalogo
+# disponible en `cards`) y su propia mano (cartas que posee y no jugo
+# todavia). No hay mazo/descarte compartido entre jugadores -- coherente con
+# que el MVP es de un solo jugador (ver CLAUDE.md seccion 6). play_card
+# ahora exige que la carta este en la mano antes de pagarla.
+#
+# La fase de investigacion (robar N, elegir cuales comprar a
+# RESEARCH_PHASE_COST_MC cada una) se modela en dos pasos porque requiere
+# que el usuario vea las cartas robadas antes de decidir:
+#   1. start_research_phase: roba N cartas del mazo a `pending_research`.
+#   2. resolve_research_phase: de esas, compra las elegidas (se van a
+#      `hand`, se cobran); las no elegidas se descartan (no vuelven al mazo).
+# Cartas como Inventors' Guild usan el mismo mecanismo con N=1 y costo 0
+# (su accion es "gratis": ver seed_cards.sql).
+# ---------------------------------------------------------------------------
+
+def initialize_deck(card_ids: list[str], rng: random.Random | None = None) -> list[str]:
+    """
+    Baraja `card_ids` (tipicamente todo `cards.id` del catalogo disponible)
+    y devuelve el mazo inicial de un jugador. `rng` es inyectable para tests
+    deterministicos; por defecto usa aleatoriedad real.
+    """
+    shuffled = list(card_ids)
+    (rng or random).shuffle(shuffled)
+    return shuffled
+
+
+def start_research_phase(player: PlayerState, n: int) -> PlayerState:
+    """
+    Roba `n` cartas del tope del mazo (deck[0], deck[1], ...) a
+    `pending_research`, sin cobrar nada todavia -- el jugador (via el
+    usuario, a traves del LLM) decide despues cuales comprar con
+    resolve_research_phase. Si el mazo tiene menos de `n` cartas, roba las
+    que queden (no es un error: el mazo se puede agotar).
+
+    Lanza CardEffectError si ya hay una investigacion pendiente sin resolver
+    (no se puede empezar una nueva fase mientras la anterior no se cierra).
+    """
+    if player["pending_research"]:
+        raise CardEffectError(
+            "Ya hay una fase de investigacion pendiente -- resolvela antes de iniciar otra"
+        )
+    drawn = player["deck"][:n]
+    remaining_deck = player["deck"][n:]
+    return {**player, "deck": remaining_deck, "pending_research": drawn}
+
+
+def resolve_research_phase(
+    player: PlayerState,
+    card_ids_to_buy: list[str],
+    cost_per_card: int = RESEARCH_PHASE_COST_MC,
+) -> PlayerState:
+    """
+    Cierra una fase de investigacion iniciada con start_research_phase.
+    `card_ids_to_buy` deben ser un subconjunto de `pending_research` -- esas
+    se pagan a `cost_per_card` MC cada una (0 para acciones gratuitas como
+    Inventors' Guild) y pasan a `hand`; el resto de `pending_research` se
+    descarta (no vuelve al mazo). Siempre limpia `pending_research`, incluso
+    si `card_ids_to_buy` esta vacio (comprar 0 cartas es una eleccion valida).
+
+    Lanza ValueError si algun id en `card_ids_to_buy` no estaba en
+    `pending_research`. Lanza InsufficientResourcesError si no alcanza el MC.
+    """
+    pending = set(player["pending_research"])
+    for card_id in card_ids_to_buy:
+        if card_id not in pending:
+            raise ValueError(
+                f"'{card_id}' no estaba en la investigacion pendiente ({sorted(pending)})"
+            )
+
+    total_cost = len(card_ids_to_buy) * cost_per_card
+    if player["mc"] < total_cost:
+        raise InsufficientResourcesError(
+            f"Comprar {len(card_ids_to_buy)} cartas cuesta {total_cost} MC, hay {player['mc']}"
+        )
+
+    return {
+        **player,
+        "mc": player["mc"] - total_cost,
+        "hand": [*player["hand"], *card_ids_to_buy],
+        "pending_research": [],
+    }
+
+
+def draw_cards_to_hand(player: PlayerState, n: int) -> PlayerState:
+    """
+    Roba `n` cartas del mazo DIRECTO a la mano, sin costo de investigacion
+    (ej. Development Center: pagar 1 energia y robar 1 carta gratis -- el
+    costo de energia ya se cobro en use_card_action, esto solo mueve las
+    cartas). Si el mazo tiene menos de `n`, roba las que queden.
+    """
+    drawn = player["deck"][:n]
+    remaining_deck = player["deck"][n:]
+    return {**player, "deck": remaining_deck, "hand": [*player["hand"], *drawn]}
+
+
+def remove_card_from_hand(player: PlayerState, card_id: str) -> PlayerState:
+    """
+    Saca `card_id` de la mano del jugador (se llama al jugarla exitosamente
+    via tools.play_card). Lanza CardNotInHandError si el jugador no la tiene
+    -- no se puede jugar una carta que no se posee.
+    """
+    if card_id not in player["hand"]:
+        raise CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano")
+    new_hand = list(player["hand"])
+    new_hand.remove(card_id)
+    return {**player, "hand": new_hand}

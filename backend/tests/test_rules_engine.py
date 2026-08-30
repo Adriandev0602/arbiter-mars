@@ -41,6 +41,13 @@ from app.agent.rules_engine import (
     apply_event_played_bonuses,
     STEEL_VALUE_MC,
     TITANIUM_VALUE_MC,
+    RESEARCH_PHASE_COST_MC,
+    CardNotInHandError,
+    initialize_deck,
+    start_research_phase,
+    resolve_research_phase,
+    draw_cards_to_hand,
+    remove_card_from_hand,
 )
 
 
@@ -846,3 +853,119 @@ def test_mass_converter_discount_does_not_apply_to_non_space_cards():
 def test_compute_card_cost_discount_with_no_passive_effects_is_0():
     player = new_player_state()
     assert compute_card_cost_discount(player, card_tags=("space",)) == 0
+
+
+# ---------------------------------------------------------------------------
+# Sistema de mazo / mano
+# ---------------------------------------------------------------------------
+
+def test_initialize_deck_shuffles_but_keeps_same_cards():
+    import random
+    ids = [f"card_{i}" for i in range(20)]
+    deck = initialize_deck(ids, rng=random.Random(42))
+    assert sorted(deck) == sorted(ids)
+    assert deck != ids  # con 20 elementos, la chance de que no se mueva nada es nula
+
+
+def test_start_research_phase_draws_n_cards_from_deck_top():
+    player = {**new_player_state(), "deck": ["a", "b", "c", "d", "e"]}
+    new_player = start_research_phase(player, 3)
+    assert new_player["pending_research"] == ["a", "b", "c"]
+    assert new_player["deck"] == ["d", "e"]
+
+
+def test_start_research_phase_draws_fewer_if_deck_is_short():
+    player = {**new_player_state(), "deck": ["a", "b"]}
+    new_player = start_research_phase(player, 4)
+    assert new_player["pending_research"] == ["a", "b"]
+    assert new_player["deck"] == []
+
+
+def test_start_research_phase_fails_if_already_pending():
+    player = {**new_player_state(), "deck": ["a", "b"], "pending_research": ["x"]}
+    with pytest.raises(CardEffectError):
+        start_research_phase(player, 2)
+
+
+def test_resolve_research_phase_buys_selected_cards_at_standard_cost():
+    player = {**new_player_state(), "mc": 20, "pending_research": ["a", "b", "c", "d"]}
+    new_player = resolve_research_phase(player, ["a", "c"])
+    assert new_player["mc"] == 20 - 2 * RESEARCH_PHASE_COST_MC
+    assert sorted(new_player["hand"]) == ["a", "c"]
+    assert new_player["pending_research"] == []  # b y d se descartaron
+
+
+def test_resolve_research_phase_buying_zero_cards_is_valid():
+    player = {**new_player_state(), "mc": 20, "pending_research": ["a", "b"]}
+    new_player = resolve_research_phase(player, [])
+    assert new_player["mc"] == 20
+    assert new_player["hand"] == []
+    assert new_player["pending_research"] == []
+
+
+def test_resolve_research_phase_free_cost_for_inventors_guild_style():
+    player = {**new_player_state(), "mc": 0, "pending_research": ["x"]}
+    new_player = resolve_research_phase(player, ["x"], cost_per_card=0)
+    assert new_player["mc"] == 0
+    assert new_player["hand"] == ["x"]
+
+
+def test_resolve_research_phase_rejects_id_not_in_pending():
+    player = {**new_player_state(), "mc": 20, "pending_research": ["a", "b"]}
+    with pytest.raises(ValueError):
+        resolve_research_phase(player, ["z"])
+
+
+def test_resolve_research_phase_insufficient_mc_raises():
+    player = {**new_player_state(), "mc": 2, "pending_research": ["a", "b"]}
+    with pytest.raises(InsufficientResourcesError):
+        resolve_research_phase(player, ["a", "b"])  # 2 * 3 = 6 MC, solo hay 2
+
+
+def test_draw_cards_to_hand_moves_from_deck_to_hand():
+    player = {**new_player_state(), "deck": ["a", "b", "c"]}
+    new_player = draw_cards_to_hand(player, 2)
+    assert new_player["hand"] == ["a", "b"]
+    assert new_player["deck"] == ["c"]
+
+
+def test_remove_card_from_hand_removes_it():
+    player = {**new_player_state(), "hand": ["a", "b"]}
+    new_player = remove_card_from_hand(player, "a")
+    assert new_player["hand"] == ["b"]
+
+
+def test_remove_card_from_hand_raises_if_not_present():
+    player = new_player_state()
+    with pytest.raises(CardNotInHandError):
+        remove_card_from_hand(player, "a")
+
+
+def test_development_center_action_spends_energy_and_draws_1_card():
+    player = register_active_card(
+        {**new_player_state(), "energy": 1, "deck": ["a", "b"]}, "development_center"
+    )
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 1}, "gains": {"draw_cards": 1}}
+
+    new_player, _ = use_card_action(player, globals_, "development_center", action_spec)
+    assert new_player["energy"] == 0
+    assert new_player["hand"] == ["a"]
+    assert new_player["deck"] == ["b"]
+
+
+def test_inventors_guild_action_draws_1_card_to_pending_research():
+    player = register_active_card(
+        {**new_player_state(), "deck": ["a", "b"]}, "inventors_guild"
+    )
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {}, "gains": {"start_research": {"n": 1}}}
+
+    new_player, _ = use_card_action(player, globals_, "inventors_guild", action_spec)
+    assert new_player["pending_research"] == ["a"]
+    assert new_player["deck"] == ["b"]
+
+    # el usuario decide despues, sin costo (regla de Inventors' Guild)
+    resolved = resolve_research_phase(new_player, ["a"], cost_per_card=0)
+    assert resolved["hand"] == ["a"]
+    assert resolved["mc"] == 0
