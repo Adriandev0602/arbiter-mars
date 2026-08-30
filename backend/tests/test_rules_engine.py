@@ -969,3 +969,59 @@ def test_inventors_guild_action_draws_1_card_to_pending_research():
     resolved = resolve_research_phase(new_player, ["a"], cost_per_card=0)
     assert resolved["hand"] == ["a"]
     assert resolved["mc"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Bloque 2 de revision: requisitos max_temperature/max_oxygen, y pasivo
+# on_ocean_placed enganchado directo en place_ocean
+# ---------------------------------------------------------------------------
+
+def test_domed_crater_requires_oxygen_7_or_less():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_oxygen": 7}, {**new_global_parameters(), "oxygen": 8})
+    check_card_requirements({"max_oxygen": 7}, {**new_global_parameters(), "oxygen": 7})  # no debe lanzar
+
+
+def test_arctic_algae_requires_temperature_minus_12_or_colder():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_temperature": -12}, {**new_global_parameters(), "temperature": -10})
+    check_card_requirements(
+        {"max_temperature": -12}, {**new_global_parameters(), "temperature": -12}
+    )  # no debe lanzar
+
+
+def test_place_ocean_triggers_on_ocean_placed_passive():
+    player = register_passive_effect(new_player_state(), "arctic_algae", {"on_ocean_placed": {"plants_delta": 2}})
+    globals_ = new_global_parameters()
+
+    new_player, new_globals = place_ocean(player, globals_)
+    assert new_player["plants"] == 2
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_place_ocean_without_passive_effects_does_not_change_plants():
+    new_player, _ = place_ocean(new_player_state(), new_global_parameters())
+    assert new_player["plants"] == 0
+
+
+def test_multiple_ocean_placements_trigger_passive_each_time():
+    player = register_passive_effect(new_player_state(), "arctic_algae", {"on_ocean_placed": {"plants_delta": 2}})
+    globals_ = new_global_parameters()
+
+    player, globals_ = place_ocean(player, globals_)
+    player, globals_ = place_ocean(player, globals_)
+    assert player["plants"] == 4
+    assert globals_["oceans_placed"] == 2
+
+
+def test_black_polar_dust_places_ocean_and_changes_production():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_, {"place_oceans": 1, "production_deltas": {"mc_production": -2, "heat_production": 3}}
+    )
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["mc_production"] == -1
+    assert new_player["heat_production"] == 4
+    assert new_player["tr"] == TR_START + 1

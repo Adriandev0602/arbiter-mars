@@ -126,6 +126,38 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'development_center', 'Development Center', 11, '{science,building}', null,
         '{"becomes_active": true, "action": {"cost": {"energy": 1}, "gains": {"draw_cards": 1}}}'::jsonb
+    ),
+    (
+        'domed_crater', 'Domed Crater', 24, '{building}', '{"max_oxygen": 7}'::jsonb,
+        '{"resource_deltas": {"plants": 3}, "production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'noctis_city', 'Noctis City', 18, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'methane_from_titan', 'Methane from Titan', 28, '{jovian,power}', '{"min_oxygen": 2}'::jsonb,
+        '{"production_deltas": {"heat_production": 2, "plant_production": 2}}'::jsonb
+    ),
+    (
+        'research_outpost', 'Research Outpost', 18, '{science,building}', null,
+        '{"passive": {"card_cost_discount_mc": 1}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'phobos_space_haven', 'Phobos Space Haven', 25, '{space}', null,
+        '{"production_deltas": {"titanium_production": 1}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'black_polar_dust', 'Black Polar Dust', 15, '{}', null,
+        '{"place_oceans": 1, "production_deltas": {"mc_production": -2, "heat_production": 3}}'::jsonb
+    ),
+    (
+        'arctic_algae', 'Arctic Algae', 12, '{plant}', '{"max_temperature": -12}'::jsonb,
+        '{"resource_deltas": {"plants": 1}, "passive": {"on_ocean_placed": {"plants_delta": 2}}}'::jsonb
+    ),
+    (
+        'space_station', 'Space Station', 10, '{power}', null,
+        '{"passive": {"tag_filter": "space", "card_cost_discount_mc": 2}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

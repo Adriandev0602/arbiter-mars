@@ -204,13 +204,28 @@ def raise_oxygen(player: PlayerState, globals_: GlobalParameters, steps: int = 1
 
 
 def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[PlayerState, GlobalParameters]:
-    """Coloca 1 tile de oceano (de los 9 disponibles en total). +1 TR."""
+    """
+    Coloca 1 tile de oceano (de los 9 disponibles en total). +1 TR.
+
+    Tambien dispara los bonus pasivos "on_ocean_placed" que el jugador ya
+    tenga activos (ej. Arctic Algae: +2 plantas cada vez que se coloca un
+    oceano). En el juego real esto se dispara sin importar QUIEN coloque el
+    oceano; como el MVP es de un solo jugador, "cualquiera" siempre es este
+    mismo jugador -- por eso el hook vive aca (un solo lugar, todos los
+    caminos que colocan oceano se benefician: proyecto estandar Aquifer,
+    apply_card_effect, use_card_action) en vez de duplicarse por caller.
+    """
     if globals_["oceans_placed"] >= OCEANS_MAX:
         raise GlobalParameterMaxedError("Ya se colocaron los 9 tiles de oceano")
 
     new_globals = {**globals_, "oceans_placed": globals_["oceans_placed"] + 1}
-    new_player = {**player, "tr": player["tr"] + 1}
-    return new_player, new_globals
+    new_player: dict = {**player, "tr": player["tr"] + 1}
+    for effect in player["passive_effects"]:
+        bonus = effect.get("on_ocean_placed")
+        if bonus is None:
+            continue
+        new_player["plants"] = new_player["plants"] + bonus.get("plants_delta", 0)
+    return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
 
 
 def place_city_tile(globals_: GlobalParameters) -> GlobalParameters:
@@ -423,7 +438,10 @@ def check_card_requirements(
     (columna `requirements` en la tabla `cards`). Vocabulario soportado:
 
       - "min_temperature": temperatura minima en grados C (ej. Farming: 4).
+      - "max_temperature": temperatura maxima en grados C (ej. Arctic Algae:
+        -12, solo se puede jugar mientras haga MAS frio que eso).
       - "min_oxygen": oxigeno minimo en % (ej. cartas que piden 8% o mas).
+      - "max_oxygen": oxigeno maximo en % (ej. Domed Crater: 7).
       - "min_oceans": cantidad minima de tiles de oceano colocados.
       - "min_tag_count": {"tag": "<tag>", "count": N} -- requiere que el
         jugador haya jugado al menos N cartas con ese tag (ej. Mass
@@ -460,6 +478,15 @@ def check_card_requirements(
         raise CardRequirementNotMetError(
             f"Requiere {requirements['min_oceans']} oceanos colocados, "
             f"hay {globals_['oceans_placed']}"
+        )
+    if "max_temperature" in requirements and globals_["temperature"] > requirements["max_temperature"]:
+        raise CardRequirementNotMetError(
+            f"Requiere temperatura <= {requirements['max_temperature']}C, "
+            f"hay {globals_['temperature']}C"
+        )
+    if "max_oxygen" in requirements and globals_["oxygen"] > requirements["max_oxygen"]:
+        raise CardRequirementNotMetError(
+            f"Requiere oxigeno <= {requirements['max_oxygen']}%, hay {globals_['oxygen']}%"
         )
 
 
@@ -733,6 +760,11 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         al jugador cada vez que juega una carta con `cards.is_event = true`
         (ej. Media Group: +3 MC; Optimal Aerobraking: +3 MC y +3 calor, solo
         para eventos con tag space -- ver "tag_filter" opcional).
+      - "on_ocean_placed": {"plants_delta": N} -- se suma cada vez que se
+        coloca un oceano, sin importar la fuente (proyecto estandar Aquifer,
+        una carta, una accion) (ej. Arctic Algae: +2 plantas). Aplicado
+        directo dentro de place_ocean, no hace falta llamarlo aparte.
+      - "card_cost_discount_mc": N -- ver compute_card_cost_discount.
 
     No revisa duplicados: cada carta se juega una sola vez en este motor.
     """

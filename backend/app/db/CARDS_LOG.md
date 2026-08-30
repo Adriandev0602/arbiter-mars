@@ -47,6 +47,14 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `mass_converter` | Mass Converter | 094 | 8 MC | Requiere 5 tags de ciencia jugados. Pasivo: cartas espaciales cuestan 2 MC menos; acción repetible: -6 energía → +6 producción energía |
 | `inventors_guild` | Inventors' Guild | 006 | 9 MC | Acción repetible: roba 1 carta a investigación pendiente (compra a costo 0 vía `resolve_research_phase`) |
 | `development_center` | Development Center | 014 | 11 MC | Acción repetible: -1 energía → roba 1 carta directo a la mano |
+| `domed_crater` | Domed Crater | 016 | 24 MC | Requiere oxígeno ≤7%. +3 plantas, -1 producción energía, +3 producción MC, +1 ciudad |
+| `noctis_city` | Noctis City | 017 | 18 MC | -1 producción energía, +3 producción MC, +1 ciudad |
+| `methane_from_titan` | Methane from Titan | 018 | 28 MC | Requiere oxígeno ≥2%. +2 producción calor, +2 producción plantas |
+| `research_outpost` | Research Outpost | 020 | 18 MC | Pasivo: -1 MC en TODAS las cartas futuras (sin tag_filter); +1 ciudad |
+| `phobos_space_haven` | Phobos Space Haven | 021 | 25 MC | +1 producción titanio, +1 ciudad |
+| `black_polar_dust` | Black Polar Dust | 022 | 15 MC | Coloca 1 océano, -2 producción MC, +3 producción calor |
+| `arctic_algae` | Arctic Algae | 023 | 12 MC | Requiere temperatura ≤-12°C. +1 planta. Pasivo: +2 plantas cada vez que se coloca un océano (cualquier fuente) |
+| `space_station` | Space Station | 025 | 10 MC | Pasivo: cartas espaciales cuestan 2 MC menos |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -56,6 +64,8 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | # scan | Nombre | Qué falta |
 |---|---|---|
 | 190 | Local Heat Trapping | Elección que además targetea otra carta en juego del propio jugador (agregar recursos a una carta distinta a la que se está jugando, no a la mano/mazo en general — el sistema de mazo ya está, esto es más específico). |
+| 019 | Imported Hydrogen | Misma pieza que Local Heat Trapping: 2 de 3 ramas de su elección agregan microbios/animales a OTRA carta específica. |
+| 024 | Predators | Misma pieza: su acción mueve 1 animal desde OTRA carta hacia esta — necesita elegir la carta origen. |
 | 059 | Mangrove | Colocación de tiles en general — decisión explícita de mantener fuera de alcance del MVP (sección 6 de CLAUDE.md: sin mapa hexagonal). |
 
 ## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
@@ -130,9 +140,10 @@ oficial). `player.active_cards` (jsonb en Supabase) guarda `{card_id: {resources
 
 ## Requisitos de cartas (columna `requirements`, validados en `check_card_requirements`)
 
-- `min_temperature`: temperatura mínima en grados C (ej. Farming: 4).
-- `min_oxygen`: oxígeno mínimo en % (ninguna carta cargada lo usa todavía, pero está soportado).
+- `min_temperature` / `max_temperature`: en grados C (ej. Farming: min 4; Arctic Algae: max -12).
+- `min_oxygen` / `max_oxygen`: en % (ej. Methane from Titan: min 2; Domed Crater: max 7).
 - `min_oceans`: cantidad mínima de tiles de océano colocados (ej. Nitrophilic Moss: 3).
+- `min_tag_count`: ver sección "Tags jugados" más abajo.
 
 `tools.play_card` valida el requisito contra `global_parameters` antes de cobrar la carta —
 si no se cumple, lanza `CardRequirementNotMetError` y no se paga nada.
