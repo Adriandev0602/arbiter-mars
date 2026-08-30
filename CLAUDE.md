@@ -184,6 +184,37 @@ de Supabase.
 
 ## 9. Estado actual del repo y próximos pasos
 
+### 📍 Punto de retoma (última sesión: 2026-08-29, carga de catálogo por bloques)
+
+Se venía cargando el catálogo de cartas **en bloques de 10**, sacándolas de
+`backend/app/db/CARDS_PENDING_REVIEW.md` (que las tiene descargadas y marcadas `unreviewed`,
+gracias a una prueba de saturamiento de scraping que dejó 402 cartas listas para revisar) y
+moviéndolas a `backend/app/db/CARDS_LOG.md` una vez cargadas en `seed_cards.sql`.
+
+**Progreso:** 3 bloques completados (30 cartas revisadas → 44 cargadas en total, contando las
+de antes de este ritmo por bloques). `CARDS_PENDING_REVIEW.md` sigue teniendo **372 cartas**
+sin revisar, numeradas desde 1 — **el bloque 4 son las filas #1 a #10 de esa tabla**.
+
+**Regla vigente para seguir** (pedida explícitamente por el usuario): las cartas que encajan
+en el vocabulario ya existente (o piden una extensión chica, tipo "portar `tr_delta` de un
+lado a otro") se cargan en el momento. Las que necesitan una pieza de mecánica realmente
+nueva se dejan documentadas en la sección "Pendientes" de `CARDS_LOG.md` **sin implementar
+esa mecánica todavía** — eso se aborda aparte, no en medio de un bloque de revisión.
+
+**Mecánica pendiente de mayor tamaño identificada:** 5 cartas (Local Heat Trapping, Imported
+Hydrogen, Predators, Eos Chasma National Park, Ants) comparten la misma pieza faltante —
+"mover/agregar un recurso a una carta específica elegida por el jugador, distinta de la que
+se está jugando". Vale la pena resolverla una sola vez para desbloquear las 5 juntas, en vez
+de ir carta por carta. Es la única deuda de mecánica grande identificada hasta ahora (además
+de Mangrove, que es fuera de alcance por diseño, no por mecánica faltante).
+
+**Para retomar:** seguí el mismo flujo de los bloques 1-3 (ver historial de commits
+`465db69`, `a9e20b4`, `de40e4e` como referencia): leer los scans de las filas #1-10 de
+`CARDS_PENDING_REVIEW.md` (las imágenes hay que volver a descargarlas, no se commitean —
+manifiesto tiene nombre/expansión/#scan de cada una), decidir vocabulario, implementar en
+`rules_engine.py` + tests, cargar en `seed_cards.sql`, probar contra Supabase real, actualizar
+`CARDS_LOG.md` y `CARDS_PENDING_REVIEW.md`, commitear.
+
 **Ya implementado y testeado:** el motor de reglas completo (`rules_engine.py`, 106 tests), incluyendo
 el sistema de mazo/mano de cartas (`deck`/`hand`/`pending_research`, fase de investigación), efectos
 pasivos permanentes y tags jugados; las tools que lo conectan a Supabase (`tools.py`), el `StateGraph`
