@@ -71,6 +71,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `natural_preserve` | Natural Preserve | 044 | 9 MC | Requiere oxígeno ≤4%. +1 producción MC (restricción de adyacencia de tile ignorada, sin mapa hexagonal) |
 | `lightning_harvest` | Lightning Harvest | 046 | 8 MC | Requiere 3 tags de ciencia jugados. +1 producción energía, +1 producción MC |
 | `algae` | Algae | 047 | 10 MC | Requiere 5 océanos colocados. +1 planta (stock), +2 producción plantas |
+| `adapted_lichen` | Adapted Lichen | 048 | 9 MC | +1 producción plantas |
+| `tardigrades` | Tardigrades | 049 | 4 MC | Acción repetible sin costo: +1 recurso en la carta |
+| `virus` | Virus | 050 | 1 MC | Sin efecto modelado — toda la carta es la cláusula "remove up to 2 animales o 5 plantas de cualquier jugador" (omitida, MVP single-player) |
+| `miranda_resort` | Miranda Resort | 051 | 12 MC | +1 producción MC por cada tag earth jugado (`production_delta_per_tag`) |
+| `fish` | Fish | 052 | 9 MC | Requiere temperatura ≥2°C. -1 producción plantas; acción repetible sin costo: +1 recurso en la carta |
+| `lake_marineris` | Lake Marineris | 053 | 18 MC | Requiere temperatura ≥0°C. Coloca 2 océanos (+2 TR) |
+| `small_animals` | Small Animals | 054 | 6 MC | Requiere oxígeno ≥6%. -1 producción plantas; acción repetible sin costo: +1 recurso en la carta |
+| `kelp_farming` | Kelp Farming | 055 | 17 MC | Requiere 6 océanos colocados. +2 producción MC, +3 producción plantas, +2 plantas (stock) |
+| `vesta_shipyard` | Vesta Shipyard | 057 | 15 MC | +1 producción titanio |
+| `beam_from_a_thorium_asteroid` | Beam from a Thorium Asteroid | 058 | 32 MC | Requiere 1 tag jovian jugado. +3 producción calor, +3 producción energía |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -131,6 +141,18 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
   sola comparando `tags_played` contra `count` (ej. Nitrogen-Rich Asteroid: +4 producción de
   plantas si ya jugó 3 tags de planta, si no +1). Se lee ANTES de sumar los tags de la propia
   carta (`tools.play_card` llama `apply_card_effect` antes de `increment_tags_played`).
+- `production_delta_per_tag`: `{"tag": "<tag>", "production": "<recurso>_production",
+  "per_tag": N (default 1)}` — a diferencia de `tag_count_choice` (umbral binario), escala
+  linealmente: suma N por cada tag ya jugado (ej. Miranda Resort: +1 producción de MC por cada
+  tag earth jugado, sin mínimo).
+
+**Nota sobre "decrease any plant production 1 step" (sin "up to", ej. Fish, Small Animals):**
+a diferencia de la cláusula opcional "remove up to N ... from any player" (sección de más
+abajo), esta es obligatoria pero también targetea "cualquier jugador" — en el MVP de un solo
+jugador no hay otro objetivo posible, así que se aplica al propio jugador con
+`production_deltas` normal. No confundir con Virus (050), donde el ÚNICO efecto de la carta
+es la cláusula opcional "remove up to" — ahí sí se omite entera y la carta queda con
+`effects: {}` (se paga, pero no cambia nada más del estado; ver CARDS_LOG más abajo).
 
 **Nota de firma:** `apply_card_effect(player, globals_, effects, effect_amount=None,
 effect_choice=None)` recibe y devuelve SIEMPRE una tupla `(PlayerState, GlobalParameters)`,

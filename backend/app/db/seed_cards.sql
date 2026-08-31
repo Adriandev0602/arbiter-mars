@@ -226,6 +226,49 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'algae', 'Algae', 10, '{plant}', '{"min_oceans": 5}'::jsonb,
         '{"resource_deltas": {"plants": 1}, "production_deltas": {"plant_production": 2}}'::jsonb
+    ),
+    (
+        'adapted_lichen', 'Adapted Lichen', 9, '{plant}', null,
+        '{"production_deltas": {"plant_production": 1}}'::jsonb
+    ),
+    (
+        'tardigrades', 'Tardigrades', 4, '{microbe}', null,
+        '{"becomes_active": true, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'virus', 'Virus', 1, '{microbe}', null,
+        '{}'::jsonb
+    ),
+    (
+        'miranda_resort', 'Miranda Resort', 12, '{jovian,space}', null,
+        '{"production_delta_per_tag": {"tag": "earth", "production": "mc_production"}}'::jsonb
+    ),
+    (
+        'fish', 'Fish', 9, '{animal}', '{"min_temperature": 2}'::jsonb,
+        '{"production_deltas": {"plant_production": -1},
+          "becomes_active": true, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'lake_marineris', 'Lake Marineris', 18, '{}', '{"min_temperature": 0}'::jsonb,
+        '{"place_oceans": 2}'::jsonb
+    ),
+    (
+        'small_animals', 'Small Animals', 6, '{animal}', '{"min_oxygen": 6}'::jsonb,
+        '{"production_deltas": {"plant_production": -1},
+          "becomes_active": true, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'kelp_farming', 'Kelp Farming', 17, '{plant}', '{"min_oceans": 6}'::jsonb,
+        '{"resource_deltas": {"plants": 2}, "production_deltas": {"mc_production": 2, "plant_production": 3}}'::jsonb
+    ),
+    (
+        'vesta_shipyard', 'Vesta Shipyard', 15, '{jovian,space}', null,
+        '{"production_deltas": {"titanium_production": 1}}'::jsonb
+    ),
+    (
+        'beam_from_a_thorium_asteroid', 'Beam from a Thorium Asteroid', 32, '{jovian,space,power}',
+        '{"min_tag_count": {"tag": "jovian", "count": 1}}'::jsonb,
+        '{"production_deltas": {"heat_production": 3, "energy_production": 3}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

@@ -538,6 +538,12 @@ def apply_card_effect(
         plantas si ya jugo 3 tags de planta, si no +1). `tags_played` se lee
         ANTES de sumar los tags de la carta que se esta jugando (tools.play_card
         llama apply_card_effect antes de increment_tags_played).
+      - "production_delta_per_tag": {"tag": "<tag>", "production":
+        "<recurso>_production", "per_tag": N (default 1)} -- suma N por cada
+        tag "<tag>" ya jugado (no es un umbral binario como tag_count_choice,
+        escala linealmente) (ej. Miranda Resort: +1 produccion de MC por cada
+        tag earth jugado). Tambien lee `tags_played` antes de sumar los tags
+        de la carta actual.
 
     NOTA sobre "remove up to N <recurso> from any player": varias cartas del
     catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
@@ -575,6 +581,13 @@ def apply_card_effect(
     if "production_deltas" in effects:
         for key, delta in effects["production_deltas"].items():
             new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+
+    if "production_delta_per_tag" in effects:
+        spec = effects["production_delta_per_tag"]
+        key = spec["production"]
+        count = player["tags_played"].get(spec["tag"], 0)
+        delta = count * spec.get("per_tag", 1)
+        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
 
     if "resource_deltas" in effects:
         for key, delta in effects["resource_deltas"].items():

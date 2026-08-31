@@ -1167,3 +1167,131 @@ def test_algae_requires_5_oceans_and_gives_plant_resource_and_production():
     )
     assert new_player["plants"] == 1
     assert new_player["plant_production"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Bloque 5 (CARDS_PENDING_REVIEW.md filas #1-10)
+# ---------------------------------------------------------------------------
+
+def test_adapted_lichen_gives_plus_1_plant_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"plant_production": 1}}
+    )
+    assert new_player["plant_production"] == 2
+
+
+def test_tardigrades_action_adds_1_microbe_to_the_card_at_no_cost():
+    player = register_active_card(new_player_state(), "tardigrades")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "tardigrades", action_spec)
+    assert new_player["active_cards"]["tardigrades"]["resources"] == 1
+
+
+def test_virus_has_no_modeled_effect_remove_up_to_clause_omitted():
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), {})
+    assert new_player == player
+    assert new_globals == new_global_parameters()
+
+
+def test_miranda_resort_gives_plus_1_mc_production_per_earth_tag():
+    player = new_player_state()
+    player["tags_played"] = {"earth": 3}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": {"tag": "earth", "production": "mc_production"}},
+    )
+    assert new_player["mc_production"] == 4  # 1 base + 3
+
+
+def test_miranda_resort_with_no_earth_tags_gives_no_bonus():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": {"tag": "earth", "production": "mc_production"}},
+    )
+    assert new_player["mc_production"] == 1  # sin cambios
+
+
+def test_fish_requires_2_degrees_and_decreases_plant_production():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": 2}, globals_)
+    globals_["temperature"] = 2
+    check_card_requirements({"min_temperature": 2}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"production_deltas": {"plant_production": -1}}
+    )
+    assert new_player["plant_production"] == 0
+    active_player = register_active_card(new_player, "fish")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    final_player, _ = use_card_action(active_player, globals_, "fish", action_spec)
+    assert final_player["active_cards"]["fish"]["resources"] == 1
+
+
+def test_lake_marineris_requires_0_degrees_and_places_2_oceans():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": 0}, globals_)
+    globals_["temperature"] = 0
+    check_card_requirements({"min_temperature": 0}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, globals_, {"place_oceans": 2})
+    assert new_globals["oceans_placed"] == 2
+    assert new_player["tr"] == TR_START + 2
+
+
+def test_small_animals_requires_6_oxygen_and_decreases_plant_production():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oxygen": 6}, globals_)
+    globals_["oxygen"] = 6
+    check_card_requirements({"min_oxygen": 6}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"production_deltas": {"plant_production": -1}}
+    )
+    assert new_player["plant_production"] == 0
+
+
+def test_kelp_farming_requires_6_oceans_and_gives_mc_plant_production_and_plants():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 6}, globals_)
+    globals_["oceans_placed"] = 6
+    check_card_requirements({"min_oceans": 6}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_,
+        {"resource_deltas": {"plants": 2},
+         "production_deltas": {"mc_production": 2, "plant_production": 3}},
+    )
+    assert new_player["plants"] == 2
+    assert new_player["mc_production"] == 3
+    assert new_player["plant_production"] == 4
+
+
+def test_vesta_shipyard_gives_plus_1_titanium_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"titanium_production": 1}}
+    )
+    assert new_player["titanium_production"] == 2
+
+
+def test_beam_from_a_thorium_asteroid_requires_jovian_tag_and_gives_heat_and_energy():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "jovian", "count": 1}}, globals_, player)
+    player["tags_played"] = {"jovian": 1}
+    check_card_requirements({"min_tag_count": {"tag": "jovian", "count": 1}}, globals_, player)
+    new_player, _ = apply_card_effect(
+        player, globals_,
+        {"production_deltas": {"heat_production": 3, "energy_production": 3}},
+    )
+    assert new_player["heat_production"] == 4
+    assert new_player["energy_production"] == 4
