@@ -114,11 +114,22 @@ sola vez y resolver las 5 juntas cuando se aborde.
 cartas del catálogo que genuinamente necesitan modelar el tablero (hexágonos, bonus por hex,
 adyacencia). Decisión de alcance confirmada por el usuario el 2026-08-31 (ver sección 6 de
 CLAUDE.md): el mapa Tharsis SÍ se implementa. `HEX_MAP_RESEARCH.md` documenta la investigación
-verificada (61 hexágonos, adyacencia, 12 océanos reservados) y `backend/app/agent/board.py` +
-`test_board.py` (22 tests) ya implementan los primitivos (adyacencia, colocación de
-ocean/city/greenery, bonus). Estas 3 cartas siguen pendientes porque falta cablear `board.py`
-a `tools.py`/`cards` (agregar `hex_id` a las tools, persistir el tablero en Supabase, extender
-`prompts.py`) — ver la sección "Pendiente" de `HEX_MAP_RESEARCH.md` para el detalle exacto.
+verificada (61 hexágonos, adyacencia, 12 océanos reservados), `backend/app/agent/board.py` +
+`test_board.py` (22 tests) implementan los primitivos, y el cableado a `tools.py`
+(`use_standard_project`, `convert_resources`, `play_card`, `use_card_action` con
+`hex_id`/`ocean_hex_ids`/`city_hex_ids`, más `get_board_state`) ya está hecho y probado
+end-to-end contra Supabase real. Estas 3 cartas siguen pendientes solo porque falta una pieza
+más chica: `place_special_tile` genérica parametrizada por `requirement` (elegir un hex con
+bonus de steel/titanium específicamente, con o sin adyacencia a tile propio según la carta) —
+ver "Pendiente" en `HEX_MAP_RESEARCH.md`.
+
+Cartas ya cargadas que ahora SÍ colocan tile real en el mapa (antes solo tocaban el contador
+global): `comet` (1 océano), `lake_marineris` (2 océanos), `water_import_from_europa` (1
+océano vía su acción). El resto de las cartas con `place_oceans`/`place_city_tiles` en su
+efecto (`capital`, `domed_crater`, `noctis_city`, `cupola_city`, `underground_city`,
+`phobos_space_haven`, `research_outpost`) también quedaron cableadas automáticamente por el
+mismo mecanismo (diff del contador global antes/después de `apply_card_effect` decide cuántos
+`ocean_hex_ids`/`city_hex_ids` exigir) — no hizo falta tocarlas una por una.
 
 ## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
 

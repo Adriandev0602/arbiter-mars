@@ -7,11 +7,25 @@ lo necesitan de verdad: Mining Area, Land Claim, Mining Rights (ver "Pendientes"
 `CARDS_LOG.md`).
 
 **Estado de implementación:** `backend/app/agent/board.py` (61 hexágonos, adyacencia,
-colocación de ocean/city/greenery, bonus de hex y de adyacencia oceánica) y
-`backend/tests/test_board.py` (22 tests) ya están implementados y verificados. Todavía NO
-está cableado a `tools.py`/`cards` — las tres cartas de mapa siguen en "Pendientes" hasta que
-se decida esa integración (requiere agregar `hex_id` como parámetro de las tools relevantes,
-persistir el tablero en Supabase, y actualizar el system prompt del LLM).
+colocación de ocean/city/greenery, bonus de hex y de adyacencia oceánica),
+`backend/tests/test_board.py` (22 tests), y el cableado a `tools.py` (`use_standard_project`,
+`convert_resources`, `play_card`, `use_card_action` ahora aceptan `hex_id`/`ocean_hex_ids`/
+`city_hex_ids` según corresponda, más la tool nueva `get_board_state`) están implementados y
+**probados end-to-end contra Supabase real** (2026-08-31): aquifer/city con bonus de hex y de
+adyacencia oceánica, rechazo de hex inválido/ocupado, Comet y Lake Marineris colocando 1 y 2
+océanos respectivamente vía `play_card`, Water Import from Europa colocando océano vía
+`use_card_action`, y el bonus de adyacencia oceánica acumulándose correctamente entre
+colocaciones sucesivas dentro de la misma carta. Persistencia: columna `board` (jsonb) en
+`global_parameters`.
+
+Nota de dependencia: hubo que actualizar `supabase` de 2.7.4 a 2.31.0 en `requirements.txt` —
+la versión vieja del cliente Python rechazaba las API keys del formato nuevo de Supabase
+(`sb_publishable_...`/`sb_secret_...`) porque validaba con una regex que exigía forma de JWT.
+
+Mining Area, Mining Rights y Land Claim (las 3 cartas de "Pendientes" en `CARDS_LOG.md`)
+siguen sin cargar porque necesitan una pieza más: `place_special_tile` genérica parametrizada
+por `requirement` (ver sección 11 más abajo) — el resto del cableado ya está listo para
+soportarlas.
 
 **Corrección importante sobre la premisa inicial de esta investigación:** se asumió al
 arrancar que había 9 hexágonos reservados para océano (confundiendo el límite de 9 océanos
@@ -175,11 +189,7 @@ módulo, igual que recomienda la investigación (sección 2) -- no se recalcula 
 
 ### Pendiente para una segunda iteración (fuera de esta primera pasada, a propósito)
 
-- Cablear `board.py` a `tools.py`/`cards`: agregar `hex_id` como parámetro a las tools que
-  colocan tiles (`play_card` cuando el efecto es `place_oceans`/`place_city_tiles`,
-  `standard_project_city`, `standard_project_aquifer`, `convert_plants_to_greenery`), persistir
-  el `Board` en Supabase (columna `board` jsonb en `global_parameters`, ver `schema.sql`), y
-  actualizar `prompts.py` para que el LLM pueda extraer un `hex_id` de la consulta del usuario.
+- ~~Cablear `board.py` a `tools.py`/`cards`~~ — HECHO (2026-08-31, ver arriba).
 - `place_special_tile(board, hex_id, player, card_name, requirement)` genérica, para
   desbloquear Mining Area/Mining Rights/Land Claim sin hardcodear cada una.
 - No hardcodear las ~20 special tiles particulares del catálogo completo.

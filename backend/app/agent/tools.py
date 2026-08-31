@@ -6,6 +6,7 @@ lenguaje natural -- nunca calcula los numeros el mismo.
 """
 from langchain_core.tools import tool
 
+from app.agent import board as boardlib
 from app.agent import rules_engine as engine
 from app.db.supabase_client import supabase
 
@@ -52,8 +53,65 @@ def _log_transaction(player_id: str, action_type: str, detail: dict) -> None:
     ).execute()
 
 
+def _load_board(game_id: str = "default") -> boardlib.Board:
+    """Trae el estado mutable del tablero (que hexagonos ya tienen tile)."""
+    res = supabase.table("global_parameters").select("board").eq("game_id", game_id).single().execute()
+    return res.data.get("board") or {}
+
+
+def _save_board(board: boardlib.Board, game_id: str = "default") -> None:
+    supabase.table("global_parameters").update({"board": board}).eq("game_id", game_id).execute()
+
+
+def _apply_hex_bonus(player: engine.PlayerState, hex_bonus: list[tuple[str, int]]) -> engine.PlayerState:
+    """
+    Aplica el bonus impreso de un hexagono (steel/titanium/plant/card) al
+    jugador que acaba de colocar un tile ahi. "card" roba esa cantidad de
+    cartas del mazo directo a la mano (ver rules_engine.draw_cards_to_hand);
+    el resto son deltas de stock directos.
+    """
+    new_player: dict = dict(player)
+    for resource, amount in hex_bonus:
+        if resource == "card":
+            new_player = dict(engine.draw_cards_to_hand(new_player, amount))  # type: ignore[arg-type]
+        elif resource == "plant":
+            new_player["plants"] = new_player["plants"] + amount
+        else:
+            new_player[resource] = new_player[resource] + amount
+    return new_player  # type: ignore[return-value]
+
+
+def _place_ocean_and_apply_bonus(
+    board: boardlib.Board, player: engine.PlayerState, hex_id: str
+) -> tuple[boardlib.Board, engine.PlayerState]:
+    new_board, hex_bonus, ocean_bonus_mc = boardlib.place_ocean_tile(board, hex_id)
+    new_player = _apply_hex_bonus(player, hex_bonus)
+    new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
+    return new_board, new_player  # type: ignore[return-value]
+
+
+def _place_city_and_apply_bonus(
+    board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str
+) -> tuple[boardlib.Board, engine.PlayerState]:
+    new_board, hex_bonus, ocean_bonus_mc = boardlib.place_city_tile(board, hex_id, owner_id)
+    new_player = _apply_hex_bonus(player, hex_bonus)
+    new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
+    return new_board, new_player  # type: ignore[return-value]
+
+
+def _place_greenery_and_apply_bonus(
+    board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str
+) -> tuple[boardlib.Board, engine.PlayerState]:
+    new_board, hex_bonus, ocean_bonus_mc = boardlib.place_greenery_tile(board, hex_id, owner_id)
+    new_player = _apply_hex_bonus(player, hex_bonus)
+    new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
+    return new_board, new_player  # type: ignore[return-value]
+
+
 @tool
-def use_standard_project(player_id: str, project_name: str, num_cards_to_sell: int = 0) -> dict:
+def use_standard_project(
+    player_id: str, project_name: str, num_cards_to_sell: int = 0, hex_id: str | None = None
+) -> dict:
     """
     Ejecuta uno de los 6 proyectos estandar de Terraforming Mars, siempre
     disponibles para cualquier jugador.
@@ -64,16 +122,25 @@ def use_standard_project(player_id: str, project_name: str, num_cards_to_sell: i
             'aquifer', 'greenery', 'city'.
         num_cards_to_sell: solo se usa si project_name == 'sell_patents';
             cantidad de cartas que el jugador descarta (1 MC cada una).
+        hex_id: OBLIGATORIO para 'aquifer' (coloca oceano), 'greenery' (coloca
+            greenery) y 'city' (coloca ciudad) -- el id del hexagono del mapa
+            Tharsis (ver app.agent.board.HEX_DEFS, ids "03".."63") donde se
+            coloca el tile. Ignorado para el resto de los proyectos.
 
     Returns:
-        dict con el estado actualizado del jugador y, si aplica, de los
-        parametros globales, mas el detalle de lo que se pago/gano.
+        dict con el estado actualizado del jugador, los parametros globales
+        y, si el proyecto coloco un tile, el bonus de hexagono/adyacencia
+        oceanica que se aplico.
 
-    Lanza InsufficientResourcesError si no alcanza el MC, o
-    GlobalParameterMaxedError si el parametro correspondiente ya esta al tope.
+    Lanza InsufficientResourcesError si no alcanza el MC,
+    GlobalParameterMaxedError si el parametro correspondiente ya esta al
+    tope, ValueError si falta hex_id para un proyecto que lo requiere, y
+    board.InvalidPlacementError / board.HexOccupiedError si el hexagono
+    elegido no es legal para ese tile.
     """
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
+    board = None
 
     if project_name == "sell_patents":
         new_player = engine.standard_project_sell_patents(player, num_cards_to_sell)
@@ -84,11 +151,29 @@ def use_standard_project(player_id: str, project_name: str, num_cards_to_sell: i
     elif project_name == "asteroid":
         new_player, new_globals = engine.standard_project_asteroid(player, globals_)
     elif project_name == "aquifer":
+        if hex_id is None:
+            raise ValueError("project_name 'aquifer' requiere hex_id (donde colocar el oceano)")
+        board = _load_board()
+        if not boardlib.can_place_ocean(board, hex_id):
+            raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hex_id}'")
         new_player, new_globals = engine.standard_project_aquifer(player, globals_)
+        board, new_player = _place_ocean_and_apply_bonus(board, new_player, hex_id)
     elif project_name == "greenery":
+        if hex_id is None:
+            raise ValueError("project_name 'greenery' requiere hex_id (donde colocar el greenery)")
+        board = _load_board()
+        if not boardlib.can_place_greenery(board, hex_id, player_id):
+            raise boardlib.InvalidPlacementError(f"No se puede colocar greenery en '{hex_id}' para este jugador")
         new_player, new_globals = engine.standard_project_greenery(player, globals_)
+        board, new_player = _place_greenery_and_apply_bonus(board, new_player, hex_id, player_id)
     elif project_name == "city":
+        if hex_id is None:
+            raise ValueError("project_name 'city' requiere hex_id (donde colocar la ciudad)")
+        board = _load_board()
+        if not boardlib.can_place_city(board, hex_id):
+            raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hex_id}'")
         new_player, new_globals = engine.standard_project_city(player, globals_)
+        board, new_player = _place_city_and_apply_bonus(board, new_player, hex_id, player_id)
     else:
         raise ValueError(
             f"project_name debe ser uno de: sell_patents, power_plant, asteroid, "
@@ -98,13 +183,15 @@ def use_standard_project(player_id: str, project_name: str, num_cards_to_sell: i
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
-    _log_transaction(player_id, "standard_project", {"project_name": project_name})
+    if board is not None:
+        _save_board(board)
+    _log_transaction(player_id, "standard_project", {"project_name": project_name, "hex_id": hex_id})
 
     return {"player": dict(new_player), "global_parameters": dict(new_globals)}
 
 
 @tool
-def convert_resources(player_id: str, conversion: str) -> dict:
+def convert_resources(player_id: str, conversion: str, hex_id: str | None = None) -> dict:
     """
     Ejecuta una conversion de recursos del tablero de jugador (no es un
     proyecto estandar, pero sigue reglas fijas iguales para todos).
@@ -114,15 +201,25 @@ def convert_resources(player_id: str, conversion: str) -> dict:
         conversion: 'plants_to_greenery' (gasta 8 plantas, sube oxigeno 1
             paso) o 'heat_to_temperature' (gasta 8 calor, sube temperatura
             1 paso).
+        hex_id: OBLIGATORIO para 'plants_to_greenery' -- el hexagono del mapa
+            Tharsis donde se coloca el tile de greenery. Ignorado para
+            'heat_to_temperature' (no coloca tile).
 
     Returns:
         dict con el estado actualizado del jugador y los parametros globales.
     """
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
+    board = None
 
     if conversion == "plants_to_greenery":
+        if hex_id is None:
+            raise ValueError("conversion 'plants_to_greenery' requiere hex_id (donde colocar el greenery)")
+        board = _load_board()
+        if not boardlib.can_place_greenery(board, hex_id, player_id):
+            raise boardlib.InvalidPlacementError(f"No se puede colocar greenery en '{hex_id}' para este jugador")
         new_player, new_globals = engine.convert_plants_to_greenery(player, globals_)
+        board, new_player = _place_greenery_and_apply_bonus(board, new_player, hex_id, player_id)
     elif conversion == "heat_to_temperature":
         new_player, new_globals = engine.convert_heat_to_temperature(player, globals_)
     else:
@@ -132,7 +229,9 @@ def convert_resources(player_id: str, conversion: str) -> dict:
 
     _save_player(player_id, new_player)
     _save_global_parameters(new_globals)
-    _log_transaction(player_id, "convert_resources", {"conversion": conversion})
+    if board is not None:
+        _save_board(board)
+    _log_transaction(player_id, "convert_resources", {"conversion": conversion, "hex_id": hex_id})
 
     return {"player": dict(new_player), "global_parameters": dict(new_globals)}
 
@@ -169,6 +268,8 @@ def play_card(
     titanium_to_pay: int = 0,
     effect_amount: int | None = None,
     effect_choice: int | None = None,
+    ocean_hex_ids: list[str] | None = None,
+    city_hex_ids: list[str] | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -196,6 +297,11 @@ def play_card(
         effect_choice: indice (0-based) de la opcion elegida, para cartas con
             efecto "OR" (ej. Artificial Photosynthesis: 0 = +1 produccion de
             plantas, 1 = +2 produccion de energia). None si la carta no lo pide.
+        ocean_hex_ids: OBLIGATORIO (con esa cantidad exacta de hex_ids) si la
+            carta coloca oceano(s) (ej. Comet: 1; Lake Marineris: 2). None si
+            la carta no coloca oceanos.
+        city_hex_ids: igual que ocean_hex_ids pero para cartas que colocan
+            ciudad(es) (ej. Capital: 1).
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -251,6 +357,36 @@ def play_card(
     new_player, new_globals = engine.apply_card_effect(
         paid_player, globals_, effects, effect_amount, effect_choice
     )
+
+    # El efecto resuelto (incluso detras de choice/tag_count_choice) puede
+    # haber colocado oceano(s)/ciudad(es) -- se detecta comparando el
+    # contador global antes/despues, sin tener que re-inspeccionar `effects`.
+    oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
+    cities_delta = new_globals["city_tiles_placed"] - globals_["city_tiles_placed"]
+    board = None
+    if oceans_delta > 0 or cities_delta > 0:
+        board = _load_board()
+    if oceans_delta > 0:
+        chosen = ocean_hex_ids or []
+        if len(chosen) != oceans_delta:
+            raise ValueError(
+                f"Esta carta coloca {oceans_delta} oceano(s); se recibieron {len(chosen)} hex_id(s)"
+            )
+        for hid in chosen:
+            if not boardlib.can_place_ocean(board, hid):
+                raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+    if cities_delta > 0:
+        chosen = city_hex_ids or []
+        if len(chosen) != cities_delta:
+            raise ValueError(
+                f"Esta carta coloca {cities_delta} ciudad(es); se recibieron {len(chosen)} hex_id(s)"
+            )
+        for hid in chosen:
+            if not boardlib.can_place_city(board, hid):
+                raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hid}'")
+            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id)
+
     if effects.get("becomes_active"):
         new_player = engine.register_active_card(new_player, card_id)
     if effects.get("passive"):
@@ -264,12 +400,15 @@ def play_card(
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
+    if board is not None:
+        _save_board(board)
     _log_transaction(
         player_id, "play_card",
         {"card_id": card_id, "mc_to_pay": mc_to_pay, "steel_to_pay": steel_to_pay,
          "titanium_to_pay": titanium_to_pay, "change_not_refunded": change,
          "cost_discount_applied": discount,
-         "effect_amount": effect_amount, "effect_choice": effect_choice},
+         "effect_amount": effect_amount, "effect_choice": effect_choice,
+         "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids},
     )
 
     return {
@@ -279,7 +418,9 @@ def play_card(
 
 
 @tool
-def use_card_action(player_id: str, card_id: str, effect_choice: int | None = None) -> dict:
+def use_card_action(
+    player_id: str, card_id: str, effect_choice: int | None = None, ocean_hex_ids: list[str] | None = None
+) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
     (jugada previamente, con `effects.action` en su fila de `cards` -- ej.
@@ -293,6 +434,9 @@ def use_card_action(player_id: str, card_id: str, effect_choice: int | None = No
         effect_choice: indice (0-based) de la opcion elegida, para acciones
             con eleccion (ej. Regolith Eaters: agregar 1 microbio O gastar 2
             para subir oxigeno). None si la accion no lo pide.
+        ocean_hex_ids: OBLIGATORIO (con esa cantidad exacta) si la accion
+            coloca oceano(s) (ej. Water Import from Europa: 1). None si la
+            accion no coloca oceanos.
 
     Returns:
         dict con el estado actualizado del jugador y, si la accion afecto
@@ -315,12 +459,66 @@ def use_card_action(player_id: str, card_id: str, effect_choice: int | None = No
 
     new_player, new_globals = engine.use_card_action(player, globals_, card_id, action_spec, effect_choice)
 
+    oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
+    board = None
+    if oceans_delta > 0:
+        board = _load_board()
+        chosen = ocean_hex_ids or []
+        if len(chosen) != oceans_delta:
+            raise ValueError(
+                f"Esta accion coloca {oceans_delta} oceano(s); se recibieron {len(chosen)} hex_id(s)"
+            )
+        for hid in chosen:
+            if not boardlib.can_place_ocean(board, hid):
+                raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
-    _log_transaction(player_id, "use_card_action", {"card_id": card_id, "effect_choice": effect_choice})
+    if board is not None:
+        _save_board(board)
+    _log_transaction(
+        player_id, "use_card_action",
+        {"card_id": card_id, "effect_choice": effect_choice, "ocean_hex_ids": ocean_hex_ids},
+    )
 
     return {"player": dict(new_player), "global_parameters": dict(new_globals)}
+
+
+@tool
+def get_board_state(player_id: str) -> dict:
+    """
+    Devuelve el mapa Tharsis completo: la geometria estatica de cada uno de
+    los 61 hexagonos (id, fila, tipo de terreno, bonus impreso, si es
+    volcanico o esta reservado para Noctis City) mas el estado actual de
+    ocupacion (que hexagonos ya tienen tile y de quien). Se usa para que el
+    LLM pueda mostrarle al usuario las opciones legales de hex_id antes de
+    llamar use_standard_project/convert_resources/play_card/use_card_action
+    con un tile que coloca oceano/ciudad/greenery.
+
+    Args:
+        player_id: id del jugador (para poder calcular can_place_greenery,
+            que depende de si el jugador ya tiene tiles propios en el mapa).
+
+    Returns:
+        dict con "hexes": lista de hexagonos, cada uno con su definicion
+        estatica, si esta ocupado (y por quien/con que tile), y si HOY es
+        legal colocar ahi oceano/ciudad/greenery para este jugador.
+    """
+    board = _load_board()
+    hexes = []
+    for hex_id, hex_def in boardlib.HEX_DEFS.items():
+        occupancy = board.get(hex_id)
+        hexes.append({
+            **hex_def,
+            "occupied": occupancy is not None,
+            "tile": occupancy,
+            "can_place_ocean": boardlib.can_place_ocean(board, hex_id),
+            "can_place_city": boardlib.can_place_city(board, hex_id),
+            "can_place_greenery": boardlib.can_place_greenery(board, hex_id, player_id),
+        })
+    return {"hexes": hexes}
 
 
 @tool
@@ -441,6 +639,6 @@ def resolve_research_phase(player_id: str, card_ids_to_buy: list[str], cost_per_
 # Lista de tools que se bindean al LLM en graph.py
 ALL_TOOLS = [
     use_standard_project, convert_resources, run_production_phase,
-    play_card, use_card_action, get_player_state,
+    play_card, use_card_action, get_player_state, get_board_state,
     deal_starting_hand, start_research_phase, resolve_research_phase,
 ]

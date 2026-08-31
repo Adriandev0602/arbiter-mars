@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # .env puede tener variables de conveniencia (ej. SUPABASE_DB_URL
+                          # para migraciones directas via psql) que la app no necesita leer.
 
 
 settings = Settings()
