@@ -56,6 +56,9 @@ Herramientas disponibles y cuando usarlas:
   2 oceanos; Capital: 1 ciudad), la tool lo rechaza si no le pasas ocean_hex_ids/city_hex_ids
   con la cantidad exacta de hexagonos -- preguntale al usuario donde quiere colocarlos (o
   llama a get_board_state para ofrecerle opciones legales) antes de llamar a play_card.
+  Mining Rights y Mining Area piden ademas special_tile_hex_id: un hexagono con bonus de
+  steel o titanium (Mining Area exige ademas que sea adyacente a un tile propio) -- llama a
+  get_board_state para mostrarle al usuario cuales hexagonos califican.
 - use_card_action: cuando el usuario quiere usar la accion repetible de una carta que ya tiene
   jugada (ej. "usa la accion de Ironworks"). Solo funciona si la carta ya fue jugada con
   play_card y su accion no se uso todavia esta generacion. Algunas acciones piden un

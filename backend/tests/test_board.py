@@ -19,11 +19,13 @@ from app.agent.board import (
     can_place_ocean,
     can_place_city,
     can_place_greenery,
+    can_place_special_tile,
     resolve_hex_bonus,
     resolve_ocean_adjacency_bonus,
     place_ocean_tile,
     place_city_tile,
     place_greenery_tile,
+    place_special_tile,
     HexOccupiedError,
     InvalidPlacementError,
     UnknownHexError,
@@ -227,3 +229,59 @@ def test_count_tiles_of_type_and_owner():
     assert count_tiles_of_type(board, "ocean") == 1
     assert count_tiles_of_type(board, "ocean", owner="player-1") == 0  # oceano es neutral
     assert count_adjacent_owned_by(board, ocean_hex, "player-1") >= 0  # no lanza
+
+
+# ---------------------------------------------------------------------------
+# Special tiles de cartas (Mining Rights / Mining Area)
+# ---------------------------------------------------------------------------
+
+def test_can_place_special_tile_requires_matching_hex_bonus():
+    board = new_board()
+    requirement = {"hex_bonus_resource": ["steel", "titanium"]}
+    steel_hex = "03"  # bonus [steel,2]
+    plain_hex = "05"  # sin bonus
+    assert can_place_special_tile(board, steel_hex, requirement, "player-1") is True
+    assert can_place_special_tile(board, plain_hex, requirement, "player-1") is False
+
+
+def test_mining_rights_no_adjacency_required():
+    board = new_board()
+    requirement = {"hex_bonus_resource": ["steel", "titanium"]}
+    steel_hex = "03"
+    assert can_place_special_tile(board, steel_hex, requirement, "player-1") is True
+    new_board_state, hex_bonus, _ = place_special_tile(board, steel_hex, requirement, "player-1", "mining_rights")
+    assert new_board_state[steel_hex]["tile_type"] == "special"
+    assert new_board_state[steel_hex]["card"] == "mining_rights"
+    assert hex_bonus == [("steel", 2)]  # quien llama decide que hacer con esto (produccion, no stock)
+
+
+def test_mining_area_requires_adjacency_to_own_tile():
+    board = new_board()
+    requirement = {"hex_bonus_resource": ["steel", "titanium"], "require_adjacency_to_own_tile": True}
+    steel_hex = "03"
+    assert can_place_special_tile(board, steel_hex, requirement, "player-1") is False
+    # el jugador coloca una ciudad en un hex vecino de 03 (04 es oceano, no sirve para ciudad;
+    # el vecino "08" si es land)
+    assert "08" in get_neighbors(steel_hex)
+    board, _, _ = place_city_tile(board, "08", "player-1")
+    assert can_place_special_tile(board, steel_hex, requirement, "player-1") is True
+    board, hex_bonus, _ = place_special_tile(board, steel_hex, requirement, "player-1", "mining_area")
+    assert board[steel_hex]["owner"] == "player-1"
+    assert hex_bonus == [("steel", 2)]
+
+
+def test_place_special_tile_on_occupied_hex_raises():
+    board = new_board()
+    requirement = {"hex_bonus_resource": ["steel", "titanium"]}
+    steel_hex = "03"
+    board, _, _ = place_special_tile(board, steel_hex, requirement, "player-1", "mining_rights")
+    with pytest.raises(InvalidPlacementError):
+        place_special_tile(board, steel_hex, requirement, "player-1", "mining_rights")
+
+
+def test_place_special_tile_without_matching_bonus_raises():
+    board = new_board()
+    requirement = {"hex_bonus_resource": ["steel", "titanium"]}
+    plain_hex = "05"
+    with pytest.raises(InvalidPlacementError):
+        place_special_tile(board, plain_hex, requirement, "player-1", "mining_rights")

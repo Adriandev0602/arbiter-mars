@@ -15,14 +15,16 @@ especificos de cada hexagono individual salen unicamente del codigo fuente
 Alcance de esta primera pasada (decision explicita, ver CLAUDE.md seccion 6):
 - Solo el mapa Tharsis (no Hellas/Elysium).
 - Sin la mecanica de pago cruzado entre jugadores de la expansion Ares.
-- Sin las ~20 special tiles especificas de cartas todavia (Mining Area,
-  Mining Rights, Land Claim siguen en "Pendientes" en CARDS_LOG.md) --
-  este modulo da los primitivos (adyacencia, bonus de hex, colocacion) pero
-  todavia no esta conectado a tools.py/cards. Cablearlo es un paso aparte.
+- `place_special_tile` es GENERICA (parametrizada por `requirement`) -- no se
+  hardcodea el catalogo completo de ~20 special tiles de cartas, solo el
+  primitivo que las tools/cards individuales consumen. Cableada a Mining
+  Area y Mining Rights (ver tools.play_card y seed_cards.sql); Land Claim no
+  la necesita (su unico efecto -- "reservar un hexagono para uso exclusivo
+  propio" -- no tiene consecuencia mecanica en single-player, ver CARDS_LOG.md).
 """
 from typing import Literal, TypedDict
 
-TileType = Literal["city", "greenery", "ocean"]
+TileType = Literal["city", "greenery", "ocean", "special"]
 HexType = Literal["land", "ocean"]
 
 
@@ -42,6 +44,7 @@ class HexState(TypedDict):
     tile_type: TileType
     owner: str | None       # None = neutral (oceano)
     bonus_consumed: bool
+    card: str | None        # id de la carta duena, solo para tile_type "special"
 
 
 Board = dict[str, HexState]
@@ -283,7 +286,9 @@ def resolve_ocean_adjacency_bonus(board: Board, hex_id: str) -> int:
     return 2 * count_adjacent_oceans(board, hex_id)
 
 
-def _place(board: Board, hex_id: str, tile_type: TileType, owner: str | None) -> tuple[Board, list[tuple[str, int]], int]:
+def _place(
+    board: Board, hex_id: str, tile_type: TileType, owner: str | None, card: str | None = None
+) -> tuple[Board, list[tuple[str, int]], int]:
     if hex_id not in HEX_DEFS:
         raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
     if not is_hex_empty(board, hex_id):
@@ -291,7 +296,7 @@ def _place(board: Board, hex_id: str, tile_type: TileType, owner: str | None) ->
     hex_bonus = resolve_hex_bonus(board, hex_id)
     ocean_bonus_mc = resolve_ocean_adjacency_bonus(board, hex_id)
     new_board = dict(board)
-    new_board[hex_id] = HexState(tile_type=tile_type, owner=owner, bonus_consumed=True)
+    new_board[hex_id] = HexState(tile_type=tile_type, owner=owner, bonus_consumed=True, card=card)
     return new_board, hex_bonus, ocean_bonus_mc
 
 
@@ -312,3 +317,49 @@ def place_greenery_tile(board: Board, hex_id: str, player_id: str) -> tuple[Boar
     if not can_place_greenery(board, hex_id, player_id):
         raise InvalidPlacementError(f"No se puede colocar greenery en '{hex_id}' para este jugador")
     return _place(board, hex_id, "greenery", owner=player_id)
+
+
+# ---------------------------------------------------------------------------
+# Special tiles de cartas (generico, parametrizado por `requirement`)
+# ---------------------------------------------------------------------------
+
+def can_place_special_tile(board: Board, hex_id: str, requirement: dict, player_id: str) -> bool:
+    """
+    `requirement`:
+      - "hex_bonus_resource": lista de recursos ("steel"/"titanium"/...) -- el
+        hexagono elegido debe tener AL MENOS UNO de esos bonus impresos.
+        Ausente/None = cualquier hexagono de tierra sirve.
+      - "require_adjacency_to_own_tile": bool -- si True, exige que el hex
+        elegido sea adyacente a un tile propio del jugador (ej. Mining Area).
+    """
+    hex_def = HEX_DEFS.get(hex_id)
+    if hex_def is None:
+        raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
+    if hex_def["hex_type"] != "land" or not is_hex_empty(board, hex_id):
+        return False
+    if hex_def["reserved_city"] is not None:
+        return False
+    allowed_resources = requirement.get("hex_bonus_resource")
+    if allowed_resources is not None:
+        hex_resources = {resource for resource, _ in hex_def["bonus"]}
+        if not hex_resources.intersection(allowed_resources):
+            return False
+    if requirement.get("require_adjacency_to_own_tile"):
+        if count_adjacent_owned_by(board, hex_id, player_id) == 0:
+            return False
+    return True
+
+
+def place_special_tile(
+    board: Board, hex_id: str, requirement: dict, player_id: str, card_id: str
+) -> tuple[Board, list[tuple[str, int]], int]:
+    """
+    Coloca una special tile de carta (ej. Mining Area/Mining Rights). A
+    diferencia de ocean/city/greenery, quien llama es responsable de decidir
+    que hacer con `hex_bonus` (el bonus impreso del hex se devuelve SIN
+    aplicar -- estas cartas suelen convertirlo en produccion permanente en
+    vez del stock de una sola vez que otorgaria un tile normal).
+    """
+    if not can_place_special_tile(board, hex_id, requirement, player_id):
+        raise InvalidPlacementError(f"No se puede colocar la special tile de '{card_id}' en '{hex_id}'")
+    return _place(board, hex_id, "special", owner=player_id, card=card_id)

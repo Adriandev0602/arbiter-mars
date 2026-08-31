@@ -88,6 +88,9 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `mining_expedition` | Mining Expedition | 063 | 12 MC | +1 paso oxígeno, -2 plantas (obligatorio), +2 steel |
 | `building_industries` | Building Industries | 065 | 6 MC | -1 producción energía, +2 producción steel |
 | `electro_catapult` | Electro Catapult | 069 | 17 MC | Requiere oxígeno ≤8%. -1 producción energía; acción repetible con elección: -1 planta O -1 steel → +7 MC |
+| `mining_rights` | Mining Rights | 067 | 9 MC | Coloca special tile en un hex con bonus de steel o titanium (`place_special_tile`), +1 producción de ESE recurso |
+| `mining_area` | Mining Area | 064 | 4 MC | Igual que Mining Rights, pero exige que el hex sea adyacente a un tile propio (`require_adjacency_to_own_tile`) |
+| `land_claim` | Land Claim | 066 | 1 MC | Sin efecto modelado — "reservar un hexágono para uso exclusivo propio" no tiene consecuencia mecánica en single-player (nadie más podría disputarlo) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -101,27 +104,18 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 024 | Predators | Misma pieza: su acción mueve 1 animal desde OTRA carta hacia esta — necesita elegir la carta origen. |
 | 026 | Eos Chasma National Park | Misma pieza: "add 1 animal to any animal card" — carta destino elegida por el jugador. |
 | 035 | Ants | Misma pieza que Predators: mueve 1 microbio desde OTRA carta. |
-| 064 | Mining Area | Requiere elegir un hex del mapa con bonus de steel/titanium, adyacente a un tile propio, y subir la producción de ESE recurso. Depende del mapa hexagonal — ver `HEX_MAP_RESEARCH.md`. |
-| 066 | Land Claim | Todo el efecto es reservar un hex específico del mapa para uso exclusivo propio. Depende del mapa hexagonal — ver `HEX_MAP_RESEARCH.md`. |
-| 067 | Mining Rights | Requiere elegir un hex del mapa con bonus de steel/titanium y subir la producción de ESE recurso (sin requisito de adyacencia, a diferencia de Mining Area). Depende del mapa hexagonal — ver `HEX_MAP_RESEARCH.md`. |
 
 **Nota:** Local Heat Trapping, Imported Hydrogen, Predators, Eos Chasma National Park y Ants
 comparten la misma pieza faltante — "mover/agregar un recurso en una carta específica elegida
 por el jugador, distinta de la que se está jugando/usando". Vale la pena implementarla una
 sola vez y resolver las 5 juntas cuando se aborde.
 
-**Nota sobre mapa hexagonal:** Mining Area, Land Claim y Mining Rights son las primeras
-cartas del catálogo que genuinamente necesitan modelar el tablero (hexágonos, bonus por hex,
-adyacencia). Decisión de alcance confirmada por el usuario el 2026-08-31 (ver sección 6 de
-CLAUDE.md): el mapa Tharsis SÍ se implementa. `HEX_MAP_RESEARCH.md` documenta la investigación
-verificada (61 hexágonos, adyacencia, 12 océanos reservados), `backend/app/agent/board.py` +
-`test_board.py` (22 tests) implementan los primitivos, y el cableado a `tools.py`
-(`use_standard_project`, `convert_resources`, `play_card`, `use_card_action` con
-`hex_id`/`ocean_hex_ids`/`city_hex_ids`, más `get_board_state`) ya está hecho y probado
-end-to-end contra Supabase real. Estas 3 cartas siguen pendientes solo porque falta una pieza
-más chica: `place_special_tile` genérica parametrizada por `requirement` (elegir un hex con
-bonus de steel/titanium específicamente, con o sin adyacencia a tile propio según la carta) —
-ver "Pendiente" en `HEX_MAP_RESEARCH.md`.
+**Nota sobre mapa hexagonal (resuelto 2026-08-31):** Mining Area, Mining Rights y Land Claim
+fueron las primeras cartas del catálogo que genuinamente necesitaban modelar el tablero —
+decisión de alcance confirmada por el usuario (ver sección 6 de CLAUDE.md). Investigación
+verificada, `backend/app/agent/board.py` + `test_board.py`, y el cableado completo a
+`tools.py` (incluida `place_special_tile` genérica) están documentados en
+`HEX_MAP_RESEARCH.md`. Las 3 cartas ya están cargadas — ver tabla de arriba.
 
 Cartas ya cargadas que ahora SÍ colocan tile real en el mapa (antes solo tocaban el contador
 global): `comet` (1 océano), `lake_marineris` (2 océanos), `water_import_from_europa` (1
@@ -175,6 +169,13 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
   "per_tag": N (default 1)}` — a diferencia de `tag_count_choice` (umbral binario), escala
   linealmente: suma N por cada tag ya jugado (ej. Miranda Resort: +1 producción de MC por cada
   tag earth jugado, sin mínimo).
+- `place_special_tile`: `{"hex_bonus_resource": ["steel","titanium"], "require_adjacency_to_own_tile":
+  bool (opcional)}` — a diferencia de `place_oceans`/`place_city_tiles` (que solo tocan un
+  contador global), esta coloca una special tile de verdad en el mapa Tharsis
+  (`board.place_special_tile`) y requiere `special_tile_hex_id` en `tools.play_card`. El bonus
+  impreso del hex elegido (debe matchear `hex_bonus_resource`) se convierte en +1 producción
+  PERMANENTE de ese recurso, no en stock de una sola vez (ej. Mining Rights: +1 producción de
+  steel si el hex tenía bonus de steel). Ver `HEX_MAP_RESEARCH.md` para el detalle del tablero.
 
 **Nota sobre "decrease any plant production 1 step" (sin "up to", ej. Fish, Small Animals):**
 a diferencia de la cláusula opcional "remove up to N ... from any player" (sección de más

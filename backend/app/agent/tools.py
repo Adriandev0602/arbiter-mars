@@ -270,6 +270,7 @@ def play_card(
     effect_choice: int | None = None,
     ocean_hex_ids: list[str] | None = None,
     city_hex_ids: list[str] | None = None,
+    special_tile_hex_id: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -302,6 +303,11 @@ def play_card(
             la carta no coloca oceanos.
         city_hex_ids: igual que ocean_hex_ids pero para cartas que colocan
             ciudad(es) (ej. Capital: 1).
+        special_tile_hex_id: OBLIGATORIO si `effects.place_special_tile` esta
+            definido en la carta (ej. Mining Rights, Mining Area) -- el hex
+            debe tener el bonus de recurso que pide la carta (steel/titanium)
+            y, si la carta lo exige (Mining Area), ser adyacente a un tile
+            propio. None si la carta no tiene esta mecanica.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -386,6 +392,26 @@ def play_card(
             if not boardlib.can_place_city(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hid}'")
             board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id)
+
+    special_tile_spec = effects.get("place_special_tile")
+    if special_tile_spec is not None:
+        if special_tile_hex_id is None:
+            raise ValueError(f"La carta '{card_id}' requiere special_tile_hex_id")
+        if board is None:
+            board = _load_board()
+        board, hex_bonus, ocean_bonus_mc = boardlib.place_special_tile(
+            board, special_tile_hex_id, special_tile_spec, player_id, card_id
+        )
+        # El bonus del hex se convierte en produccion permanente del recurso
+        # que matchea (no se aplica como stock de una sola vez, a diferencia
+        # de un tile normal) -- ej. Mining Rights: +1 produccion de steel si
+        # el hex elegido tenia bonus de steel.
+        resource_bumped = next(r for r, _ in hex_bonus if r in special_tile_spec["hex_bonus_resource"])
+        production_key = f"{resource_bumped}_production"
+        new_player, new_globals = engine.apply_card_effect(
+            new_player, new_globals, {"production_deltas": {production_key: 1}}
+        )
+        new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
 
     if effects.get("becomes_active"):
         new_player = engine.register_active_card(new_player, card_id)

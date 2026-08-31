@@ -302,6 +302,18 @@ insert into cards (id, name, cost, tags, requirements, effects) values
             {"cost": {"plants": 1}, "gains": {"resource_deltas": {"mc": 7}}},
             {"cost": {"steel": 1}, "gains": {"resource_deltas": {"mc": 7}}}
           ]}}'::jsonb
+    ),
+    (
+        'mining_rights', 'Mining Rights', 9, '{building}', null,
+        '{"place_special_tile": {"hex_bonus_resource": ["steel", "titanium"]}}'::jsonb
+    ),
+    (
+        'mining_area', 'Mining Area', 4, '{building}', null,
+        '{"place_special_tile": {"hex_bonus_resource": ["steel", "titanium"], "require_adjacency_to_own_tile": true}}'::jsonb
+    ),
+    (
+        'land_claim', 'Land Claim', 1, '{}', null,
+        '{}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
