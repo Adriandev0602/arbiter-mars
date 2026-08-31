@@ -269,6 +269,39 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         'beam_from_a_thorium_asteroid', 'Beam from a Thorium Asteroid', 32, '{jovian,space,power}',
         '{"min_tag_count": {"tag": "jovian", "count": 1}}'::jsonb,
         '{"production_deltas": {"heat_production": 3, "energy_production": 3}}'::jsonb
+    ),
+    (
+        'mangrove', 'Mangrove', 12, '{plant}', '{"min_temperature": 4}'::jsonb,
+        '{"raise_oxygen_steps": 1}'::jsonb
+    ),
+    (
+        'trees', 'Trees', 13, '{plant}', '{"min_temperature": -4}'::jsonb,
+        '{"resource_deltas": {"plants": 1}, "production_deltas": {"plant_production": 3}}'::jsonb
+    ),
+    (
+        'great_escarpment_consortium', 'Great Escarpment Consortium', 6, '{}',
+        '{"min_production": {"key": "steel_production", "count": 1}}'::jsonb,
+        '{}'::jsonb
+    ),
+    (
+        'mineral_deposit', 'Mineral Deposit', 5, '{}', null,
+        '{"resource_deltas": {"steel": 5}}'::jsonb
+    ),
+    (
+        'mining_expedition', 'Mining Expedition', 12, '{}', null,
+        '{"raise_oxygen_steps": 1, "resource_deltas": {"plants": -2, "steel": 2}}'::jsonb
+    ),
+    (
+        'building_industries', 'Building Industries', 6, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "steel_production": 2}}'::jsonb
+    ),
+    (
+        'electro_catapult', 'Electro Catapult', 17, '{building}', '{"max_oxygen": 8}'::jsonb,
+        '{"production_deltas": {"energy_production": -1}, "becomes_active": true,
+          "action": {"choice": [
+            {"cost": {"plants": 1}, "gains": {"resource_deltas": {"mc": 7}}},
+            {"cost": {"steel": 1}, "gains": {"resource_deltas": {"mc": 7}}}
+          ]}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

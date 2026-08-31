@@ -1295,3 +1295,111 @@ def test_beam_from_a_thorium_asteroid_requires_jovian_tag_and_gives_heat_and_ene
     )
     assert new_player["heat_production"] == 4
     assert new_player["energy_production"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Bloque 6 (CARDS_PENDING_REVIEW.md filas #1-10)
+# ---------------------------------------------------------------------------
+
+def test_mangrove_requires_4_degrees_and_raises_oxygen_1_step():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": 4}, globals_)
+    globals_["temperature"] = 4
+    check_card_requirements({"min_temperature": 4}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, globals_, {"raise_oxygen_steps": 1})
+    assert new_globals["oxygen"] == 1
+    assert new_player["tr"] == TR_START + 1
+    # "place on an area reserved for ocean, disregard placement restrictions"
+    # es un detalle de tablero sin efecto medible (no modelamos el mapa)
+
+
+def test_trees_requires_minus_4_degrees_and_gives_plant_production_and_stock():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -4}, globals_)
+    globals_["temperature"] = -4
+    check_card_requirements({"min_temperature": -4}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_deltas": {"plants": 1}, "production_deltas": {"plant_production": 3}}
+    )
+    assert new_player["plants"] == 1
+    assert new_player["plant_production"] == 4
+
+
+def test_great_escarpment_consortium_requires_own_steel_production():
+    player = {**new_player_state(), "steel_production": 0}
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_production": {"key": "steel_production", "count": 1}}, globals_, player)
+    player["steel_production"] = 1
+    check_card_requirements({"min_production": {"key": "steel_production", "count": 1}}, globals_, player)  # no lanza
+    # "decrease any steel production 1 step and increase your own 1 step" se
+    # cancela en single-player (mismo objetivo) -- effects: {} tras el requisito
+
+
+def test_mineral_deposit_gives_5_steel():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"resource_deltas": {"steel": 5}})
+    assert new_player["steel"] == 5
+
+
+def test_mining_expedition_raises_oxygen_and_converts_plants_to_steel():
+    player = {**new_player_state(), "plants": 2}
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_,
+        {"raise_oxygen_steps": 1, "resource_deltas": {"plants": -2, "steel": 2}},
+    )
+    assert new_globals["oxygen"] == 1
+    assert new_player["plants"] == 0
+    assert new_player["steel"] == 2
+
+
+def test_mining_expedition_insufficient_plants_raises():
+    player = new_player_state()
+    with pytest.raises(InsufficientResourcesError):
+        apply_card_effect(
+            player, new_global_parameters(),
+            {"resource_deltas": {"plants": -2, "steel": 2}},
+        )
+
+
+def test_building_industries_minus_1_energy_plus_2_steel_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "steel_production": 2}},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["steel_production"] == 3
+
+
+def test_electro_catapult_requires_max_8_oxygen_and_minus_1_energy_production():
+    globals_ = new_global_parameters()
+    globals_["oxygen"] = 9
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_oxygen": 8}, globals_)
+    globals_["oxygen"] = 8
+    check_card_requirements({"max_oxygen": 8}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"production_deltas": {"energy_production": -1}}
+    )
+    assert new_player["energy_production"] == 0
+
+
+def test_electro_catapult_action_spends_plant_or_steel_for_7_mc():
+    player = register_active_card({**new_player_state(), "plants": 1, "steel": 1}, "electro_catapult")
+    globals_ = new_global_parameters()
+    action_spec = {
+        "choice": [
+            {"cost": {"plants": 1}, "gains": {"resource_deltas": {"mc": 7}}},
+            {"cost": {"steel": 1}, "gains": {"resource_deltas": {"mc": 7}}},
+        ]
+    }
+    new_player, _ = use_card_action(player, globals_, "electro_catapult", action_spec, effect_choice=0)
+    assert new_player["plants"] == 0
+    assert new_player["mc"] == 7

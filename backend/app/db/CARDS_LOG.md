@@ -81,6 +81,13 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `kelp_farming` | Kelp Farming | 055 | 17 MC | Requiere 6 océanos colocados. +2 producción MC, +3 producción plantas, +2 plantas (stock) |
 | `vesta_shipyard` | Vesta Shipyard | 057 | 15 MC | +1 producción titanio |
 | `beam_from_a_thorium_asteroid` | Beam from a Thorium Asteroid | 058 | 32 MC | Requiere 1 tag jovian jugado. +3 producción calor, +3 producción energía |
+| `mangrove` | Mangrove | 059 | 12 MC | Requiere temperatura ≥4°C. +1 paso oxígeno (la restricción de colocación "en área reservada de océano" es irrelevante sin mapa modelado) |
+| `trees` | Trees | 060 | 13 MC | Requiere temperatura ≥-4°C. +3 producción plantas, +1 planta (stock) |
+| `great_escarpment_consortium` | Great Escarpment Consortium | 061 | 6 MC | Requiere producción propia de steel ≥1 (`min_production`). Sin efecto neto en single-player (-1 y +1 al mismo jugador se cancelan) |
+| `mineral_deposit` | Mineral Deposit | 062 | 5 MC | +5 steel (stock) |
+| `mining_expedition` | Mining Expedition | 063 | 12 MC | +1 paso oxígeno, -2 plantas (obligatorio), +2 steel |
+| `building_industries` | Building Industries | 065 | 6 MC | -1 producción energía, +2 producción steel |
+| `electro_catapult` | Electro Catapult | 069 | 17 MC | Requiere oxígeno ≤8%. -1 producción energía; acción repetible con elección: -1 planta O -1 steel → +7 MC |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -94,12 +101,21 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 024 | Predators | Misma pieza: su acción mueve 1 animal desde OTRA carta hacia esta — necesita elegir la carta origen. |
 | 026 | Eos Chasma National Park | Misma pieza: "add 1 animal to any animal card" — carta destino elegida por el jugador. |
 | 035 | Ants | Misma pieza que Predators: mueve 1 microbio desde OTRA carta. |
-| 059 | Mangrove | Colocación de tiles en general — decisión explícita de mantener fuera de alcance del MVP (sección 6 de CLAUDE.md: sin mapa hexagonal). |
+| 064 | Mining Area | Requiere elegir un hex del mapa con bonus de steel/titanium, adyacente a un tile propio, y subir la producción de ESE recurso. Depende del mapa hexagonal — ver `HEX_MAP_RESEARCH.md`. |
+| 066 | Land Claim | Todo el efecto es reservar un hex específico del mapa para uso exclusivo propio. Depende del mapa hexagonal — ver `HEX_MAP_RESEARCH.md`. |
+| 067 | Mining Rights | Requiere elegir un hex del mapa con bonus de steel/titanium y subir la producción de ESE recurso (sin requisito de adyacencia, a diferencia de Mining Area). Depende del mapa hexagonal — ver `HEX_MAP_RESEARCH.md`. |
 
 **Nota:** Local Heat Trapping, Imported Hydrogen, Predators, Eos Chasma National Park y Ants
 comparten la misma pieza faltante — "mover/agregar un recurso en una carta específica elegida
 por el jugador, distinta de la que se está jugando/usando". Vale la pena implementarla una
 sola vez y resolver las 5 juntas cuando se aborde.
+
+**Nota sobre mapa hexagonal:** Mining Area, Land Claim y Mining Rights son las primeras
+cartas del catálogo que genuinamente necesitan modelar el tablero (hexágonos, bonus por hex,
+adyacencia). `HEX_MAP_RESEARCH.md` (2026-08-31) documenta la investigación de la mecánica
+oficial y una propuesta de estructura de datos y funciones para el motor — todavía no
+implementada, es una decisión de alcance pendiente de confirmar con el usuario (ver sección 6
+de CLAUDE.md, que hoy excluye el mapa explícitamente del MVP).
 
 ## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
 
@@ -195,6 +211,9 @@ oficial). `player.active_cards` (jsonb en Supabase) guarda `{card_id: {resources
 - `min_oxygen` / `max_oxygen`: en % (ej. Methane from Titan: min 2; Domed Crater: max 7).
 - `min_oceans`: cantidad mínima de tiles de océano colocados (ej. Nitrophilic Moss: 3).
 - `min_tag_count`: ver sección "Tags jugados" más abajo.
+- `min_production`: `{"key": "<recurso>_production", "count": N}` — requiere que el jugador ya
+  tenga esa producción propia en al menos N (ej. Great Escarpment Consortium: requiere
+  producción de steel ≥1). Requiere pasar `player`.
 
 `tools.play_card` valida el requisito contra `global_parameters` antes de cobrar la carta —
 si no se cumple, lanza `CardRequirementNotMetError` y no se paga nada.

@@ -446,6 +446,10 @@ def check_card_requirements(
       - "min_tag_count": {"tag": "<tag>", "count": N} -- requiere que el
         jugador haya jugado al menos N cartas con ese tag (ej. Mass
         Converter: 5 tags de ciencia). Requiere pasar `player`.
+      - "min_production": {"key": "<recurso>_production", "count": N} -- requiere
+        que el jugador ya tenga esa produccion en al menos N (ej. Great
+        Escarpment Consortium: requiere tener produccion de steel >= 1).
+        Requiere pasar `player`.
 
     requirements None o {} no exige nada. Lanza CardRequirementNotMetError
     si algun requisito no se cumple.
@@ -463,6 +467,18 @@ def check_card_requirements(
         if have < spec["count"]:
             raise CardRequirementNotMetError(
                 f"Requiere {spec['count']} tags de '{spec['tag']}' jugados, hay {have}"
+            )
+
+    if "min_production" in requirements:
+        spec = requirements["min_production"]
+        if player is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado del jugador (produccion propia)"
+            )
+        have = player[spec["key"]]
+        if have < spec["count"]:
+            raise CardRequirementNotMetError(
+                f"Requiere {spec['key']} >= {spec['count']}, hay {have}"
             )
 
     if "min_temperature" in requirements and globals_["temperature"] < requirements["min_temperature"]:
