@@ -34,6 +34,11 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists global_parameters add column if not exists board jsonb not null default '{}'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -95,7 +100,17 @@ create table if not exists global_parameters (
     oxygen integer not null default 0,          -- rango: 0 a 14, pasos de 1
     oceans_placed integer not null default 0,   -- rango: 0 a 9
     city_tiles_placed integer not null default 0,  -- ciudades colocadas por cualquier jugador
-    generation integer not null default 1
+    generation integer not null default 1,
+
+    -- Tablero hexagonal (mapa Tharsis, ver backend/app/agent/board.py y
+    -- HEX_MAP_RESEARCH.md). Forma: {hex_id: {"tile_type": str, "owner":
+    -- str|None, "bonus_consumed": bool}}. La geometria/bonus de cada hex son
+    -- constantes en board.py (HEX_DEFS/ADJACENCY), no se persisten -- solo
+    -- el estado mutable (que hexagonos ya tienen tile) va aca. Un hex_id
+    -- ausente de este jsonb se interpreta como vacio (board.is_hex_empty).
+    -- Todavia NO esta cableado a tools.py -- ver "Pendiente" en
+    -- HEX_MAP_RESEARCH.md.
+    board jsonb not null default '{}'::jsonb
 );
 
 -- Catalogo de cartas de proyecto.

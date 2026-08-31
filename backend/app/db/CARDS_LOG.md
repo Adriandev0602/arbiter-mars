@@ -112,10 +112,13 @@ sola vez y resolver las 5 juntas cuando se aborde.
 
 **Nota sobre mapa hexagonal:** Mining Area, Land Claim y Mining Rights son las primeras
 cartas del catálogo que genuinamente necesitan modelar el tablero (hexágonos, bonus por hex,
-adyacencia). `HEX_MAP_RESEARCH.md` (2026-08-31) documenta la investigación de la mecánica
-oficial y una propuesta de estructura de datos y funciones para el motor — todavía no
-implementada, es una decisión de alcance pendiente de confirmar con el usuario (ver sección 6
-de CLAUDE.md, que hoy excluye el mapa explícitamente del MVP).
+adyacencia). Decisión de alcance confirmada por el usuario el 2026-08-31 (ver sección 6 de
+CLAUDE.md): el mapa Tharsis SÍ se implementa. `HEX_MAP_RESEARCH.md` documenta la investigación
+verificada (61 hexágonos, adyacencia, 12 océanos reservados) y `backend/app/agent/board.py` +
+`test_board.py` (22 tests) ya implementan los primitivos (adyacencia, colocación de
+ocean/city/greenery, bonus). Estas 3 cartas siguen pendientes porque falta cablear `board.py`
+a `tools.py`/`cards` (agregar `hex_id` a las tools, persistir el tablero en Supabase, extender
+`prompts.py`) — ver la sección "Pendiente" de `HEX_MAP_RESEARCH.md` para el detalle exacto.
 
 ## Fuera de alcance por diseño (no por mecánica faltante — ver CLAUDE.md sección 6)
 

@@ -144,11 +144,21 @@ arbitro-ia/
 **Dentro de alcance:** interfaz conversacional en sidebar, dashboard de estado del jugador, enrutamiento
 a herramientas para cálculos de redención, memoria persistente del estado de la sesión actual.
 
-**Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, digitalización visual
-completa del tablero (nos quedamos con datos tabulares/resúmenes de texto — no se modela el mapa
-hexagonal, adyacencias ni bonus de colocación de tiles), soporte para múltiples juegos simultáneos,
-milestones y awards (quedan fuera del MVP, se pueden agregar después siguiendo el mismo patrón que
-`rules_engine.py`).
+**Mapa hexagonal (Tharsis) — decisión explícita del usuario, 2026-08-31:** el tablero SÍ se modela
+(hexágonos, adyacencia, bonus de colocación, océano reservado), a diferencia de la decisión original
+de mantenerlo fuera del MVP. Motivado por cartas del catálogo que genuinamente lo necesitan (Mining
+Area, Land Claim, Mining Rights — ver `backend/app/db/CARDS_LOG.md`, sección "Pendientes"). La
+investigación de la mecánica oficial y la estructura de datos/funciones propuesta están en
+`backend/app/db/HEX_MAP_RESEARCH.md` — implementar siguiendo esa base (no reinventar desde cero).
+Alcance de la primera pasada (según esa investigación): solo el mapa Tharsis (no Hellas/Elysium),
+sin mecánica de pago cruzado entre jugadores de la expansión Ares, y sin hardcodear todavía el
+catálogo completo de ~20 special tiles de cartas — `place_special_tile` debe quedar genérica con un
+`requirement` parametrizable.
+
+**Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, soporte para múltiples
+juegos simultáneos, milestones y awards (quedan fuera del MVP, se pueden agregar después siguiendo el
+mismo patrón que `rules_engine.py`), mapas alternativos (Hellas/Elysium) y la mecánica de pago cruzado
+de la expansión Ares (ver nota del mapa hexagonal arriba).
 
 ## 7. Comandos de desarrollo
 

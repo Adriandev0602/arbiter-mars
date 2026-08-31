@@ -1,0 +1,229 @@
+"""
+Tests del modulo de tablero hexagonal (mapa Tharsis). Los datos de geometria
+y bonus estan transcritos de TharsisBoard.ts (terraforming-mars/terraforming-mars);
+el conteo de 12 hexagonos de oceano fue verificado ademas contra el reglamento
+oficial -- ver HEX_MAP_RESEARCH.md.
+"""
+import pytest
+
+from app.agent.board import (
+    HEX_DEFS,
+    ADJACENCY,
+    NOCTIS_CITY_HEX_ID,
+    new_board,
+    get_neighbors,
+    is_hex_empty,
+    count_adjacent_oceans,
+    count_adjacent_owned_by,
+    count_tiles_of_type,
+    can_place_ocean,
+    can_place_city,
+    can_place_greenery,
+    resolve_hex_bonus,
+    resolve_ocean_adjacency_bonus,
+    place_ocean_tile,
+    place_city_tile,
+    place_greenery_tile,
+    HexOccupiedError,
+    InvalidPlacementError,
+    UnknownHexError,
+)
+
+
+def test_map_has_61_hexes():
+    assert len(HEX_DEFS) == 61
+
+
+def test_map_has_12_ocean_reserved_hexes():
+    oceans = [h for h in HEX_DEFS.values() if h["hex_type"] == "ocean"]
+    assert len(oceans) == 12
+
+
+def test_map_has_4_volcanic_hexes():
+    volcanic = [h for h in HEX_DEFS.values() if h["volcanic"]]
+    assert len(volcanic) == 4
+
+
+def test_noctis_city_hex_is_reserved():
+    assert HEX_DEFS[NOCTIS_CITY_HEX_ID]["reserved_city"] == "noctis_city"
+    assert HEX_DEFS[NOCTIS_CITY_HEX_ID]["row"] == 4
+
+
+def test_row_widths_match_tharsis_layout():
+    counts = {}
+    for hex_def in HEX_DEFS.values():
+        counts[hex_def["row"]] = counts.get(hex_def["row"], 0) + 1
+    assert [counts[r] for r in range(9)] == [5, 6, 7, 8, 9, 8, 7, 6, 5]
+
+
+def test_middle_row_hex_has_6_neighbors():
+    # cualquier hex interior de la fila mas ancha (no en el borde del rombo)
+    middle_row_ids = [h["id"] for h in HEX_DEFS.values() if h["row"] == 4]
+    interior_id = middle_row_ids[4]  # posicion central, x=4
+    assert len(get_neighbors(interior_id)) == 6
+
+
+def test_corner_hex_has_3_neighbors():
+    # primer hex del mapa (fila 0, primera posicion) es una esquina del rombo
+    corner_id = min(h["id"] for h in HEX_DEFS.values() if h["row"] == 0)
+    assert len(get_neighbors(corner_id)) == 3
+
+
+def test_adjacency_is_symmetric():
+    for hex_id, neighbors in ADJACENCY.items():
+        for n in neighbors:
+            assert hex_id in ADJACENCY[n], f"{hex_id} -> {n} no es simetrico"
+
+
+def test_get_neighbors_unknown_hex_raises():
+    with pytest.raises(UnknownHexError):
+        get_neighbors("99")
+
+
+def test_new_board_is_empty():
+    board = new_board()
+    assert is_hex_empty(board, "03")
+
+
+def test_can_place_ocean_only_on_ocean_hex():
+    board = new_board()
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+    land_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "land" and h["reserved_city"] is None)
+    assert can_place_ocean(board, ocean_hex) is True
+    assert can_place_ocean(board, land_hex) is False
+
+
+def test_place_ocean_tile_occupies_hex():
+    board = new_board()
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+    new_board_state, bonus, ocean_bonus_mc = place_ocean_tile(board, ocean_hex)
+    assert is_hex_empty(new_board_state, ocean_hex) is False
+    assert new_board_state[ocean_hex]["owner"] is None
+    assert ocean_bonus_mc == 0  # sin oceanos vecinos todavia
+
+
+def test_place_ocean_tile_on_occupied_hex_raises():
+    board = new_board()
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+    board, _, _ = place_ocean_tile(board, ocean_hex)
+    with pytest.raises(InvalidPlacementError):
+        place_ocean_tile(board, ocean_hex)
+
+
+def test_place_ocean_tile_on_land_hex_raises():
+    board = new_board()
+    land_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "land" and h["reserved_city"] is None)
+    with pytest.raises(InvalidPlacementError):
+        place_ocean_tile(board, land_hex)
+
+
+def test_hex_bonus_is_consumed_only_once():
+    board = new_board()
+    bonus_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "land" and h["bonus"] and h["reserved_city"] is None)
+    assert resolve_hex_bonus(board, bonus_hex) == HEX_DEFS[bonus_hex]["bonus"]
+    board, granted_bonus, _ = place_city_tile(board, bonus_hex, "player-1")
+    assert granted_bonus == HEX_DEFS[bonus_hex]["bonus"]
+    assert resolve_hex_bonus(board, bonus_hex) == []
+
+
+def test_cannot_place_city_adjacent_to_another_city():
+    board = new_board()
+    land_hex = next(
+        h["id"] for h in HEX_DEFS.values()
+        if h["hex_type"] == "land" and h["reserved_city"] is None and len(get_neighbors(h["id"])) > 0
+    )
+    neighbor = next(
+        n for n in get_neighbors(land_hex)
+        if HEX_DEFS[n]["hex_type"] == "land" and HEX_DEFS[n]["reserved_city"] is None
+    )
+    board, _, _ = place_city_tile(board, land_hex, "player-1")
+    assert can_place_city(board, neighbor) is False
+
+
+def test_cannot_place_city_on_noctis_city_reserved_hex():
+    board = new_board()
+    assert can_place_city(board, NOCTIS_CITY_HEX_ID) is False
+    with pytest.raises(InvalidPlacementError):
+        place_city_tile(board, NOCTIS_CITY_HEX_ID, "player-1")
+
+
+def test_greenery_free_placement_when_player_has_no_tiles_yet():
+    board = new_board()
+    any_land = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "land" and h["reserved_city"] is None)
+    assert can_place_greenery(board, any_land, "player-1") is True
+
+
+def test_greenery_requires_adjacency_once_player_has_a_tile():
+    board = new_board()
+    land_hex = next(
+        h["id"] for h in HEX_DEFS.values()
+        if h["hex_type"] == "land" and h["reserved_city"] is None and len(get_neighbors(h["id"])) > 0
+    )
+    board, _, _ = place_city_tile(board, land_hex, "player-1")
+    far_hex = next(
+        h["id"] for h in HEX_DEFS.values()
+        if h["hex_type"] == "land" and h["reserved_city"] is None
+        and h["id"] != land_hex and h["id"] not in get_neighbors(land_hex)
+    )
+    assert can_place_greenery(board, far_hex, "player-1") is False
+    neighbor = next(
+        n for n in get_neighbors(land_hex)
+        if HEX_DEFS[n]["hex_type"] == "land" and HEX_DEFS[n]["reserved_city"] is None
+    )
+    assert can_place_greenery(board, neighbor, "player-1") is True
+
+
+def test_place_greenery_tile_illegal_raises():
+    board = new_board()
+    land_hex = next(
+        h["id"] for h in HEX_DEFS.values()
+        if h["hex_type"] == "land" and h["reserved_city"] is None and len(get_neighbors(h["id"])) > 0
+    )
+    board, _, _ = place_city_tile(board, land_hex, "player-1")
+    far_hex = next(
+        h["id"] for h in HEX_DEFS.values()
+        if h["hex_type"] == "land" and h["reserved_city"] is None
+        and h["id"] != land_hex and h["id"] not in get_neighbors(land_hex)
+    )
+    with pytest.raises(InvalidPlacementError):
+        place_greenery_tile(board, far_hex, "player-1")
+
+
+def test_ocean_adjacency_bonus_is_2_mc_per_adjacent_ocean():
+    board = new_board()
+    # buscar un hex de tierra con al menos 2 vecinos de oceano
+    land_hex = None
+    for h in HEX_DEFS.values():
+        if h["hex_type"] != "land" or h["reserved_city"] is not None:
+            continue
+        ocean_neighbors = [n for n in get_neighbors(h["id"]) if HEX_DEFS[n]["hex_type"] == "ocean"]
+        if len(ocean_neighbors) >= 2:
+            land_hex = h["id"]
+            oceans_to_place = ocean_neighbors
+            break
+    assert land_hex is not None, "el mapa deberia tener al menos un hex de tierra con 2+ vecinos de oceano"
+    for ocean_hex in oceans_to_place:
+        board, _, _ = place_ocean_tile(board, ocean_hex)
+    assert count_adjacent_oceans(board, land_hex) == len(oceans_to_place)
+    assert resolve_ocean_adjacency_bonus(board, land_hex) == 2 * len(oceans_to_place)
+
+
+def test_count_tiles_of_type_and_owner():
+    board = new_board()
+    city_hex = next(
+        h["id"] for h in HEX_DEFS.values()
+        if h["hex_type"] == "land" and h["reserved_city"] is None and len(get_neighbors(h["id"])) > 0
+    )
+    board, _, _ = place_city_tile(board, city_hex, "player-1")
+    greenery_hex = next(
+        n for n in get_neighbors(city_hex)
+        if HEX_DEFS[n]["hex_type"] == "land" and HEX_DEFS[n]["reserved_city"] is None
+    )
+    board, _, _ = place_greenery_tile(board, greenery_hex, "player-1")
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+    board, _, _ = place_ocean_tile(board, ocean_hex)
+    assert count_tiles_of_type(board, "city") == 1
+    assert count_tiles_of_type(board, "city", owner="player-1") == 1
+    assert count_tiles_of_type(board, "ocean") == 1
+    assert count_tiles_of_type(board, "ocean", owner="player-1") == 0  # oceano es neutral
+    assert count_adjacent_owned_by(board, ocean_hex, "player-1") >= 0  # no lanza

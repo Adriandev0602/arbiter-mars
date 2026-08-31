@@ -1,11 +1,33 @@
 # Investigación: mecánica del tablero hexagonal de Terraforming Mars
 
-Investigación de referencia (2026-08-31) para eventualmente extender `rules_engine.py` con
-el mapa de Marte, hoy fuera de alcance del MVP (ver CLAUDE.md sección 6). Este documento
-**no implica que la feature esté decidida ni implementada** — es la base técnica para cuando
-se tome esa decisión de alcance explícitamente. Motivada por tres cartas del catálogo que la
-necesitan de verdad: Mining Area, Land Claim, Mining Rights (ver "Pendientes" en
+Investigación de referencia (2026-08-31) para extender el motor con el mapa de Marte.
+**Decisión de alcance confirmada por el usuario el 2026-08-31**: el mapa Tharsis se
+implementa (ver CLAUDE.md sección 6, actualizada). Motivada por tres cartas del catálogo que
+lo necesitan de verdad: Mining Area, Land Claim, Mining Rights (ver "Pendientes" en
 `CARDS_LOG.md`).
+
+**Estado de implementación:** `backend/app/agent/board.py` (61 hexágonos, adyacencia,
+colocación de ocean/city/greenery, bonus de hex y de adyacencia oceánica) y
+`backend/tests/test_board.py` (22 tests) ya están implementados y verificados. Todavía NO
+está cableado a `tools.py`/`cards` — las tres cartas de mapa siguen en "Pendientes" hasta que
+se decida esa integración (requiere agregar `hex_id` como parámetro de las tools relevantes,
+persistir el tablero en Supabase, y actualizar el system prompt del LLM).
+
+**Corrección importante sobre la premisa inicial de esta investigación:** se asumió al
+arrancar que había 9 hexágonos reservados para océano (confundiendo el límite de 9 océanos
+JUGABLES en toda la partida — regla real y distinta — con la cantidad de hexágonos donde se
+pueden colocar). El número real, **verificado con dos fuentes independientes**, es **12**:
+1. Código fuente de `TharsisBoard.ts` (terraforming-mars/terraforming-mars): 12 llamadas
+   `.ocean(...)`.
+2. Reglamento oficial, transcripción textual en rulespal.com: *"12 areas on the game board
+   that are reserved for ocean tiles"*.
+
+Los BONUS específicos de cada hexágono individual (qué hexágono da steel/titanium/plants/
+cards y cuánto) y la asignación de nombres a los 4 hexágonos volcánicos (Tharsis Tholus/
+Ascraeus/Pavonis/Arsia Mons) salen **únicamente** del código fuente — no se re-verificó cada
+uno contra una segunda fuente independiente (solo el conteo total de océanos se verificó así).
+El código es igualmente la fuente más confiable disponible (motor ampliamente jugado y
+testeado en producción), pero queda anotado por transparencia.
 
 ## 1. Estructura del tablero
 
@@ -21,7 +43,7 @@ rombo).
 
 **Tipos de terreno:**
 - Tierra normal (land) — sin restricción de tipo de tile.
-- Océano reservado (9 espacios) — solo admite tile de océano.
+- Océano reservado (12 espacios, ver corrección más abajo) — solo admite tile de océano.
 - Reservado para ciudad específica (ej. Noctis City) — solo esa carta puede colocar ahí.
 - Terreno con bonus impreso (steel, titanium, plants, cards, MC) — se consume la primera vez
   que se coloca un tile ahí.
@@ -95,64 +117,75 @@ parámetros globales actual, con funciones individuales igual de pequeñas y pur
 existentes (`raise_temperature`, `place_ocean`) — solo que trabajando sobre una estructura no
 escalar.
 
-## 9. Estructura de datos mínima propuesta (MVP single-player, sin implementar todavía)
+## 9. Tabla completa de 61 hexágonos (implementada en `board.py`)
+
+Transcrita directo de `TharsisBoard.ts`. Convención: `id` = string de 2 dígitos (03-63, los
+ids 01/02 son Ganymede Colony/Phobos Space Haven, fuera del mapa de Marte), `row` = fila
+0-based (0 arriba, 8 abajo), `x` = columna absoluta 0-8 (`xOffset + posición_en_la_fila`,
+`xOffset = 9 - hexágonos_en_esa_fila`).
+
+| Fila | Hexágonos (id: tipo, bonus) |
+|---|---|
+| 0 (5, xOffset 4) | 03:land[steel2] · 04:ocean[steel2] · 05:land · 06:ocean[card1] · 07:ocean |
+| 1 (6, xOffset 3) | 08:land · 09:land☡[steel1] · 10:land · 11:land · 12:land · 13:ocean[card2] |
+| 2 (7, xOffset 2) | 14:land☡[card1] · 15:land · 16:land · 17:land · 18:land · 19:land · 20:land[steel1] |
+| 3 (8, xOffset 1) | 21:land☡[plant1,titanium1] · 22:land[plant1] · 23:land[plant1] · 24:land[plant1] · 25:land[plant2] · 26:land[plant1] · 27:land[plant1] · 28:ocean[plant2] |
+| 4 (9, xOffset 0) | 29:land☡[plant2] · 30:land[plant2] · **31:land[plant2] (Noctis City)** · 32:ocean[plant2] · 33:ocean[plant2] · 34:ocean[plant2] · 35:land[plant2] · 36:land[plant2] · 37:land[plant2] |
+| 5 (8, xOffset 1) | 38:land[plant1] · 39:land[plant2] · 40:land[plant1] · 41:land[plant1] · 42:land[plant1] · 43:ocean[plant1] · 44:ocean[plant1] · 45:ocean[plant1] |
+| 6 (7, xOffset 2) | 46:land · 47:land · 48:land · 49:land · 50:land · 51:land[plant1] · 52:land |
+| 7 (6, xOffset 3) | 53:land[steel2] · 54:land · 55:land[card1] · 56:land[card1] · 57:land · 58:land[titanium1] |
+| 8 (5, xOffset 4) | 59:land[steel1] · 60:land[steel2] · 61:land · 62:land · 63:ocean[titanium2] |
+
+`☡` = hexágono volcánico (4 en total: 09, 14, 21, 29 — forman la diagonal noroeste). El código
+fuente no asigna nombre individual (Tharsis Tholus/Ascraeus Mons/Pavonis Mons/Arsia Mons) a
+cada uno — dato no verificado, se dejó sin asignar en `board.py`.
+
+Conteo de verificación: 12 hexágonos `ocean` (04,06,07,13,28,32,33,34,43,44,45,63) ✓ coincide
+con las dos fuentes citadas arriba.
+
+## 11. Estructura de datos y funciones — YA IMPLEMENTADO en `board.py`
 
 ```python
-TileType = Literal["city", "greenery", "ocean", "special:<nombre>"]
-HexType  = Literal["land", "ocean_reserved", "city_reserved"]
+TileType = Literal["city", "greenery", "ocean"]
+HexType  = Literal["land", "ocean"]
 
-class Hex(TypedDict):
+class HexDef(TypedDict):   # ESTATICO, nunca cambia -- constante HEX_DEFS
     id: str
+    row: int
+    x: int
     hex_type: HexType
-    bonus: list[ResourceBonus]   # se vacía al usarse
-    tile: Tile | None
+    volcanic: bool
+    bonus: list[tuple[str, int]]
+    reserved_city: str | None
 
-class Tile(TypedDict):
+class HexState(TypedDict):  # MUTABLE, esto es lo que se persiste
     tile_type: TileType
-    owner: str | None            # None = neutral (oceano)
-    card: str | None             # si es special tile ligada a una carta
+    owner: str | None       # None = neutral (oceano)
+    bonus_consumed: bool
 
-class Board(TypedDict):
-    hexes: dict[str, Hex]
-    adjacency: dict[str, list[str]]   # tabla ESTATICA, constante del modulo
+Board = dict[str, HexState]
 ```
 
-### Funciones puras propuestas (mismo estilo que `raise_temperature`, `place_ocean`)
+Implementadas y testeadas (22 tests en `test_board.py`): `get_neighbors`, `is_hex_empty`,
+`get_adjacent_tiles`, `count_adjacent_oceans`, `count_adjacent_owned_by`,
+`count_tiles_of_type`, `can_place_ocean`, `can_place_city`, `can_place_greenery`,
+`resolve_hex_bonus`, `resolve_ocean_adjacency_bonus`, `place_ocean_tile`, `place_city_tile`,
+`place_greenery_tile`. La adyacencia (`ADJACENCY`) se precalcula una sola vez al importar el
+módulo, igual que recomienda la investigación (sección 2) -- no se recalcula en cada consulta.
 
-**Consultas:**
-- `get_neighbors(board, hex_id) -> list[str]`
-- `get_adjacent_tiles(board, hex_id) -> list[Tile]`
-- `count_adjacent_oceans(board, hex_id) -> int`
-- `count_adjacent_owned_by(board, hex_id, player) -> int`
-- `is_hex_empty(board, hex_id) -> bool`
+### Pendiente para una segunda iteración (fuera de esta primera pasada, a propósito)
 
-**Validación de legalidad (puras, bool o excepción, no mutan):**
-- `can_place_ocean(board, hex_id) -> bool`
-- `can_place_city(board, hex_id) -> bool`
-- `can_place_greenery(board, hex_id, player) -> bool`
-- `can_place_special_tile(board, hex_id, requirement) -> bool`
-
-**Mutación (reciben estado, devuelven nuevo estado):**
-- `place_tile(board, hex_id, tile) -> Board` (genérica, limpia el bonus consumido)
-- `place_ocean(board, hex_id) -> Board`
-- `place_city(board, hex_id, player) -> Board`
-- `place_greenery(board, hex_id, player) -> Board` (dispara `raise_oxygen`)
-- `place_special_tile(board, hex_id, player, card_name) -> Board`
-
-**Bonus:**
-- `resolve_hex_bonus(board, hex_id) -> ResourceDelta`
-- `resolve_ocean_adjacency_bonus(board, hex_id) -> int` (2 × océanos vecinos)
-
-**Puntuación (fin de partida, cuando corresponda):**
-- `count_city_greenery_vp(board) -> dict[player, int]`
-- `count_tiles_of_type(board, tile_type, owner=None) -> int`
-
-### Alcance recomendado si se decide implementar
-
-No hardcodear todavía las ~20 special tiles particulares — dejar `place_special_tile`
-genérica con `requirement` parametrizable, y postergar el catálogo completo de cartas de mapa
-para una segunda iteración. Tampoco implementar mapas alternativos (Hellas/Elysium) ni el pago
-cruzado de Ares en esta primera pasada.
+- Cablear `board.py` a `tools.py`/`cards`: agregar `hex_id` como parámetro a las tools que
+  colocan tiles (`play_card` cuando el efecto es `place_oceans`/`place_city_tiles`,
+  `standard_project_city`, `standard_project_aquifer`, `convert_plants_to_greenery`), persistir
+  el `Board` en Supabase (columna `board` jsonb en `global_parameters`, ver `schema.sql`), y
+  actualizar `prompts.py` para que el LLM pueda extraer un `hex_id` de la consulta del usuario.
+- `place_special_tile(board, hex_id, player, card_name, requirement)` genérica, para
+  desbloquear Mining Area/Mining Rights/Land Claim sin hardcodear cada una.
+- No hardcodear las ~20 special tiles particulares del catálogo completo.
+- No implementar mapas alternativos (Hellas/Elysium) ni el pago cruzado de Ares.
+- Nombrar los 4 hexágonos volcánicos (Tharsis Tholus/Ascraeus/Pavonis/Arsia Mons) si alguna
+  carta futura los distingue individualmente (no verificado, ver sección 9).
 
 ## Fuente
 
