@@ -1629,3 +1629,107 @@ def test_robotic_workforce_duplicates_production_via_apply_card_effect():
     target_production_deltas = {"steel_production": 1}  # ej. Mine
     new_player, _ = apply_card_effect(player, new_global_parameters(), {"production_deltas": target_production_deltas})
     assert new_player["steel_production"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Bloque 9 (CARDS_PENDING_REVIEW.md filas #1-10, Mass Converter ya estaba cargada)
+# ---------------------------------------------------------------------------
+
+def test_gene_repair_requires_3_science_tags_and_gives_mc_production():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "science", "count": 3}}, globals_, player)
+    player["tags_played"] = {"science": 3}
+    check_card_requirements({"min_tag_count": {"tag": "science", "count": 3}}, globals_, player)
+    new_player, _ = apply_card_effect(player, globals_, {"production_deltas": {"mc_production": 2}})
+    assert new_player["mc_production"] == 3
+
+
+def test_io_mining_industries_gives_titanium_and_mc_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"titanium_production": 2, "mc_production": 2}},
+    )
+    assert new_player["titanium_production"] == 3
+    assert new_player["mc_production"] == 3
+    # "1 VP per jovian tag" no se trackea
+
+
+def test_bushes_requires_minus_10_degrees_and_gives_plant_production_and_stock():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -10}, globals_)
+    globals_["temperature"] = -10
+    check_card_requirements({"min_temperature": -10}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_deltas": {"plants": 2}, "production_deltas": {"plant_production": 2}}
+    )
+    assert new_player["plants"] == 2
+    assert new_player["plant_production"] == 3
+
+
+def test_physics_complex_action_spends_6_energy_for_1_card_resource():
+    player = register_active_card({**new_player_state(), "energy": 6}, "physics_complex")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 6}, "gains": {"card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "physics_complex", action_spec)
+    assert new_player["energy"] == 0
+    assert new_player["active_cards"]["physics_complex"]["resources"] == 1
+    # "2 VP por recurso de ciencia en la carta" no se trackea
+
+
+def test_greenhouses_gives_1_plant_per_city_tile_placed():
+    player = new_player_state()
+    globals_ = {**new_global_parameters(), "city_tiles_placed": 3}
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_delta_per_counter": {"resource": "plants", "counter": "city_tiles_placed"}}
+    )
+    assert new_player["plants"] == 3
+
+
+def test_greenhouses_with_no_cities_gives_no_plants():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_delta_per_counter": {"resource": "plants", "counter": "city_tiles_placed"}}
+    )
+    assert new_player["plants"] == 0
+
+
+def test_nuclear_zone_raises_temperature_2_steps():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(player, globals_, {"raise_temperature_steps": 2})
+    assert new_globals["temperature"] == TEMPERATURE_MIN + 2 * TEMPERATURE_STEP
+    assert new_player["tr"] == TR_START + 2
+    # "-2 VP" y la colocacion del tile no se trackean
+
+
+def test_tropical_resort_minus_2_heat_plus_3_mc_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"heat_production": -2, "mc_production": 3}},
+    )
+    assert new_player["heat_production"] == 0  # piso 0
+    assert new_player["mc_production"] == 4
+
+
+def test_toll_station_has_no_effect_single_player_zero_opponents():
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), {})
+    assert new_player == player
+    assert new_globals == new_global_parameters()
+
+
+def test_fueled_generators_minus_1_mc_plus_1_energy_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"mc_production": -1, "energy_production": 1}},
+    )
+    assert new_player["mc_production"] == 0
+    assert new_player["energy_production"] == 2

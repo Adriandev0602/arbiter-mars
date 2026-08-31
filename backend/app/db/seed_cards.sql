@@ -388,6 +388,43 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'robotic_workforce', 'Robotic Workforce', 9, '{science}', null,
         '{"duplicate_production": {"requires_tag": "building"}}'::jsonb
+    ),
+    (
+        'gene_repair', 'Gene Repair', 12, '{science,science,science}',
+        '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'io_mining_industries', 'IO Mining Industries', 41, '{jovian}', null,
+        '{"production_deltas": {"titanium_production": 2, "mc_production": 2}}'::jsonb
+    ),
+    (
+        'bushes', 'Bushes', 10, '{plant}', '{"min_temperature": -10}'::jsonb,
+        '{"resource_deltas": {"plants": 2}, "production_deltas": {"plant_production": 2}}'::jsonb
+    ),
+    (
+        'physics_complex', 'Physics Complex', 12, '{science,building}', null,
+        '{"becomes_active": true, "action": {"cost": {"energy": 6}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'greenhouses', 'Greenhouses', 6, '{plant,building}', null,
+        '{"resource_delta_per_counter": {"resource": "plants", "counter": "city_tiles_placed"}}'::jsonb
+    ),
+    (
+        'nuclear_zone', 'Nuclear Zone', 10, '{earth}', null,
+        '{"raise_temperature_steps": 2}'::jsonb
+    ),
+    (
+        'tropical_resort', 'Tropical Resort', 13, '{building}', null,
+        '{"production_deltas": {"heat_production": -2, "mc_production": 3}}'::jsonb
+    ),
+    (
+        'toll_station', 'Toll Station', 12, '{space}', null,
+        '{}'::jsonb
+    ),
+    (
+        'fueled_generators', 'Fueled Generators', 1, '{power,building}', null,
+        '{"production_deltas": {"mc_production": -1, "energy_production": 1}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

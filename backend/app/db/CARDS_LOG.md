@@ -109,6 +109,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `peroxide_power` | Peroxide Power | 089 | 7 MC | -1 producción MC, +2 producción energía |
 | `research` | Research | 090 | 11 MC | 2 tags de ciencia (propios). Roba 2 cartas (`draw_cards`) |
 | `robotic_workforce` | Robotic Workforce | 086 | 9 MC | Duplica la `production_deltas` de una carta con tag building ya jugada (`duplicate_production`, requiere historial `played_cards`) |
+| `gene_repair` | Gene Repair | 091 | 12 MC | Requiere 3 tags de ciencia jugados (esta carta tiene 3 tags de ciencia propios). +2 producción MC |
+| `io_mining_industries` | IO Mining Industries | 092 | 41 MC | +2 producción titanio, +2 producción MC (VP por tag jovian no trackeado) |
+| `bushes` | Bushes | 093 | 10 MC | Requiere temperatura ≥-10°C. +2 producción plantas, +2 plantas (stock) |
+| `physics_complex` | Physics Complex | 095 | 12 MC | Acción repetible: -6 energía → +1 recurso en la carta (VP por recurso no trackeado) |
+| `greenhouses` | Greenhouses | 096 | 6 MC | +1 planta por cada ciudad colocada (`resource_delta_per_counter`) |
+| `nuclear_zone` | Nuclear Zone | 097 | 10 MC | +2 pasos temperatura (colocación de tile y -2 VP no trackeados) |
+| `tropical_resort` | Tropical Resort | 098 | 13 MC | -2 producción calor, +3 producción MC |
+| `toll_station` | Toll Station | 099 | 12 MC | Sin efecto modelado — depende de tags de OPONENTES, siempre 0 en single-player |
+| `fueled_generators` | Fueled Generators | 100 | 1 MC | -1 producción MC, +1 producción energía |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -181,6 +190,11 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
 - `draw_cards`: N — roba N cartas del mazo directo a la mano, sin fase de investigación (ej.
   Research: +2 cartas). Reusa `draw_cards_to_hand` (mismo mecanismo que `use_card_action.gains.draw_cards`,
   pero como efecto inmediato al jugar la carta).
+- `resource_delta_per_counter`: `{"resource": "<recurso>", "counter": "<contador de
+  GlobalParameters>", "per_counter": N (default 1)}` — suma al stock del recurso tanto como
+  valga ese contador global (ej. Greenhouses: +1 planta por cada ciudad en
+  `city_tiles_placed`). Análogo a `mc_per_counter` de `use_card_action.gains`, pero como
+  efecto inmediato y para cualquier recurso, no solo MC.
 - `duplicate_production`: `{"requires_tag": "<tag>"}` — a diferencia de todos los efectos de
   arriba (que solo miran el estado del jugador/tablero), este targetea OTRA carta que el
   jugador ya jugó, por catálogo, no por recursos guardados en ella (ej. Robotic Workforce:

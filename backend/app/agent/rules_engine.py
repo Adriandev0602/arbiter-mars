@@ -556,6 +556,12 @@ def apply_card_effect(
         fase de investigacion (ej. Research: +2 cartas). Reusa
         draw_cards_to_hand (mismo mecanismo que use_card_action.gains.draw_cards,
         pero como efecto inmediato al jugar la carta, no como accion repetible).
+      - "resource_delta_per_counter": {"resource": "<recurso>", "counter":
+        "<contador de GlobalParameters>", "per_counter": N (default 1)} --
+        suma al stock del recurso tanto como valga ese contador global (ej.
+        Greenhouses: +1 planta por cada ciudad en city_tiles_placed). Analogo
+        a "mc_per_counter" en use_card_action.gains, pero como efecto
+        inmediato y para cualquier recurso, no solo MC.
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
@@ -616,6 +622,12 @@ def apply_card_effect(
         count = player["tags_played"].get(spec["tag"], 0)
         delta = count * spec.get("per_tag", 1)
         new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+
+    if "resource_delta_per_counter" in effects:
+        spec = effects["resource_delta_per_counter"]
+        resource_key = spec["resource"]
+        count = globals_[spec["counter"]]
+        new_player[resource_key] = max(0, new_player[resource_key] + count * spec.get("per_counter", 1))
 
     if "resource_deltas" in effects:
         for key, delta in effects["resource_deltas"].items():
