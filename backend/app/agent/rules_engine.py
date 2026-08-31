@@ -812,6 +812,13 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         una carta, una accion) (ej. Arctic Algae: +2 plantas). Aplicado
         directo dentro de place_ocean, no hace falta llamarlo aparte.
       - "card_cost_discount_mc": N -- ver compute_card_cost_discount.
+      - "on_tag_played_may_swap_card": {"tag": "<tag>"} -- cada vez que el
+        jugador juega CUALQUIER carta con ese tag (incluida la que registra
+        el pasivo), puede opcionalmente descartar 1 carta de la mano para
+        robar 1 del mazo (ej. Mars University: tag "science"). A diferencia
+        de on_event_played (automatico), esto es una ELECCION del jugador --
+        ver tools.play_card (parametro discard_for_draw_card_id) y
+        rules_engine.player_has_tag_swap_passive / swap_card_for_draw.
 
     No revisa duplicados: cada carta se juega una sola vez en este motor.
     """
@@ -873,6 +880,29 @@ def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str,
         new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
         new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0)
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
+def player_has_tag_swap_passive(player: PlayerState, played_card_tags: tuple[str, ...]) -> bool:
+    """
+    True si el jugador tiene un pasivo "on_tag_played_may_swap_card" cuyo tag
+    coincide con alguno de los tags de la carta recien jugada (ej. Mars
+    University: tag "science"). Usado por tools.play_card para saber si
+    ofrecerle al usuario la opcion de descartar 1 carta y robar 1.
+    """
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_tag_played_may_swap_card")
+        if spec is not None and spec["tag"] in played_card_tags:
+            return True
+    return False
+
+
+def swap_card_for_draw(player: PlayerState, discard_card_id: str) -> PlayerState:
+    """
+    Descarta `discard_card_id` de la mano y roba 1 carta del mazo (ej. Mars
+    University). Lanza CardNotInHandError si el jugador no tiene esa carta.
+    """
+    discarded_player = remove_card_from_hand(player, discard_card_id)
+    return draw_cards_to_hand(discarded_player, 1)
 
 
 # ---------------------------------------------------------------------------

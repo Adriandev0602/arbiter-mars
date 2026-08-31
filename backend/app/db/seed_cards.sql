@@ -314,6 +314,40 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'land_claim', 'Land Claim', 1, '{}', null,
         '{}'::jsonb
+    ),
+    (
+        'earth_catapult', 'Earth Catapult', 23, '{earth}', null,
+        '{"passive": {"card_cost_discount_mc": 2}}'::jsonb
+    ),
+    (
+        'birds', 'Birds', 10, '{animal}', '{"min_oxygen": 13}'::jsonb,
+        '{"production_deltas": {"plant_production": -2},
+          "becomes_active": true, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'mars_university', 'Mars University', 8, '{science,building}', null,
+        '{"passive": {"on_tag_played_may_swap_card": {"tag": "science"}}}'::jsonb
+    ),
+    (
+        'towing_a_comet', 'Towing a Comet', 23, '{space}', null,
+        '{"resource_deltas": {"plants": 2}, "raise_oxygen_steps": 1, "place_oceans": 1}'::jsonb
+    ),
+    (
+        'space_mirrors', 'Space Mirrors', 3, '{power,space}', null,
+        '{"becomes_active": true, "action": {"cost": {"mc": 7}, "gains": {"production_deltas": {"energy_production": 1}}}}'::jsonb
+    ),
+    (
+        'ice_asteroid', 'Ice Asteroid', 23, '{space}', null,
+        '{"place_oceans": 2}'::jsonb
+    ),
+    (
+        'quantum_extractor', 'Quantum Extractor', 13, '{science,power}',
+        '{"min_tag_count": {"tag": "science", "count": 4}}'::jsonb,
+        '{"production_deltas": {"energy_production": 4}, "passive": {"tag_filter": "space", "card_cost_discount_mc": 2}}'::jsonb
+    ),
+    (
+        'giant_ice_asteroid', 'Giant Ice Asteroid', 36, '{space}', null,
+        '{"raise_temperature_steps": 2, "place_oceans": 2}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

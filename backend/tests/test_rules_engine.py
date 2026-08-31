@@ -48,6 +48,8 @@ from app.agent.rules_engine import (
     resolve_research_phase,
     draw_cards_to_hand,
     remove_card_from_hand,
+    player_has_tag_swap_passive,
+    swap_card_for_draw,
 )
 
 
@@ -1403,3 +1405,111 @@ def test_electro_catapult_action_spends_plant_or_steel_for_7_mc():
     new_player, _ = use_card_action(player, globals_, "electro_catapult", action_spec, effect_choice=0)
     assert new_player["plants"] == 0
     assert new_player["mc"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Bloque 7 (CARDS_PENDING_REVIEW.md filas #1-9, Advanced Alloys ya estaba cargada)
+# ---------------------------------------------------------------------------
+
+def test_earth_catapult_discount_applies_to_all_cards_no_tag_filter():
+    player = new_player_state()
+    player = register_passive_effect(player, "earth_catapult", {"card_cost_discount_mc": 2})
+    assert compute_card_cost_discount(player, ("plant",)) == 2
+    assert compute_card_cost_discount(player, ()) == 2
+
+
+def test_birds_requires_13_oxygen_and_decreases_plant_production():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oxygen": 13}, globals_)
+    globals_["oxygen"] = 13
+    check_card_requirements({"min_oxygen": 13}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"production_deltas": {"plant_production": -2}}
+    )
+    assert new_player["plant_production"] == 0  # piso 0, no negativo
+    active_player = register_active_card(new_player, "birds")
+    final_player, _ = use_card_action(
+        active_player, globals_, "birds", {"cost": {}, "gains": {"card_resource_delta": 1}}
+    )
+    assert final_player["active_cards"]["birds"]["resources"] == 1
+
+
+def test_mars_university_passive_offers_discard_for_draw_on_matching_tag():
+    player = new_player_state()
+    player["deck"] = ["sponsors"]
+    player["hand"] = ["farming"]
+    player = register_passive_effect(player, "mars_university", {"on_tag_played_may_swap_card": {"tag": "science"}})
+    assert player_has_tag_swap_passive(player, ("science",)) is True
+    assert player_has_tag_swap_passive(player, ("plant",)) is False
+    new_player = swap_card_for_draw(player, "farming")
+    assert "farming" not in new_player["hand"]
+    assert "sponsors" in new_player["hand"]
+    assert new_player["deck"] == []
+
+
+def test_swap_card_for_draw_requires_card_in_hand():
+    player = new_player_state()
+    with pytest.raises(CardNotInHandError):
+        swap_card_for_draw(player, "not_in_hand")
+
+
+def test_towing_a_comet_gives_plants_raises_oxygen_and_places_ocean():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_,
+        {"resource_deltas": {"plants": 2}, "raise_oxygen_steps": 1, "place_oceans": 1},
+    )
+    assert new_player["plants"] == 2
+    assert new_globals["oxygen"] == 1
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["tr"] == TR_START + 2  # +1 oxigeno, +1 oceano
+
+
+def test_space_mirrors_action_spends_7_mc_for_1_energy_production():
+    player = register_active_card({**new_player_state(), "mc": 7}, "space_mirrors")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"mc": 7}, "gains": {"production_deltas": {"energy_production": 1}}}
+    new_player, _ = use_card_action(player, globals_, "space_mirrors", action_spec)
+    assert new_player["mc"] == 0
+    assert new_player["energy_production"] == 2
+
+
+def test_ice_asteroid_places_2_oceans():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(player, globals_, {"place_oceans": 2})
+    assert new_globals["oceans_placed"] == 2
+    assert new_player["tr"] == TR_START + 2
+
+
+def test_quantum_extractor_requires_4_science_tags_gives_energy_and_space_discount():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "science", "count": 4}}, globals_, player)
+    player["tags_played"] = {"science": 4}
+    check_card_requirements({"min_tag_count": {"tag": "science", "count": 4}}, globals_, player)
+    new_player, _ = apply_card_effect(
+        player, globals_, {"production_deltas": {"energy_production": 4}}
+    )
+    assert new_player["energy_production"] == 5
+    new_player = register_passive_effect(
+        new_player, "quantum_extractor", {"card_cost_discount_mc": 2, "tag_filter": "space"}
+    )
+    assert compute_card_cost_discount(new_player, ("space",)) == 2
+    assert compute_card_cost_discount(new_player, ("plant",)) == 0
+
+
+def test_giant_ice_asteroid_raises_temperature_and_places_2_oceans():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_, {"raise_temperature_steps": 2, "place_oceans": 2}
+    )
+    assert new_globals["temperature"] == TEMPERATURE_MIN + 2 * TEMPERATURE_STEP
+    assert new_globals["oceans_placed"] == 2
+    assert new_player["tr"] == TR_START + 4  # +2 temperatura, +2 oceanos
+    # "remove up to 6 plants from any player" se omite (MVP single-player)

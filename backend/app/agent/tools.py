@@ -271,6 +271,7 @@ def play_card(
     ocean_hex_ids: list[str] | None = None,
     city_hex_ids: list[str] | None = None,
     special_tile_hex_id: str | None = None,
+    discard_for_draw_card_id: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -308,6 +309,12 @@ def play_card(
             debe tener el bonus de recurso que pide la carta (steel/titanium)
             y, si la carta lo exige (Mining Area), ser adyacente a un tile
             propio. None si la carta no tiene esta mecanica.
+        discard_for_draw_card_id: OPCIONAL -- si el jugador tiene un pasivo
+            "on_tag_played_may_swap_card" activo que matchea alguno de los
+            tags de la carta que se esta jugando (ej. Mars University: tag
+            science), puede pasar el id de una carta de su mano para
+            descartarla y robar 1 del mazo. None si no quiere ejercer la
+            opcion (es siempre opcional, nunca obligatoria).
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -423,6 +430,13 @@ def play_card(
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
     new_player = engine.remove_card_from_hand(new_player, card_id)
 
+    if discard_for_draw_card_id is not None:
+        if not engine.player_has_tag_swap_passive(new_player, card_tags):
+            raise ValueError(
+                f"El jugador no tiene un pasivo activo que ofrezca descartar/robar para tags {card_tags}"
+            )
+        new_player = engine.swap_card_for_draw(new_player, discard_for_draw_card_id)
+
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
@@ -434,7 +448,8 @@ def play_card(
          "titanium_to_pay": titanium_to_pay, "change_not_refunded": change,
          "cost_discount_applied": discount,
          "effect_amount": effect_amount, "effect_choice": effect_choice,
-         "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids},
+         "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids,
+         "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id},
     )
 
     return {

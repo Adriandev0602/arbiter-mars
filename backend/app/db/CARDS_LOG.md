@@ -91,6 +91,14 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `mining_rights` | Mining Rights | 067 | 9 MC | Coloca special tile en un hex con bonus de steel o titanium (`place_special_tile`), +1 producción de ESE recurso |
 | `mining_area` | Mining Area | 064 | 4 MC | Igual que Mining Rights, pero exige que el hex sea adyacente a un tile propio (`require_adjacency_to_own_tile`) |
 | `land_claim` | Land Claim | 066 | 1 MC | Sin efecto modelado — "reservar un hexágono para uso exclusivo propio" no tiene consecuencia mecánica en single-player (nadie más podría disputarlo) |
+| `earth_catapult` | Earth Catapult | 070 | 23 MC | Pasivo: -2 MC en TODAS las cartas futuras (sin `tag_filter`) |
+| `birds` | Birds | 072 | 10 MC | Requiere oxígeno ≥13%. -2 producción plantas; acción repetible sin costo: +1 recurso en la carta |
+| `mars_university` | Mars University | 073 | 8 MC | Pasivo nuevo: al jugar cualquier carta con tag science (incluida esta), puede descartar 1 carta y robar 1 (`on_tag_played_may_swap_card`) |
+| `towing_a_comet` | Towing a Comet | 075 | 23 MC | +2 plantas, +1 paso oxígeno, +1 océano |
+| `space_mirrors` | Space Mirrors | 076 | 3 MC | Acción repetible: -7 MC → +1 producción energía |
+| `ice_asteroid` | Ice Asteroid | 078 | 23 MC | +2 océanos |
+| `quantum_extractor` | Quantum Extractor | 079 | 13 MC | Requiere 4 tags de ciencia jugados. +4 producción energía; pasivo: cartas espaciales cuestan 2 MC menos |
+| `giant_ice_asteroid` | Giant Ice Asteroid | 080 | 36 MC | +2 pasos temperatura, +2 océanos |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -104,11 +112,12 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 024 | Predators | Misma pieza: su acción mueve 1 animal desde OTRA carta hacia esta — necesita elegir la carta origen. |
 | 026 | Eos Chasma National Park | Misma pieza: "add 1 animal to any animal card" — carta destino elegida por el jugador. |
 | 035 | Ants | Misma pieza que Predators: mueve 1 microbio desde OTRA carta. |
+| 074 | Viral Enhancers | Misma pieza: "gain 1 plant OR add 1 resource to that card" — la segunda rama de su elección (opcional, se dispara con cualquier carta de tag plant/microbe/animal que se juegue) targetea otra carta específica en juego. |
 
-**Nota:** Local Heat Trapping, Imported Hydrogen, Predators, Eos Chasma National Park y Ants
-comparten la misma pieza faltante — "mover/agregar un recurso en una carta específica elegida
-por el jugador, distinta de la que se está jugando/usando". Vale la pena implementarla una
-sola vez y resolver las 5 juntas cuando se aborde.
+**Nota:** Local Heat Trapping, Imported Hydrogen, Predators, Eos Chasma National Park, Ants y
+Viral Enhancers comparten la misma pieza faltante — "mover/agregar un recurso en una carta
+específica elegida por el jugador, distinta de la que se está jugando/usando". Vale la pena
+implementarla una sola vez y resolver las 6 juntas cuando se aborde.
 
 **Nota sobre mapa hexagonal (resuelto 2026-08-31):** Mining Area, Mining Rights y Land Claim
 fueron las primeras cartas del catálogo que genuinamente necesitaban modelar el tablero —
@@ -269,6 +278,12 @@ como `active_cards` -- no hay "usarla", simplemente están activas). Se registra
 - `tag_filter`: `"<tag>"` opcional en `on_event_played` o junto a `card_cost_discount_mc` --
   limita el bonus/descuento a cartas que tengan ese tag (ej. Optimal Aerobraking: solo
   eventos con tag `space`; Mass Converter: solo cartas con tag `space`).
+- `on_tag_played_may_swap_card`: `{"tag": "<tag>"}` -- a diferencia de `on_event_played`
+  (automático, dispara solo con cartas `is_event`), este dispara con CUALQUIER carta que
+  tenga ese tag (incluida la que registra el pasivo), y es una ELECCIÓN del jugador, no
+  automático: puede descartar 1 carta de su mano para robar 1 del mazo (ej. Mars University:
+  tag `science`). `tools.play_card` expone el parámetro opcional `discard_for_draw_card_id`;
+  `rules_engine.player_has_tag_swap_passive`/`swap_card_for_draw` implementan la lógica.
 
 `cards.is_event` (boolean, default false) marca las cartas "Event" del juego real (se
 juegan una vez, no quedan con producción propia) -- necesario para saber cuándo disparar
