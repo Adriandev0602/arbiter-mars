@@ -384,6 +384,10 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'research', 'Research', 11, '{science,science}', null,
         '{"draw_cards": 2}'::jsonb
+    ),
+    (
+        'robotic_workforce', 'Robotic Workforce', 9, '{science}', null,
+        '{"duplicate_production": {"requires_tag": "building"}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

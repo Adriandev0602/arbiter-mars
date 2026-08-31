@@ -39,6 +39,11 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists played_cards jsonb not null default '[]'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -88,6 +93,11 @@ create table if not exists players (
     deck jsonb not null default '[]'::jsonb,
     hand jsonb not null default '[]'::jsonb,
     pending_research jsonb not null default '[]'::jsonb,
+
+    -- Historial permanente de card_ids jugados (nunca se sacan). Necesario
+    -- para cartas que targetean "una de tus cartas jugadas" por catalogo/tag
+    -- en vez de por recursos guardados en la carta (ej. Robotic Workforce).
+    played_cards jsonb not null default '[]'::jsonb,
 
     created_at timestamptz not null default now()
 );

@@ -63,6 +63,9 @@ Herramientas disponibles y cuando usarlas:
   University) y esta jugando una carta con el tag que matchea (ej. otra carta de ciencia),
   preguntale si quiere descartar una carta de su mano para robar 1 -- es SIEMPRE opcional,
   pasa discard_for_draw_card_id solo si el usuario dice que si.
+  Robotic Workforce pide ademas duplicate_production_target_card_id: una carta con tag
+  building que el jugador ya jugo antes (get_player_state incluye `played_cards` con el
+  historial completo) -- preguntale cual quiere duplicar si no lo dijo.
 - use_card_action: cuando el usuario quiere usar la accion repetible de una carta que ya tiene
   jugada (ej. "usa la accion de Ironworks"). Solo funciona si la carta ya fue jugada con
   play_card y su accion no se uso todavia esta generacion. Algunas acciones piden un

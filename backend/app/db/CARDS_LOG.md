@@ -108,6 +108,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `heather` | Heather | 088 | 6 MC | Requiere temperatura ≥-14°C. +1 producción plantas, +1 planta (stock) |
 | `peroxide_power` | Peroxide Power | 089 | 7 MC | -1 producción MC, +2 producción energía |
 | `research` | Research | 090 | 11 MC | 2 tags de ciencia (propios). Roba 2 cartas (`draw_cards`) |
+| `robotic_workforce` | Robotic Workforce | 086 | 9 MC | Duplica la `production_deltas` de una carta con tag building ya jugada (`duplicate_production`, requiere historial `played_cards`) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -128,7 +129,6 @@ Viral Enhancers comparten la misma pieza faltante — "mover/agregar un recurso 
 específica elegida por el jugador, distinta de la que se está jugando/usando". Vale la pena
 implementarla una sola vez y resolver las 6 juntas cuando se aborde.
 
-| 086 | Robotic Workforce | Pieza DISTINTA a la de arriba: "duplicate the production box of one of your building cards" — requiere un historial de qué cartas (con qué producción) jugó el jugador, que hoy no existe (solo se trackean tags acumulados y active_cards de cartas con acción repetible, no un log completo de cartas jugadas con efecto). Ningún otro caso identificado hasta ahora necesita esta pieza. |
 
 **Nota sobre mapa hexagonal (resuelto 2026-08-31):** Mining Area, Mining Rights y Land Claim
 fueron las primeras cartas del catálogo que genuinamente necesitaban modelar el tablero —
@@ -181,6 +181,23 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
 - `draw_cards`: N — roba N cartas del mazo directo a la mano, sin fase de investigación (ej.
   Research: +2 cartas). Reusa `draw_cards_to_hand` (mismo mecanismo que `use_card_action.gains.draw_cards`,
   pero como efecto inmediato al jugar la carta).
+- `duplicate_production`: `{"requires_tag": "<tag>"}` — a diferencia de todos los efectos de
+  arriba (que solo miran el estado del jugador/tablero), este targetea OTRA carta que el
+  jugador ya jugó, por catálogo, no por recursos guardados en ella (ej. Robotic Workforce:
+  duplica la `production_deltas` de una carta con tag `building` ya jugada). Requiere
+  `player.played_cards` (historial permanente de card_ids jugados, ver más abajo) y el
+  parámetro `duplicate_production_target_card_id` en `tools.play_card`, que resuelve el
+  catálogo (`cards` table) para leer los tags y `effects.production_deltas` de la carta
+  objetivo — `apply_card_effect` en sí no conoce el catálogo, solo recibe el
+  `production_deltas` ya resuelto.
+
+## Historial de cartas jugadas (`PlayerState.played_cards`)
+
+Lista de `card_id` en el orden en que se jugaron, sin sacar nunca ninguno (a diferencia de
+`hand`). Se llena con `register_played_card`, llamado UNA vez por cada carta jugada
+exitosamente en `tools.play_card` (todas, no solo las que tienen acción/pasivo). Hoy solo lo
+usa `duplicate_production` (Robotic Workforce), pero cualquier carta futura que targetee "una
+de tus cartas jugadas" por catálogo puede reusarlo.
 - `choice`: lista de sub-effects (cualquiera de los de arriba); el jugador elige uno vía
   `effect_choice` (índice 0-based) (ej. Artificial Photosynthesis).
 - `tag_count_choice`: `{"tag": "<tag>", "count": N, "if_met": <sub-effect>, "else":

@@ -118,6 +118,14 @@ class PlayerState(TypedDict):
     hand: list
     pending_research: list
 
+    # played_cards: card_ids que el jugador ya jugo exitosamente, en orden,
+    # SIN volver a sacarlas nunca (a diferencia de hand, esto es un historial
+    # permanente). Necesario para cartas que targetean "una de tus cartas
+    # jugadas" por catalogo/tag en vez de por recursos guardados en la carta
+    # (ej. Robotic Workforce: duplicar la caja de produccion de una carta de
+    # building ya jugada -- ver tools.play_card, effects.duplicate_production).
+    played_cards: list
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -140,7 +148,7 @@ def new_player_state() -> PlayerState:
         mc_production=1, steel_production=1, titanium_production=1,
         plant_production=1, energy_production=1, heat_production=1,
         active_cards={}, tags_played={}, passive_effects=[],
-        deck=[], hand=[], pending_research=[],
+        deck=[], hand=[], pending_research=[], played_cards=[],
     )
 
 
@@ -1022,3 +1030,14 @@ def remove_card_from_hand(player: PlayerState, card_id: str) -> PlayerState:
     new_hand = list(player["hand"])
     new_hand.remove(card_id)
     return {**player, "hand": new_hand}
+
+
+def register_played_card(player: PlayerState, card_id: str) -> PlayerState:
+    """
+    Agrega `card_id` al historial permanente de cartas jugadas (`played_cards`).
+    Se llama UNA vez por cada carta jugada exitosamente via tools.play_card,
+    sin importar si la carta tiene accion/pasivo/efecto de tablero o no --
+    cualquier carta puede ser el objetivo de una futura carta que targetee
+    "una de tus cartas jugadas" (ej. Robotic Workforce).
+    """
+    return {**player, "played_cards": [*player["played_cards"], card_id]}

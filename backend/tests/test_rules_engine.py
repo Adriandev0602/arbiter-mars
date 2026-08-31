@@ -50,6 +50,7 @@ from app.agent.rules_engine import (
     remove_card_from_hand,
     player_has_tag_swap_passive,
     swap_card_for_draw,
+    register_played_card,
 )
 
 
@@ -1610,3 +1611,21 @@ def test_research_draws_fewer_if_deck_runs_out():
     new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
     assert new_player["hand"] == ["mine"]
     assert new_player["deck"] == []
+
+
+def test_register_played_card_appends_to_history():
+    player = new_player_state()
+    player = register_played_card(player, "mine")
+    player = register_played_card(player, "sponsors")
+    assert player["played_cards"] == ["mine", "sponsors"]
+
+
+def test_robotic_workforce_duplicates_production_via_apply_card_effect():
+    # tools.play_card resuelve el lookup de la carta objetivo y arma este
+    # production_deltas antes de llamar apply_card_effect -- este test
+    # verifica solo la parte pura (duplicar = aplicar production_deltas de
+    # nuevo), la resolucion del catalogo se prueba end-to-end en Supabase.
+    player = new_player_state()
+    target_production_deltas = {"steel_production": 1}  # ej. Mine
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"production_deltas": target_production_deltas})
+    assert new_player["steel_production"] == 2

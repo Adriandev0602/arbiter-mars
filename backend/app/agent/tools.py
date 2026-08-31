@@ -27,6 +27,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         deck=row.get("deck") or [],
         hand=row.get("hand") or [],
         pending_research=row.get("pending_research") or [],
+        played_cards=row.get("played_cards") or [],
     )
 
 
@@ -272,6 +273,7 @@ def play_card(
     city_hex_ids: list[str] | None = None,
     special_tile_hex_id: str | None = None,
     discard_for_draw_card_id: str | None = None,
+    duplicate_production_target_card_id: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -315,6 +317,13 @@ def play_card(
             science), puede pasar el id de una carta de su mano para
             descartarla y robar 1 del mazo. None si no quiere ejercer la
             opcion (es siempre opcional, nunca obligatoria).
+        duplicate_production_target_card_id: OBLIGATORIO si
+            `effects.duplicate_production` esta definido en la carta (ej.
+            Robotic Workforce) -- el id de una carta que el jugador ya jugo
+            antes (debe estar en su historial `played_cards`) y que cumpla
+            el tag requerido (ej. "building"). Se duplica su
+            `production_deltas` una vez. None si la carta no tiene esta
+            mecanica.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -425,10 +434,35 @@ def play_card(
     if effects.get("passive"):
         new_player = engine.register_passive_effect(new_player, card_id, effects["passive"])
 
+    duplicate_spec = effects.get("duplicate_production")
+    if duplicate_spec is not None:
+        if duplicate_production_target_card_id is None:
+            raise ValueError(f"La carta '{card_id}' requiere duplicate_production_target_card_id")
+        if duplicate_production_target_card_id not in new_player["played_cards"]:
+            raise ValueError(
+                f"'{duplicate_production_target_card_id}' no esta entre las cartas jugadas por el jugador"
+            )
+        target_res = supabase.table("cards").select("*").eq("id", duplicate_production_target_card_id).single().execute()
+        target_card = target_res.data
+        if target_card is None:
+            raise ValueError(f"Carta '{duplicate_production_target_card_id}' no encontrada en el catalogo")
+        required_tag = duplicate_spec.get("requires_tag")
+        if required_tag is not None and required_tag not in (target_card.get("tags") or []):
+            raise ValueError(
+                f"'{duplicate_production_target_card_id}' no tiene el tag requerido '{required_tag}'"
+            )
+        target_production = (target_card.get("effects") or {}).get("production_deltas")
+        if not target_production:
+            raise ValueError(f"'{duplicate_production_target_card_id}' no tiene una caja de produccion para duplicar")
+        new_player, new_globals = engine.apply_card_effect(
+            new_player, new_globals, {"production_deltas": target_production}
+        )
+
     new_player = engine.increment_tags_played(new_player, card_tags)
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
     new_player = engine.remove_card_from_hand(new_player, card_id)
+    new_player = engine.register_played_card(new_player, card_id)
 
     if discard_for_draw_card_id is not None:
         if not engine.player_has_tag_swap_passive(new_player, card_tags):
@@ -449,7 +483,8 @@ def play_card(
          "cost_discount_applied": discount,
          "effect_amount": effect_amount, "effect_choice": effect_choice,
          "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids,
-         "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id},
+         "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id,
+         "duplicate_production_target_card_id": duplicate_production_target_card_id},
     )
 
     return {
