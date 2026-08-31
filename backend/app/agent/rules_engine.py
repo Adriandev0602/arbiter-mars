@@ -531,6 +531,13 @@ def apply_card_effect(
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
+      - "tag_count_choice": {"tag": "<tag>", "count": N, "if_met": <sub-effect>,
+        "else": <sub-effect>} -- a diferencia de "choice", esta rama NO la
+        elige el jugador: se resuelve sola comparando `tags_played` del
+        jugador contra `count` (ej. Nitrogen-Rich Asteroid: +4 produccion de
+        plantas si ya jugo 3 tags de planta, si no +1). `tags_played` se lee
+        ANTES de sumar los tags de la carta que se esta jugando (tools.play_card
+        llama apply_card_effect antes de increment_tags_played).
 
     NOTA sobre "remove up to N <recurso> from any player": varias cartas del
     catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
@@ -547,6 +554,12 @@ def apply_card_effect(
                 f"Esta carta requiere effect_choice entre 0 y {len(options) - 1}"
             )
         return apply_card_effect(player, globals_, options[effect_choice], effect_amount)
+
+    if "tag_count_choice" in effects:
+        spec = effects["tag_count_choice"]
+        have = player["tags_played"].get(spec["tag"], 0)
+        branch = spec["if_met"] if have >= spec["count"] else spec["else"]
+        return apply_card_effect(player, globals_, branch, effect_amount)
 
     new_player: dict = dict(player)
     new_globals: dict = dict(globals_)

@@ -62,6 +62,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `underground_city` | Underground City | 032 | 18 MC | -2 producción energía, +2 producción steel, +1 ciudad |
 | `ghg_producing_bacteria` | GHG Producing Bacteria | 034 | 8 MC | Requiere oxígeno ≥4%. Acción repetible con elección: +1 microbio (en la carta) O -2 microbios/+1 paso temperatura |
 | `release_of_inert_gases` | Release of Inert Gases | 036 | 14 MC | +2 TR directo (evento) |
+| `nitrogen_rich_asteroid` | Nitrogen-Rich Asteroid | 037 | 31 MC | +1 paso temperatura; +1 producción plantas, o +4 si ya jugó 3 tags de planta (`tag_count_choice`) |
+| `deimos_down` | Deimos Down | 039 | 31 MC | +3 pasos temperatura, +4 steel (stock) |
+| `asteroid_mining` | Asteroid Mining | 040 | 30 MC | +2 producción titanio |
+| `food_factory` | Food Factory | 041 | 12 MC | -1 producción plantas, +4 producción MC |
+| `archaebacteria` | Archaebacteria | 042 | 6 MC | Requiere temperatura ≤-18°C. +1 producción plantas |
+| `carbonate_processing` | Carbonate Processing | 043 | 6 MC | -1 producción energía, +3 producción calor |
+| `natural_preserve` | Natural Preserve | 044 | 9 MC | Requiere oxígeno ≤4%. +1 producción MC (restricción de adyacencia de tile ignorada, sin mapa hexagonal) |
+| `lightning_harvest` | Lightning Harvest | 046 | 8 MC | Requiere 3 tags de ciencia jugados. +1 producción energía, +1 producción MC |
+| `algae` | Algae | 047 | 10 MC | Requiere 5 océanos colocados. +1 planta (stock), +2 producción plantas |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -117,6 +126,11 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
 - `tr_delta`: N — sube el TR directo, sin pasar por parámetro global (ej. Release of Inert Gases: +2).
 - `choice`: lista de sub-effects (cualquiera de los de arriba); el jugador elige uno vía
   `effect_choice` (índice 0-based) (ej. Artificial Photosynthesis).
+- `tag_count_choice`: `{"tag": "<tag>", "count": N, "if_met": <sub-effect>, "else":
+  <sub-effect>}` — a diferencia de `choice`, esta rama NO la elige el jugador: se resuelve
+  sola comparando `tags_played` contra `count` (ej. Nitrogen-Rich Asteroid: +4 producción de
+  plantas si ya jugó 3 tags de planta, si no +1). Se lee ANTES de sumar los tags de la propia
+  carta (`tools.play_card` llama `apply_card_effect` antes de `increment_tags_played`).
 
 **Nota de firma:** `apply_card_effect(player, globals_, effects, effect_amount=None,
 effect_choice=None)` recibe y devuelve SIEMPRE una tupla `(PlayerState, GlobalParameters)`,

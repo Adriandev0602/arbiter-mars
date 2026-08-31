@@ -187,6 +187,45 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'release_of_inert_gases', 'Release of Inert Gases', 14, '{}', null,
         '{"tr_delta": 2}'::jsonb
+    ),
+    (
+        'nitrogen_rich_asteroid', 'Nitrogen-Rich Asteroid', 31, '{space}', null,
+        '{"tag_count_choice": {"tag": "plant", "count": 3,
+            "if_met": {"raise_temperature_steps": 1, "production_deltas": {"plant_production": 4}},
+            "else": {"raise_temperature_steps": 1, "production_deltas": {"plant_production": 1}}}}'::jsonb
+    ),
+    (
+        'deimos_down', 'Deimos Down', 31, '{space}', null,
+        '{"raise_temperature_steps": 3, "resource_deltas": {"steel": 4}}'::jsonb
+    ),
+    (
+        'asteroid_mining', 'Asteroid Mining', 30, '{jovian}', null,
+        '{"production_deltas": {"titanium_production": 2}}'::jsonb
+    ),
+    (
+        'food_factory', 'Food Factory', 12, '{building}', null,
+        '{"production_deltas": {"plant_production": -1, "mc_production": 4}}'::jsonb
+    ),
+    (
+        'archaebacteria', 'Archaebacteria', 6, '{microbe}', '{"max_temperature": -18}'::jsonb,
+        '{"production_deltas": {"plant_production": 1}}'::jsonb
+    ),
+    (
+        'carbonate_processing', 'Carbonate Processing', 6, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "heat_production": 3}}'::jsonb
+    ),
+    (
+        'natural_preserve', 'Natural Preserve', 9, '{building}', '{"max_oxygen": 4}'::jsonb,
+        '{"production_deltas": {"mc_production": 1}}'::jsonb
+    ),
+    (
+        'lightning_harvest', 'Lightning Harvest', 8, '{power}',
+        '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
+        '{"production_deltas": {"energy_production": 1, "mc_production": 1}}'::jsonb
+    ),
+    (
+        'algae', 'Algae', 10, '{plant}', '{"min_oceans": 5}'::jsonb,
+        '{"resource_deltas": {"plants": 1}, "production_deltas": {"plant_production": 2}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

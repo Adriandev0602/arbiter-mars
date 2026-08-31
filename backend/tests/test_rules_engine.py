@@ -439,6 +439,34 @@ def test_artificial_photosynthesis_requires_valid_effect_choice():
         apply_card_effect(player, new_global_parameters(), effects, effect_choice=5)
 
 
+def test_nitrogen_rich_asteroid_tag_count_choice_below_threshold():
+    player = new_player_state()
+    effects = {
+        "tag_count_choice": {
+            "tag": "plant", "count": 3,
+            "if_met": {"raise_temperature_steps": 1, "production_deltas": {"plant_production": 4}},
+            "else": {"raise_temperature_steps": 1, "production_deltas": {"plant_production": 1}},
+        },
+    }
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["plant_production"] == 2
+    assert new_globals["temperature"] == TEMPERATURE_MIN + TEMPERATURE_STEP
+
+
+def test_nitrogen_rich_asteroid_tag_count_choice_meets_threshold():
+    player = new_player_state()
+    player["tags_played"] = {"plant": 3}
+    effects = {
+        "tag_count_choice": {
+            "tag": "plant", "count": 3,
+            "if_met": {"production_deltas": {"plant_production": 4}},
+            "else": {"production_deltas": {"plant_production": 1}},
+        },
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["plant_production"] == 5
+
+
 def test_mine_gives_plus_1_steel_production():
     player = new_player_state()
     new_player, _ = apply_card_effect(
@@ -1033,3 +1061,109 @@ def test_release_of_inert_gases_raises_tr_2_steps_directly():
     new_player, new_globals = apply_card_effect(player, globals_, {"tr_delta": 2})
     assert new_player["tr"] == TR_START + 2
     assert new_globals == globals_  # no toca parametros globales
+
+
+# ---------------------------------------------------------------------------
+# Bloque 4 (CARDS_PENDING_REVIEW.md filas #1-10)
+# ---------------------------------------------------------------------------
+
+def test_deimos_down_raises_temperature_3_steps_and_gives_4_steel():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(
+        player, globals_,
+        {"raise_temperature_steps": 3, "resource_deltas": {"steel": 4}},
+    )
+    assert new_globals["temperature"] == TEMPERATURE_MIN + 3 * TEMPERATURE_STEP
+    assert new_player["steel"] == 4
+    # clausula "remove up to 8 plants from any player" se omite (MVP single-player)
+
+
+def test_asteroid_mining_gives_plus_2_titanium_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"titanium_production": 2}}
+    )
+    assert new_player["titanium_production"] == 3
+
+
+def test_food_factory_minus_1_plant_plus_4_mc_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"plant_production": -1, "mc_production": 4}},
+    )
+    assert new_player["plant_production"] == 0
+    assert new_player["mc_production"] == 5
+
+
+def test_archaebacteria_requires_max_temperature_minus_18():
+    globals_ = {**new_global_parameters(), "temperature": -16}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_temperature": -18}, globals_)
+    globals_["temperature"] = -20
+    check_card_requirements({"max_temperature": -18}, globals_)  # no lanza
+
+
+def test_archaebacteria_gives_plus_1_plant_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"plant_production": 1}}
+    )
+    assert new_player["plant_production"] == 2
+
+
+def test_carbonate_processing_minus_1_energy_plus_3_heat_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "heat_production": 3}},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["heat_production"] == 4
+
+
+def test_natural_preserve_requires_max_oxygen_4_and_gives_plus_1_mc_production():
+    globals_ = new_global_parameters()
+    globals_["oxygen"] = 5
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_oxygen": 4}, globals_)
+    globals_["oxygen"] = 4
+    check_card_requirements({"max_oxygen": 4}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"production_deltas": {"mc_production": 1}}
+    )
+    assert new_player["mc_production"] == 2
+    # "place next to no other tile" es una restriccion de adyacencia sin
+    # efecto en el motor (sin mapa hexagonal, ver CLAUDE.md seccion 6)
+
+
+def test_lightning_harvest_requires_3_science_tags_and_gives_energy_and_mc():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "science", "count": 3}}, globals_, player)
+    player["tags_played"] = {"science": 3}
+    check_card_requirements({"min_tag_count": {"tag": "science", "count": 3}}, globals_, player)
+    new_player, _ = apply_card_effect(
+        player, globals_,
+        {"production_deltas": {"energy_production": 1, "mc_production": 1}},
+    )
+    assert new_player["energy_production"] == 2
+    assert new_player["mc_production"] == 2
+
+
+def test_algae_requires_5_oceans_and_gives_plant_resource_and_production():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 5}, globals_)
+    globals_["oceans_placed"] = 5
+    check_card_requirements({"min_oceans": 5}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_,
+        {"resource_deltas": {"plants": 1}, "production_deltas": {"plant_production": 2}},
+    )
+    assert new_player["plants"] == 1
+    assert new_player["plant_production"] == 3
