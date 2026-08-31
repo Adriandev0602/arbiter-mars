@@ -99,6 +99,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `ice_asteroid` | Ice Asteroid | 078 | 23 MC | +2 océanos |
 | `quantum_extractor` | Quantum Extractor | 079 | 13 MC | Requiere 4 tags de ciencia jugados. +4 producción energía; pasivo: cartas espaciales cuestan 2 MC menos |
 | `giant_ice_asteroid` | Giant Ice Asteroid | 080 | 36 MC | +2 pasos temperatura, +2 océanos |
+| `ganymede_colony` | Ganymede Colony | 081 | 20 MC | Sin efecto modelado — coloca tile en un slot de colonia fuera del mapa de Marte, VP por tag jovian (no trackeado) |
+| `callisto_penal_mines` | Callisto Penal Mines | 082 | 24 MC | +3 producción MC |
+| `giant_space_mirror` | Giant Space Mirror | 083 | 17 MC | +3 producción energía |
+| `trans_neptune_probe` | Trans-Neptune Probe | 084 | 6 MC | Sin efecto modelado — solo puntos, no trackeados |
+| `commercial_district` | Commercial District | 085 | 16 MC | -1 producción energía, +4 producción MC (VP por ciudad adyacente no trackeado) |
+| `grass` | Grass | 087 | 11 MC | Requiere temperatura ≥-16°C. +1 producción plantas, +3 plantas (stock) |
+| `heather` | Heather | 088 | 6 MC | Requiere temperatura ≥-14°C. +1 producción plantas, +1 planta (stock) |
+| `peroxide_power` | Peroxide Power | 089 | 7 MC | -1 producción MC, +2 producción energía |
+| `research` | Research | 090 | 11 MC | 2 tags de ciencia (propios). Roba 2 cartas (`draw_cards`) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -118,6 +127,8 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 Viral Enhancers comparten la misma pieza faltante — "mover/agregar un recurso en una carta
 específica elegida por el jugador, distinta de la que se está jugando/usando". Vale la pena
 implementarla una sola vez y resolver las 6 juntas cuando se aborde.
+
+| 086 | Robotic Workforce | Pieza DISTINTA a la de arriba: "duplicate the production box of one of your building cards" — requiere un historial de qué cartas (con qué producción) jugó el jugador, que hoy no existe (solo se trackean tags acumulados y active_cards de cartas con acción repetible, no un log completo de cartas jugadas con efecto). Ningún otro caso identificado hasta ahora necesita esta pieza. |
 
 **Nota sobre mapa hexagonal (resuelto 2026-08-31):** Mining Area, Mining Rights y Land Claim
 fueron las primeras cartas del catálogo que genuinamente necesitaban modelar el tablero —
@@ -167,6 +178,9 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
 - `place_oceans`: N — coloca N tiles de océano (+N TR) (ej. Comet).
 - `place_city_tiles`: N — suma N al contador global `city_tiles_placed`, sin TR (ej. Capital).
 - `tr_delta`: N — sube el TR directo, sin pasar por parámetro global (ej. Release of Inert Gases: +2).
+- `draw_cards`: N — roba N cartas del mazo directo a la mano, sin fase de investigación (ej.
+  Research: +2 cartas). Reusa `draw_cards_to_hand` (mismo mecanismo que `use_card_action.gains.draw_cards`,
+  pero como efecto inmediato al jugar la carta).
 - `choice`: lista de sub-effects (cualquiera de los de arriba); el jugador elige uno vía
   `effect_choice` (índice 0-based) (ej. Artificial Photosynthesis).
 - `tag_count_choice`: `{"tag": "<tag>", "count": N, "if_met": <sub-effect>, "else":

@@ -348,6 +348,42 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'giant_ice_asteroid', 'Giant Ice Asteroid', 36, '{space}', null,
         '{"raise_temperature_steps": 2, "place_oceans": 2}'::jsonb
+    ),
+    (
+        'ganymede_colony', 'Ganymede Colony', 20, '{jovian}', null,
+        '{}'::jsonb
+    ),
+    (
+        'callisto_penal_mines', 'Callisto Penal Mines', 24, '{jovian}', null,
+        '{"production_deltas": {"mc_production": 3}}'::jsonb
+    ),
+    (
+        'giant_space_mirror', 'Giant Space Mirror', 17, '{power,space}', null,
+        '{"production_deltas": {"energy_production": 3}}'::jsonb
+    ),
+    (
+        'trans_neptune_probe', 'Trans-Neptune Probe', 6, '{science,space}', null,
+        '{}'::jsonb
+    ),
+    (
+        'commercial_district', 'Commercial District', 16, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 4}}'::jsonb
+    ),
+    (
+        'grass', 'Grass', 11, '{plant}', '{"min_temperature": -16}'::jsonb,
+        '{"resource_deltas": {"plants": 3}, "production_deltas": {"plant_production": 1}}'::jsonb
+    ),
+    (
+        'heather', 'Heather', 6, '{plant}', '{"min_temperature": -14}'::jsonb,
+        '{"resource_deltas": {"plants": 1}, "production_deltas": {"plant_production": 1}}'::jsonb
+    ),
+    (
+        'peroxide_power', 'Peroxide Power', 7, '{power,building}', null,
+        '{"production_deltas": {"mc_production": -1, "energy_production": 2}}'::jsonb
+    ),
+    (
+        'research', 'Research', 11, '{science,science}', null,
+        '{"draw_cards": 2}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

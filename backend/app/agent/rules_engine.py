@@ -544,6 +544,10 @@ def apply_card_effect(
         TR (ej. Capital: 1).
       - "tr_delta": N -- sube el TR directo, sin pasar por un parametro
         global (ej. Release of Inert Gases: +2).
+      - "draw_cards": N -- roba N cartas del mazo directo a la mano, sin
+        fase de investigacion (ej. Research: +2 cartas). Reusa
+        draw_cards_to_hand (mismo mecanismo que use_card_action.gains.draw_cards,
+        pero como efecto inmediato al jugar la carta, no como accion repetible).
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
@@ -652,6 +656,9 @@ def apply_card_effect(
 
     if "tr_delta" in effects:
         new_player["tr"] = new_player["tr"] + effects["tr_delta"]
+
+    if "draw_cards" in effects:
+        new_player = dict(draw_cards_to_hand(PlayerState(**new_player), effects["draw_cards"]))  # type: ignore[typeddict-item]
 
     return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
 

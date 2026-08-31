@@ -1513,3 +1513,100 @@ def test_giant_ice_asteroid_raises_temperature_and_places_2_oceans():
     assert new_globals["oceans_placed"] == 2
     assert new_player["tr"] == TR_START + 4  # +2 temperatura, +2 oceanos
     # "remove up to 6 plants from any player" se omite (MVP single-player)
+
+
+# ---------------------------------------------------------------------------
+# Bloque 8 (CARDS_PENDING_REVIEW.md filas #1-10)
+# ---------------------------------------------------------------------------
+
+def test_ganymede_colony_has_no_modeled_effect_vp_only_off_map():
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), {})
+    assert new_player == player
+    assert new_globals == new_global_parameters()
+
+
+def test_callisto_penal_mines_gives_plus_3_mc_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"mc_production": 3}}
+    )
+    assert new_player["mc_production"] == 4
+
+
+def test_giant_space_mirror_gives_plus_3_energy_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"energy_production": 3}}
+    )
+    assert new_player["energy_production"] == 4
+
+
+def test_trans_neptune_probe_has_no_modeled_effect_vp_only():
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), {})
+    assert new_player == player
+    assert new_globals == new_global_parameters()
+
+
+def test_commercial_district_minus_1_energy_plus_4_mc_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "mc_production": 4}},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 5
+    # "1 VP por ciudad adyacente" no se trackea (sin puntuacion en el motor)
+
+
+def test_grass_requires_minus_16_degrees_and_gives_plant_production_and_stock():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -16}, globals_)
+    globals_["temperature"] = -16
+    check_card_requirements({"min_temperature": -16}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_deltas": {"plants": 3}, "production_deltas": {"plant_production": 1}}
+    )
+    assert new_player["plants"] == 3
+    assert new_player["plant_production"] == 2
+
+
+def test_heather_requires_minus_14_degrees_and_gives_plant_production_and_stock():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -14}, globals_)
+    globals_["temperature"] = -14
+    check_card_requirements({"min_temperature": -14}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_deltas": {"plants": 1}, "production_deltas": {"plant_production": 1}}
+    )
+    assert new_player["plants"] == 1
+    assert new_player["plant_production"] == 2
+
+
+def test_peroxide_power_minus_1_mc_plus_2_energy_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"mc_production": -1, "energy_production": 2}},
+    )
+    assert new_player["mc_production"] == 0
+    assert new_player["energy_production"] == 3
+
+
+def test_research_draws_2_cards():
+    player = {**new_player_state(), "deck": ["mine", "sponsors", "farming"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
+    assert new_player["hand"] == ["mine", "sponsors"]
+    assert new_player["deck"] == ["farming"]
+
+
+def test_research_draws_fewer_if_deck_runs_out():
+    player = {**new_player_state(), "deck": ["mine"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
+    assert new_player["hand"] == ["mine"]
+    assert new_player["deck"] == []
