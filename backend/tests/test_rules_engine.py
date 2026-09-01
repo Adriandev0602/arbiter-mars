@@ -2879,6 +2879,94 @@ def test_energy_tapping_net_zero_energy_production():
     assert new_player["energy_production"] == 1
 
 
+def test_underground_detonations_action_spends_mc_for_heat_production():
+    player = register_active_card(new_player_state(), "underground_detonations")
+    player["mc"] = 10
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"mc": 10}, "gains": {"production_deltas": {"heat_production": 2}}}
+    new_player, _ = use_card_action(player, globals_, "underground_detonations", action_spec)
+    assert new_player["mc"] == 0
+    assert new_player["heat_production"] == 3
+
+
+def test_soletta_heat_production():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"production_deltas": {"heat_production": 7}}
+    )
+    assert new_player["heat_production"] == 8
+
+
+def test_technology_demonstration_draws_2_cards():
+    player = {**new_player_state(), "deck": ["a", "b"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
+    assert new_player["hand"] == ["a", "b"]
+
+
+def test_rad_chem_factory_swaps_energy_for_tr():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"energy_production": -1}, "tr_delta": 2},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["tr"] == TR_START + 2
+
+
+def test_special_design_grants_pending_requirement_tolerance():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"next_card_requirement_tolerance_steps": 2})
+    assert new_player["pending_requirement_tolerance_steps"] == 2
+
+    # Se suma a la tolerancia del pasivo permanente si el jugador tiene ambos
+    globals_ = {**new_global_parameters(), "temperature": -30}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -26}, globals_, new_player_state())
+    check_card_requirements({"min_temperature": -26}, globals_, new_player)  # -30 >= -26-4 (2 pasos = 4C)
+
+    after_generation = run_production_phase(new_player)
+    assert after_generation["pending_requirement_tolerance_steps"] == 0
+
+
+def test_medical_lab_mc_production_per_2_building_tags_including_this():
+    player = {**new_player_state(), "tags_played": {"building": 3}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": {"tag": "building", "production": "mc_production", "tags_per_step": 2, "include_this": True}},
+    )
+    assert new_player["mc_production"] == 3  # 1 base + (3+1)//2 = 2
+
+
+def test_ai_central_requires_3_science_tags_action_draws_2():
+    requirements = {"min_tag_count": {"tag": "science", "count": 3}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(requirements, new_global_parameters(), new_player_state())
+
+    ready = {**new_player_state(), "tags_played": {"science": 3}}
+    check_card_requirements(requirements, new_global_parameters(), ready)
+    new_player, _ = apply_card_effect(ready, new_global_parameters(), {"production_deltas": {"energy_production": -1}})
+    assert new_player["energy_production"] == 0
+
+    player = register_active_card(new_player_state(), "ai_central")
+    player = {**player, "deck": ["a", "b"]}
+    action_spec = {"cost": {}, "gains": {"draw_cards": 2}}
+    new_player2, _ = use_card_action(player, new_global_parameters(), "ai_central", action_spec)
+    assert new_player2["hand"] == ["a", "b"]
+
+
+def test_small_asteroid_raises_temperature():
+    _, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {"raise_temperature_steps": 1})
+    assert new_globals["temperature"] == TEMPERATURE_MIN + TEMPERATURE_STEP
+
+
+def test_snow_algae_requires_2_oceans():
+    globals_ = {**new_global_parameters(), "oceans_placed": 2}
+    check_card_requirements({"min_oceans": 2}, globals_)
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_, {"production_deltas": {"plant_production": 1, "heat_production": 1}}
+    )
+    assert new_player["plant_production"] == 2
+    assert new_player["heat_production"] == 2
+
+
 def test_advanced_ecosystems_multi_tag_requirements():
     req = {
         "min_tag_count": [

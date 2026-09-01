@@ -29,6 +29,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         pending_research=row.get("pending_research") or [],
         played_cards=row.get("played_cards") or [],
         pending_mc_discount=row.get("pending_mc_discount") or 0,
+        pending_requirement_tolerance_steps=row.get("pending_requirement_tolerance_steps") or 0,
     )
 
 
@@ -425,10 +426,12 @@ def play_card(
         "mc": player["mc"] - mc_to_pay,
         "steel": player["steel"] - steel_to_pay,
         "titanium": player["titanium"] - titanium_to_pay,
-        # Se consume el descuento pendiente al jugar esta carta (la haya
-        # cubierto entera o no) -- antes de aplicar el efecto de ESTA carta,
-        # para no borrar un next_card_discount_mc que ella misma otorgue.
+        # Se consume el descuento/tolerancia pendiente al jugar esta carta
+        # (los haya cubierto entera o no) -- antes de aplicar el efecto de
+        # ESTA carta, para no borrar un next_card_discount_mc/
+        # next_card_requirement_tolerance_steps que ella misma otorgue.
         "pending_mc_discount": 0,
+        "pending_requirement_tolerance_steps": 0,
     }
     effects = card.get("effects") or {}
 
