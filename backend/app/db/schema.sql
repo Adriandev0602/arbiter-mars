@@ -148,6 +148,25 @@ create table if not exists cards (
     is_event boolean not null default false      -- true = carta "Event" del juego real (dispara bonus pasivos de otras cartas al jugarse)
 );
 
+-- Cola de revision del catalogo: metadata (nombre/expansion/scan) de cartas
+-- descargadas de tm.hadronikle.com que TODAVIA no se leyeron para decidir su
+-- costo/tags/effects (ver backend/scripts/enqueue_card_review_queue.py).
+-- Reemplaza el manifiesto manual CARDS_PENDING_REVIEW.md -- una vez que una
+-- fila se revisa (se lee el scan, se decide el vocabulario, se carga en
+-- `cards` via seed_cards.sql), se marca reviewed=true y se linkea a card_id.
+-- NUNCA se guarda la imagen del scan aca (derechos de autor de FryxGames,
+-- ver CLAUDE.md) -- solo la URL para poder descargarla puntualmente.
+create table if not exists card_review_queue (
+    id serial primary key,
+    scan_number text not null unique,
+    name text not null,
+    expansion text not null,
+    image_url text not null,
+    reviewed boolean not null default false,
+    card_id text references cards(id),
+    discovered_at timestamptz not null default now()
+);
+
 create table if not exists transactions (
     id uuid primary key default gen_random_uuid(),
     player_id uuid references players(id) on delete cascade,

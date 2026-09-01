@@ -17,6 +17,9 @@ node_modules/
 out/
 npm-debug.log*
 
+# Scans temporales de cartas (derechos de autor de FryxGames, nunca commitear)
+backend/scripts/scan_cache/
+
 # OS
 .DS_Store
 
