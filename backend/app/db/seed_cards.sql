@@ -682,6 +682,46 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'aerobraked_ammonia_asteroid', 'Aerobraked Ammonia Asteroid', 26, '{space,space}', null,
         '{"target_card_resource_delta": 2, "production_deltas": {"heat_production": 3, "plant_production": 1}}'::jsonb
+    ),
+    (
+        'magnetic_field_dome', 'Magnetic Field Dome', 5, '{building}', null,
+        '{"production_deltas": {"energy_production": -2, "plant_production": 1}, "tr_delta": 1}'::jsonb
+    ),
+    (
+        'pets', 'Pets', 10, '{earth,animal}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 1, "passive": {"on_city_tile_placed_add_resource": {"resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'protected_habitats', 'Protected Habitats', 5, '{}', null,
+        '{}'::jsonb
+    ),
+    (
+        'protected_valley', 'Protected Valley', 23, '{plant,building}', null,
+        '{"production_deltas": {"mc_production": 2}, "raise_oxygen_steps": 1, "place_greenery": {"ignore_restrictions": true}}'::jsonb
+    ),
+    (
+        'satellites', 'Satellites', 10, '{space}', null,
+        '{"production_delta_per_tag": {"tag": "space", "production": "mc_production", "per_tag": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'noctis_farming', 'Noctis Farming', 10, '{plant,building}', '{"min_temperature": -20}'::jsonb,
+        '{"production_deltas": {"mc_production": 1}, "resource_deltas": {"plants": 2}}'::jsonb
+    ),
+    (
+        'water_splitting_plant', 'Water Splitting Plant', 12, '{building}', '{"min_oceans": 2}'::jsonb,
+        '{"becomes_active": true, "action": {"cost": {"energy": 3}, "gains": {"raise_oxygen_steps": 1}}}'::jsonb
+    ),
+    (
+        'heat_trappers', 'Heat Trappers', 6, '{power,building}', null,
+        '{"production_deltas": {"heat_production": -2, "energy_production": 1}}'::jsonb
+    ),
+    (
+        'soil_factory', 'Soil Factory', 9, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "plant_production": 1}}'::jsonb
+    ),
+    (
+        'fuel_factory', 'Fuel Factory', 6, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "titanium_production": 1, "mc_production": 1}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

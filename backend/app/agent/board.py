@@ -277,18 +277,28 @@ def place_city_tile_adjacent_to_cities(
     return _place(board, hex_id, "city", owner=player_id)
 
 
-def can_place_greenery(board: Board, hex_id: str, player_id: str) -> bool:
+def can_place_greenery(board: Board, hex_id: str, player_id: str, ignore_restrictions: bool = False) -> bool:
     """
     Regla oficial: debe ser adyacente a un tile propio SI existe alguna opcion
     legal asi disponible en el mapa; si el jugador todavia no tiene ningun
     tile en el mapa, puede colocarse libremente en cualquier terreno vacio.
     Esta funcion valida un hex_id puntual -- quien la llama es responsable de
     ofrecer solo opciones adyacentes cuando el jugador ya tiene tiles propios.
+
+    ignore_restrictions: True para cartas que explicitamente ignoran las
+    restricciones normales de colocacion (ej. Protected Valley: "Place a
+    greenery tile ON AN AREA RESERVED FOR OCEAN, disregarding normal
+    placement restrictions") -- solo exige que el hex este vacio, sin
+    chequear tipo de terreno, reserva de ciudad ni adyacencia.
     """
     hex_def = HEX_DEFS.get(hex_id)
     if hex_def is None:
         raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
-    if hex_def["hex_type"] != "land" or not is_hex_empty(board, hex_id):
+    if not is_hex_empty(board, hex_id):
+        return False
+    if ignore_restrictions:
+        return True
+    if hex_def["hex_type"] != "land":
         return False
     if hex_def["reserved_city"] is not None:
         return False
@@ -363,8 +373,10 @@ def place_city_tile(board: Board, hex_id: str, player_id: str) -> tuple[Board, l
     return _place(board, hex_id, "city", owner=player_id)
 
 
-def place_greenery_tile(board: Board, hex_id: str, player_id: str) -> tuple[Board, list[tuple[str, int]], int]:
-    if not can_place_greenery(board, hex_id, player_id):
+def place_greenery_tile(
+    board: Board, hex_id: str, player_id: str, ignore_restrictions: bool = False
+) -> tuple[Board, list[tuple[str, int]], int]:
+    if not can_place_greenery(board, hex_id, player_id, ignore_restrictions=ignore_restrictions):
         raise InvalidPlacementError(f"No se puede colocar greenery en '{hex_id}' para este jugador")
     return _place(board, hex_id, "greenery", owner=player_id)
 

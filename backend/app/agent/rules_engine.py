@@ -1033,6 +1033,11 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         conversion de 8 plantas (ej. Herbivores: +1 animal). Ver
         apply_greenery_placed_bonuses, llamado desde
         tools._place_greenery_and_apply_bonus.
+      - "on_city_tile_placed_add_resource": {"resource_delta": N (default 1)}
+        -- igual que el de arriba pero disparado por colocar un tile de
+        CIUDAD, de cualquier jugador (ej. Pets: +1 animal). Ver
+        apply_city_placed_bonuses, llamado desde
+        tools._place_city_and_apply_bonus.
       - "on_tag_played_may_swap_card": {"tag": "<tag>"} -- cada vez que el
         jugador juega CUALQUIER carta con ese tag (incluida la que registra
         el pasivo), puede opcionalmente descartar 1 carta de la mano para
@@ -1167,6 +1172,36 @@ def apply_greenery_placed_bonuses(player: PlayerState) -> PlayerState:
     changed = False
     for effect in player["passive_effects"]:
         spec = effect.get("on_greenery_placed_add_resource")
+        if spec is None:
+            continue
+        target_card_id = effect["card_id"]
+        if target_card_id not in new_active_cards:
+            continue
+        current_res = new_active_cards[target_card_id]["resources"]
+        new_active_cards[target_card_id] = {
+            **new_active_cards[target_card_id],
+            "resources": current_res + spec.get("resource_delta", 1),
+        }
+        changed = True
+    if not changed:
+        return player
+    return {**player, "active_cards": new_active_cards}
+
+
+def apply_city_placed_bonuses(player: PlayerState) -> PlayerState:
+    """
+    Aplica el pasivo "on_city_tile_placed_add_resource": {"resource_delta": N}
+    -- suma N recursos a la propia carta activa cada vez que se coloca un
+    tile de CIUDAD en el mapa, sin importar de quien sea ni la fuente
+    (proyecto estandar o una carta) (ej. Pets: +1 animal). Analogo a
+    apply_greenery_placed_bonuses -- llamado desde
+    tools._place_city_and_apply_bonus, el unico punto donde confluyen todos
+    los caminos que colocan una ciudad real en el tablero.
+    """
+    new_active_cards = dict(player["active_cards"])
+    changed = False
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_city_tile_placed_add_resource")
         if spec is None:
             continue
         target_card_id = effect["card_id"]

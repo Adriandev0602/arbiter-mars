@@ -405,3 +405,18 @@ def test_mohole_area_special_tile_requires_ocean_hex():
     # No cuenta como uno de los 9 oceanos del parametro global -- eso lo
     # decide tools.play_card (solo detecta oceans_placed via place_oceans,
     # que Mohole Area no usa).
+
+
+def test_protected_valley_places_greenery_on_ocean_hex_ignoring_restrictions():
+    board = new_board()
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+
+    # Sin ignore_restrictions, un hex de oceano nunca es valido para greenery
+    assert can_place_greenery(board, ocean_hex, "player-1") is False
+    with pytest.raises(InvalidPlacementError):
+        place_greenery_tile(board, ocean_hex, "player-1")
+
+    assert can_place_greenery(board, ocean_hex, "player-1", ignore_restrictions=True) is True
+    new_board_state, _, _ = place_greenery_tile(board, ocean_hex, "player-1", ignore_restrictions=True)
+    assert new_board_state[ocean_hex]["tile_type"] == "greenery"
+    assert new_board_state[ocean_hex]["owner"] == "player-1"
