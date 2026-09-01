@@ -469,6 +469,9 @@ def check_card_requirements(
       - "max_oxygen": oxigeno maximo en % (ej. Domed Crater: 7).
       - "min_oceans" / "max_oceans": cantidad minima/maxima de tiles de
         oceano colocados (ej. Dust Seals: maximo 3).
+      - "min_city_tiles": cantidad minima de tiles de ciudad colocados en el
+        mapa por CUALQUIER jugador (`globals_["city_tiles_placed"]`, ej.
+        Rad-Suits: requiere 2 ciudades en juego).
       - "min_tag_count": {"tag": "<tag>", "count": N} -- requiere que el
         jugador haya jugado al menos N cartas con ese tag (ej. Mass
         Converter: 5 tags de ciencia). Requiere pasar `player`.
@@ -542,6 +545,11 @@ def check_card_requirements(
             raise CardRequirementNotMetError(
                 f"Requiere {threshold} oceanos colocados, hay {globals_['oceans_placed']}"
             )
+    if "min_city_tiles" in requirements and globals_["city_tiles_placed"] < requirements["min_city_tiles"]:
+        raise CardRequirementNotMetError(
+            f"Requiere {requirements['min_city_tiles']} ciudades en juego, "
+            f"hay {globals_['city_tiles_placed']}"
+        )
     if "max_oceans" in requirements:
         threshold = requirements["max_oceans"] + oceans_tolerance
         if globals_["oceans_placed"] > threshold:
@@ -1045,6 +1053,16 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         de on_event_played (automatico), esto es una ELECCION del jugador --
         ver tools.play_card (parametro discard_for_draw_card_id) y
         rules_engine.player_has_tag_swap_passive / swap_card_for_draw.
+      - "on_tag_played_choice": {"matching_tags": ["<tag>", ...],
+        "add_resource_choice": {"resource_delta": N}, "spend_resource_choice":
+        {"card_resource": N, "draw_cards": N}} -- similar a
+        on_tag_played_may_swap_card (eleccion opcional del jugador, dispara
+        con cualquier carta que tenga alguno de esos tags), pero en vez de
+        descartar/robar, elige entre agregar recursos a la PROPIA carta
+        activa o gastarlos para robar cartas del mazo (ej. Olympus
+        Conference: tag "science", +1 recurso O gastar 1 para robar 1
+        carta). Ver tools.play_card (parametro tag_played_choice) y
+        rules_engine.apply_tag_played_choice.
 
     No revisa duplicados: cada carta se juega una sola vez en este motor.
     """
@@ -1239,6 +1257,64 @@ def swap_card_for_draw(player: PlayerState, discard_card_id: str) -> PlayerState
     """
     discarded_player = remove_card_from_hand(player, discard_card_id)
     return draw_cards_to_hand(discarded_player, 1)
+
+
+def apply_tag_played_choice(
+    player: PlayerState, played_card_tags: tuple[str, ...], choice: str | None
+) -> PlayerState:
+    """
+    Aplica el pasivo "on_tag_played_choice": {"matching_tags": ["<tag>", ...],
+    "add_resource_choice": {"resource_delta": N (default 1)},
+    "spend_resource_choice": {"card_resource": N (default 1), "draw_cards": N
+    (default 1)}} -- a diferencia de on_tag_played_add_resource (automatico,
+    sin eleccion), esto dispara con cualquier carta que tenga alguno de esos
+    tags (incluida la que registra el pasivo) y es una ELECCION OPCIONAL del
+    jugador en el momento: "add" agrega recursos a la PROPIA carta activa
+    (ej. Olympus Conference: +1 ciencia); "spend" gasta recursos guardados
+    en la carta para robar cartas del mazo. None (no elegir) no hace nada --
+    ver tools.play_card, parametro tag_played_choice.
+
+    Si mas de un pasivo de este tipo matchea, se aplica el de la PRIMERA
+    carta activa encontrada (en este motor solo hay una carta con este
+    pasivo cargada hasta ahora, Olympus Conference).
+    """
+    if choice is None:
+        return player
+    new_active_cards = dict(player["active_cards"])
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_tag_played_choice")
+        if spec is None:
+            continue
+        matching_tags = set(spec.get("matching_tags", []))
+        if not matching_tags.intersection(played_card_tags):
+            continue
+        target_card_id = effect["card_id"]
+        if target_card_id not in new_active_cards:
+            continue
+        if choice == "add":
+            amount = spec.get("add_resource_choice", {}).get("resource_delta", 1)
+            current_res = new_active_cards[target_card_id]["resources"]
+            new_active_cards[target_card_id] = {
+                **new_active_cards[target_card_id],
+                "resources": current_res + amount,
+            }
+            return {**player, "active_cards": new_active_cards}
+        if choice == "spend":
+            spend_spec = spec.get("spend_resource_choice", {})
+            amount = spend_spec.get("card_resource", 1)
+            current_res = new_active_cards[target_card_id]["resources"]
+            if current_res < amount:
+                raise InsufficientResourcesError(
+                    f"'{target_card_id}' tiene {current_res} recursos guardados, se necesitan {amount}"
+                )
+            new_active_cards[target_card_id] = {
+                **new_active_cards[target_card_id],
+                "resources": current_res - amount,
+            }
+            new_player = {**player, "active_cards": new_active_cards}
+            return draw_cards_to_hand(new_player, spend_spec.get("draw_cards", 1))
+        raise CardEffectError(f"choice invalido '{choice}', debe ser 'add' o 'spend'")
+    return player
 
 
 # ---------------------------------------------------------------------------

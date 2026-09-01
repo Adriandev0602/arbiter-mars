@@ -302,6 +302,7 @@ def play_card(
     duplicate_production_target_card_id: str | None = None,
     target_card_id: str | None = None,
     target_card_id_2: str | None = None,
+    tag_played_choice: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -350,6 +351,12 @@ def play_card(
             science), puede pasar el id de una carta de su mano para
             descartarla y robar 1 del mazo. None si no quiere ejercer la
             opcion (es siempre opcional, nunca obligatoria).
+        tag_played_choice: OPCIONAL -- "add" o "spend", si el jugador tiene
+            un pasivo "on_tag_played_choice" activo que matchea alguno de
+            los tags de la carta que se esta jugando (ej. Olympus
+            Conference: tag science). "add" suma un recurso a esa carta
+            activa; "spend" gasta un recurso guardado ahi para robar 1
+            carta. None si no quiere ejercer la opcion.
         duplicate_production_target_card_id: OBLIGATORIO si
             `effects.duplicate_production` esta definido en la carta (ej.
             Robotic Workforce) -- el id de una carta que el jugador ya jugo
@@ -545,6 +552,8 @@ def play_card(
             )
         new_player = engine.swap_card_for_draw(new_player, discard_for_draw_card_id)
 
+    new_player = engine.apply_tag_played_choice(new_player, card_tags, tag_played_choice)
+
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
@@ -559,7 +568,8 @@ def play_card(
          "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids, "greenery_hex_id": greenery_hex_id,
          "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id,
          "duplicate_production_target_card_id": duplicate_production_target_card_id,
-         "target_card_id": target_card_id, "target_card_id_2": target_card_id_2},
+         "target_card_id": target_card_id, "target_card_id_2": target_card_id_2,
+         "tag_played_choice": tag_played_choice},
     )
 
     return {
