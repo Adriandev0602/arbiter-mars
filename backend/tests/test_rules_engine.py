@@ -51,6 +51,7 @@ from app.agent.rules_engine import (
     player_has_tag_swap_passive,
     swap_card_for_draw,
     register_played_card,
+    increment_events_played,
 )
 
 
@@ -1733,3 +1734,121 @@ def test_fueled_generators_minus_1_mc_plus_1_energy_production():
     )
     assert new_player["mc_production"] == 0
     assert new_player["energy_production"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Bloque 10 (CARDS_PENDING_REVIEW.md filas #1-10, Media Group ya estaba cargada)
+# ---------------------------------------------------------------------------
+
+def test_power_grid_gives_1_energy_per_power_tag_including_itself():
+    player = new_player_state()
+    player["tags_played"] = {"power": 2}  # ya jugo 2 cartas power antes
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": {"tag": "power", "production": "energy_production"},
+         "production_deltas": {"energy_production": 1}},
+    )
+    assert new_player["energy_production"] == 4  # 1 base + 2 previos + 1 (esta misma)
+
+
+def test_power_grid_with_no_prior_power_tags_gives_1():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": {"tag": "power", "production": "energy_production"},
+         "production_deltas": {"energy_production": 1}},
+    )
+    assert new_player["energy_production"] == 2  # 1 base + 0 previos + 1 (esta misma)
+
+
+def test_ore_processor_action_spends_4_energy_for_titanium_and_oxygen():
+    player = register_active_card({**new_player_state(), "energy": 4}, "ore_processor")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"energy": 4}, "gains": {"resource_deltas": {"titanium": 1}, "raise_oxygen_steps": 1}}
+    new_player, new_globals = use_card_action(player, globals_, "ore_processor", action_spec)
+    assert new_player["energy"] == 0
+    assert new_player["titanium"] == 1
+    assert new_globals["oxygen"] == 1
+
+
+def test_earth_office_discount_only_applies_to_earth_tag():
+    player = new_player_state()
+    player = register_passive_effect(player, "earth_office", {"card_cost_discount_mc": 3, "tag_filter": "earth"})
+    assert compute_card_cost_discount(player, ("earth",)) == 3
+    assert compute_card_cost_discount(player, ("plant",)) == 0
+
+
+def test_media_archives_gives_1_mc_per_event_ever_played():
+    player = new_player_state()
+    globals_ = {**new_global_parameters(), "events_played": 5}
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_delta_per_counter": {"resource": "mc", "counter": "events_played"}}
+    )
+    assert new_player["mc"] == 5
+
+
+def test_increment_events_played_accumulates():
+    globals_ = new_global_parameters()
+    globals_ = increment_events_played(globals_)
+    globals_ = increment_events_played(globals_)
+    assert globals_["events_played"] == 2
+
+
+def test_open_city_requires_12_oxygen_and_gives_production_and_plants():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oxygen": 12}, globals_)
+    globals_["oxygen"] = 12
+    check_card_requirements({"min_oxygen": 12}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(
+        player, globals_,
+        {"production_deltas": {"energy_production": -1, "mc_production": 4},
+         "resource_deltas": {"plants": 2}, "place_city_tiles": 1},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 5
+    assert new_player["plants"] == 2
+    assert new_globals["city_tiles_placed"] == 1
+
+
+def test_business_network_minus_1_mc_production_and_repeatable_research_action():
+    player = register_active_card({**new_player_state(), "deck": ["mine"]}, "business_network")
+    globals_ = new_global_parameters()
+    new_player, _ = apply_card_effect(player, globals_, {"production_deltas": {"mc_production": -1}})
+    assert new_player["mc_production"] == 0
+    action_spec = {"cost": {}, "gains": {"start_research": {"n": 1}}}
+    final_player, _ = use_card_action(new_player, globals_, "business_network", action_spec)
+    assert final_player["pending_research"] == ["mine"]
+
+
+def test_business_contacts_starts_research_of_4_and_resolves_exactly_2():
+    player = {**new_player_state(), "deck": ["a", "b", "c", "d"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"start_research": {"n": 4}})
+    assert new_player["pending_research"] == ["a", "b", "c", "d"]
+    assert new_player["deck"] == []
+    with pytest.raises(ValueError):
+        resolve_research_phase(new_player, ["a", "b", "c"], cost_per_card=0, max_take=2)
+    final_player = resolve_research_phase(new_player, ["a", "b"], cost_per_card=0, max_take=2)
+    assert final_player["hand"] == ["a", "b"]
+    assert final_player["pending_research"] == []
+
+
+def test_bribed_committee_raises_tr_2_steps_directly():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(player, globals_, {"tr_delta": 2})
+    assert new_player["tr"] == TR_START + 2
+    assert new_globals == globals_
+
+
+def test_breathing_filters_requires_7_oxygen_no_modeled_effect():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oxygen": 7}, globals_)
+    globals_["oxygen"] = 7
+    check_card_requirements({"min_oxygen": 7}, globals_)  # no lanza
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, globals_, {})
+    assert new_player == player
+    assert new_globals == globals_

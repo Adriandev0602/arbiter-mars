@@ -41,6 +41,7 @@ def _load_global_parameters(game_id: str = "default") -> engine.GlobalParameters
     return engine.GlobalParameters(
         temperature=row["temperature"], oxygen=row["oxygen"], oceans_placed=row["oceans_placed"],
         city_tiles_placed=row.get("city_tiles_placed") or 0,
+        events_played=row.get("events_played") or 0,
     )
 
 
@@ -461,6 +462,7 @@ def play_card(
     new_player = engine.increment_tags_played(new_player, card_tags)
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
+        new_globals = engine.increment_events_played(new_globals)
     new_player = engine.remove_card_from_hand(new_player, card_id)
     new_player = engine.register_played_card(new_player, card_id)
 
@@ -678,7 +680,9 @@ def start_research_phase(player_id: str, n: int = 4) -> dict:
 
 
 @tool
-def resolve_research_phase(player_id: str, card_ids_to_buy: list[str], cost_per_card: int = 3) -> dict:
+def resolve_research_phase(
+    player_id: str, card_ids_to_buy: list[str], cost_per_card: int = 3, max_take: int | None = None
+) -> dict:
     """
     Cierra una fase de investigacion iniciada con start_research_phase.
     Compra las cartas en `card_ids_to_buy` (deben estar en
@@ -693,20 +697,24 @@ def resolve_research_phase(player_id: str, card_ids_to_buy: list[str], cost_per_
         cost_per_card: MC por carta (3 en la investigacion normal; 0 para
             acciones gratuitas como Inventors' Guild -- pasar el valor que
             corresponda segun que disparo la fase).
+        max_take: OBLIGATORIO pasar 2 si la fase la disparo Business
+            Contacts (mira 4, exige tomar EXACTAMENTE 2 -- este tope hace
+            que tomar de mas lance error en vez de permitirse). None para
+            el resto de las fases (sin tope explicito, solo el MC limita).
 
     Returns:
         dict con el estado actualizado del jugador.
 
-    Lanza ValueError si algun id no estaba en pending_research,
-    InsufficientResourcesError si no alcanza el MC.
+    Lanza ValueError si algun id no estaba en pending_research o si supera
+    max_take, InsufficientResourcesError si no alcanza el MC.
     """
     player = _load_player(player_id)
-    new_player = engine.resolve_research_phase(player, card_ids_to_buy, cost_per_card)
+    new_player = engine.resolve_research_phase(player, card_ids_to_buy, cost_per_card, max_take)
 
     _save_player(player_id, new_player)
     _log_transaction(
         player_id, "resolve_research_phase",
-        {"card_ids_to_buy": card_ids_to_buy, "cost_per_card": cost_per_card},
+        {"card_ids_to_buy": card_ids_to_buy, "cost_per_card": cost_per_card, "max_take": max_take},
     )
 
     return {"player": dict(new_player)}

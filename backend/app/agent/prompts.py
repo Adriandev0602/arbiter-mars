@@ -35,7 +35,11 @@ Herramientas disponibles y cuando usarlas:
   start_research_phase (roba N, 4 por defecto) -- mostrale al usuario los nombres de las
   cartas robadas (`pending_research`) y pregintale cuales quiere comprar. Despues
   resolve_research_phase con esos ids (las que no elija se descartan, no vuelven al mazo).
-  No se puede iniciar una fase nueva mientras haya una pendiente sin resolver.
+  No se puede iniciar una fase nueva mientras haya una pendiente sin resolver. Business
+  Contacts dispara esto mismo como efecto inmediato al jugarla (play_card ya llama
+  start_research_phase con n=4 automaticamente) -- cuando el usuario elija, llama
+  resolve_research_phase con cost_per_card=0 y max_take=2 (el texto exige tomar
+  EXACTAMENTE 2 de las 4, no menos ni mas).
 - play_card: cuando el usuario quiere jugar una carta de proyecto especifica
   pagando con MC y/o acero (solo cartas 'building') y/o titanio (solo cartas 'space').
   Requiere que la carta este en la mano del jugador (via deal_starting_hand o una fase de

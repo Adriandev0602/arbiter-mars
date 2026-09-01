@@ -425,6 +425,45 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'fueled_generators', 'Fueled Generators', 1, '{power,building}', null,
         '{"production_deltas": {"mc_production": -1, "energy_production": 1}}'::jsonb
+    ),
+    (
+        'power_grid', 'Power Grid', 18, '{power}', null,
+        '{"production_delta_per_tag": {"tag": "power", "production": "energy_production"},
+          "production_deltas": {"energy_production": 1}}'::jsonb
+    ),
+    (
+        'ore_processor', 'Ore Processor', 13, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"energy": 4}, "gains": {"resource_deltas": {"titanium": 1}, "raise_oxygen_steps": 1}}}'::jsonb
+    ),
+    (
+        'earth_office', 'Earth Office', 1, '{earth}', null,
+        '{"passive": {"card_cost_discount_mc": 3, "tag_filter": "earth"}}'::jsonb
+    ),
+    (
+        'media_archives', 'Media Archives', 8, '{earth}', null,
+        '{"resource_delta_per_counter": {"resource": "mc", "counter": "events_played"}}'::jsonb
+    ),
+    (
+        'open_city', 'Open City', 23, '{building}', '{"min_oxygen": 12}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 4},
+          "resource_deltas": {"plants": 2}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'business_network', 'Business Network', 4, '{earth}', null,
+        '{"production_deltas": {"mc_production": -1}, "becomes_active": true,
+          "action": {"cost": {}, "gains": {"start_research": {"n": 1}}}}'::jsonb
+    ),
+    (
+        'business_contacts', 'Business Contacts', 7, '{earth}', null,
+        '{"start_research": {"n": 4}}'::jsonb
+    ),
+    (
+        'bribed_committee', 'Bribed Committee', 7, '{earth}', null,
+        '{"tr_delta": 2}'::jsonb
+    ),
+    (
+        'breathing_filters', 'Breathing Filters', 11, '{science}', '{"min_oxygen": 7}'::jsonb,
+        '{}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -436,4 +475,5 @@ on conflict (id) do update set
 -- Marca como "Event" (dispara bonus pasivos "on_event_played" de otras
 -- cartas al jugarse) las cartas que corresponden en el juego real.
 update cards set is_event = true
-where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases');
+where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases',
+             'business_contacts', 'bribed_committee');

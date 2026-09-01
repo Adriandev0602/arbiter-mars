@@ -133,11 +133,17 @@ class GlobalParameters(TypedDict):
     city_tiles_placed: cuenta total de tiles de ciudad colocados por CUALQUIER
     jugador (no se trackea de quien es cada uno -- no hay mapa hexagonal, ver
     CLAUDE.md seccion 6). Suficiente para cartas que pagan "por cada ciudad en
-    Marte" (ej. Martian Rails) sin necesitar el tablero completo."""
+    Marte" (ej. Martian Rails) sin necesitar el tablero completo.
+
+    events_played: cuenta total de cartas con is_event=true jugadas por
+    CUALQUIER jugador, historico, nunca se resetea (ej. Media Archives: gana
+    1 MC por cada evento jugado alguna vez). Se incrementa en tools.play_card
+    via increment_events_played, junto con apply_event_played_bonuses."""
     temperature: int
     oxygen: int
     oceans_placed: int
     city_tiles_placed: int
+    events_played: int
 
 
 def new_player_state() -> PlayerState:
@@ -154,7 +160,8 @@ def new_player_state() -> PlayerState:
 
 def new_global_parameters() -> GlobalParameters:
     return GlobalParameters(
-        temperature=TEMPERATURE_MIN, oxygen=OXYGEN_MIN, oceans_placed=0, city_tiles_placed=0
+        temperature=TEMPERATURE_MIN, oxygen=OXYGEN_MIN, oceans_placed=0, city_tiles_placed=0,
+        events_played=0,
     )
 
 
@@ -244,6 +251,16 @@ def place_city_tile(globals_: GlobalParameters) -> GlobalParameters:
     (la regla oficial da TR por produccion de MC ganada, no por el tile).
     """
     return {**globals_, "city_tiles_placed": globals_["city_tiles_placed"] + 1}
+
+
+def increment_events_played(globals_: GlobalParameters) -> GlobalParameters:
+    """
+    Suma 1 al contador global historico de cartas "Event" jugadas (por
+    cualquier jugador). Llamado desde tools.play_card junto con
+    apply_event_played_bonuses, cada vez que se juega una carta con
+    cards.is_event = true (ej. Media Archives: gana MC segun este contador).
+    """
+    return {**globals_, "events_played": globals_["events_played"] + 1}
 
 
 # ---------------------------------------------------------------------------
@@ -562,6 +579,12 @@ def apply_card_effect(
         Greenhouses: +1 planta por cada ciudad en city_tiles_placed). Analogo
         a "mc_per_counter" en use_card_action.gains, pero como efecto
         inmediato y para cualquier recurso, no solo MC.
+      - "start_research": {"n": N} -- roba N cartas a pending_research como
+        efecto inmediato al jugar la carta (ej. Business Contacts: n=4,
+        despues se resuelve con resolve_research_phase(cost_per_card=0,
+        max_take=2) porque el texto exige tomar EXACTAMENTE 2 de las 4).
+        Mismo mecanismo que use_card_action.gains.start_research, pero
+        disparado al jugar la carta en vez de por una accion repetible.
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
@@ -679,6 +702,9 @@ def apply_card_effect(
 
     if "draw_cards" in effects:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), effects["draw_cards"]))  # type: ignore[typeddict-item]
+
+    if "start_research" in effects:
+        new_player = dict(start_research_phase(PlayerState(**new_player), effects["start_research"]["n"]))  # type: ignore[typeddict-item]
 
     return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
 
@@ -986,6 +1012,7 @@ def resolve_research_phase(
     player: PlayerState,
     card_ids_to_buy: list[str],
     cost_per_card: int = RESEARCH_PHASE_COST_MC,
+    max_take: int | None = None,
 ) -> PlayerState:
     """
     Cierra una fase de investigacion iniciada con start_research_phase.
@@ -995,9 +1022,18 @@ def resolve_research_phase(
     descarta (no vuelve al mazo). Siempre limpia `pending_research`, incluso
     si `card_ids_to_buy` esta vacio (comprar 0 cartas es una eleccion valida).
 
+    `max_take`: tope explicito de cuantas se pueden tomar (ej. Business
+    Contacts: "mira 4, toma EXACTAMENTE 2, descarta las otras 2" -- se pasa
+    max_take=2 para que tomar de mas lance error en vez de permitirse en
+    silencio). None (default) no impone tope, solo el MC disponible limita.
+
     Lanza ValueError si algun id en `card_ids_to_buy` no estaba en
-    `pending_research`. Lanza InsufficientResourcesError si no alcanza el MC.
+    `pending_research`, o si supera `max_take`. Lanza
+    InsufficientResourcesError si no alcanza el MC.
     """
+    if max_take is not None and len(card_ids_to_buy) > max_take:
+        raise ValueError(f"Como maximo se pueden tomar {max_take} cartas, se pidieron {len(card_ids_to_buy)}")
+
     pending = set(player["pending_research"])
     for card_id in card_ids_to_buy:
         if card_id not in pending:

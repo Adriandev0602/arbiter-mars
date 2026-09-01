@@ -118,6 +118,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `tropical_resort` | Tropical Resort | 098 | 13 MC | -2 producción calor, +3 producción MC |
 | `toll_station` | Toll Station | 099 | 12 MC | Sin efecto modelado — depende de tags de OPONENTES, siempre 0 en single-player |
 | `fueled_generators` | Fueled Generators | 100 | 1 MC | -1 producción MC, +1 producción energía |
+| `power_grid` | Power Grid | 102 | 18 MC | +1 producción energía por cada tag power ya jugado, incluida esta (`production_delta_per_tag` + `production_deltas` combinados) |
+| `ore_processor` | Ore Processor | 104 | 13 MC | Acción repetible: -4 energía → +1 titanio, +1 paso oxígeno |
+| `earth_office` | Earth Office | 105 | 1 MC | Pasivo: -3 MC en cartas con tag earth |
+| `media_archives` | Media Archives | 107 | 8 MC | +1 MC por cada evento jugado alguna vez (`resource_delta_per_counter`, contador `events_played`) |
+| `open_city` | Open City | 108 | 23 MC | Requiere oxígeno ≥12%. -1 producción energía, +4 producción MC, +2 plantas, +1 ciudad |
+| `business_network` | Business Network | 110 | 4 MC | -1 producción MC; acción repetible: roba 1 a investigación pendiente (mismo patrón que Inventors' Guild) |
+| `business_contacts` | Business Contacts | 111 | 7 MC | Evento. Roba 4 a investigación pendiente (`start_research` inmediato); se resuelve con `resolve_research_phase(cost_per_card=0, max_take=2)` — exige tomar exactamente 2 |
+| `bribed_committee` | Bribed Committee | 112 | 7 MC | Evento. +2 TR directo |
+| `breathing_filters` | Breathing Filters | 114 | 11 MC | Requiere oxígeno ≥7%. Sin efecto modelado — solo puntos, no trackeados |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -193,8 +202,20 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
 - `resource_delta_per_counter`: `{"resource": "<recurso>", "counter": "<contador de
   GlobalParameters>", "per_counter": N (default 1)}` — suma al stock del recurso tanto como
   valga ese contador global (ej. Greenhouses: +1 planta por cada ciudad en
-  `city_tiles_placed`). Análogo a `mc_per_counter` de `use_card_action.gains`, pero como
-  efecto inmediato y para cualquier recurso, no solo MC.
+  `city_tiles_placed`; Media Archives: +1 MC por cada evento en `events_played`). Análogo a
+  `mc_per_counter` de `use_card_action.gains`, pero como efecto inmediato y para cualquier
+  recurso, no solo MC.
+- `start_research`: `{"n": N}` — roba N cartas a `pending_research` como efecto inmediato al
+  jugar la carta (ej. Business Contacts: n=4, después se resuelve con
+  `resolve_research_phase(cost_per_card=0, max_take=2)` porque el texto exige tomar
+  EXACTAMENTE 2 de las 4 — `max_take` es un tope nuevo en `resolve_research_phase`, lanza
+  error si se pide más). Mismo mecanismo que `use_card_action.gains.start_research`
+  (Inventors' Guild), pero disparado al jugar la carta en vez de por una acción repetible.
+- "Incluyendo esta" (tags): cuando una carta cuenta su propio tag además de los ya jugados
+  (ej. Power Grid: "+1 producción de energía por cada tag power, incluida esta"), se combina
+  `production_delta_per_tag` (cuenta tags previos) + `production_deltas` fijo (+1 por la
+  propia carta) en el mismo `effects` — no hace falta una pieza nueva, `apply_card_effect`
+  procesa ambas claves en la misma pasada.
 - `duplicate_production`: `{"requires_tag": "<tag>"}` — a diferencia de todos los efectos de
   arriba (que solo miran el estado del jugador/tablero), este targetea OTRA carta que el
   jugador ya jugó, por catálogo, no por recursos guardados en ella (ej. Robotic Workforce:
