@@ -200,6 +200,8 @@ def use_standard_project(
             f"aquifer, greenery, city. Recibido: {project_name}"
         )
 
+    new_player = engine.apply_standard_project_used_bonuses(new_player, project_name)
+
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)

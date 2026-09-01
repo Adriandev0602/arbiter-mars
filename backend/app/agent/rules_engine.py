@@ -479,9 +479,25 @@ def check_card_requirements(
 
     requirements None o {} no exige nada. Lanza CardRequirementNotMetError
     si algun requisito no se cumple.
+
+    Si `player` tiene el pasivo "global_requirements_tolerance_steps": N
+    (ej. Adaptation Technology: N=2 -- "your global requirements are +2 or
+    -2 steps, your choice in each case"), los umbrales de temperatura/
+    oxigeno/oceanos se relajan N pasos EN LA DIRECCION QUE FAVOREZCA al
+    jugador (el juego real deja elegir +2 o -2 por requisito; como siempre
+    conviene elegir la direccion favorable, el motor la aplica directo sin
+    pedir la eleccion): baja los pisos "min_*" y sube los techos "max_*".
     """
     if not requirements:
         return
+
+    tolerance_steps = 0
+    if player is not None:
+        for effect in player["passive_effects"]:
+            tolerance_steps = max(tolerance_steps, effect.get("global_requirements_tolerance_steps", 0))
+    temperature_tolerance = tolerance_steps * TEMPERATURE_STEP
+    oxygen_tolerance = tolerance_steps * OXYGEN_STEP
+    oceans_tolerance = tolerance_steps
 
     if "min_tag_count" in requirements:
         specs = requirements["min_tag_count"]
@@ -510,34 +526,38 @@ def check_card_requirements(
                 f"Requiere {spec['key']} >= {spec['count']}, hay {have}"
             )
 
-    if "min_temperature" in requirements and globals_["temperature"] < requirements["min_temperature"]:
-        raise CardRequirementNotMetError(
-            f"Requiere temperatura >= {requirements['min_temperature']}C, "
-            f"hay {globals_['temperature']}C"
-        )
-    if "min_oxygen" in requirements and globals_["oxygen"] < requirements["min_oxygen"]:
-        raise CardRequirementNotMetError(
-            f"Requiere oxigeno >= {requirements['min_oxygen']}%, hay {globals_['oxygen']}%"
-        )
-    if "min_oceans" in requirements and globals_["oceans_placed"] < requirements["min_oceans"]:
-        raise CardRequirementNotMetError(
-            f"Requiere {requirements['min_oceans']} oceanos colocados, "
-            f"hay {globals_['oceans_placed']}"
-        )
-    if "max_oceans" in requirements and globals_["oceans_placed"] > requirements["max_oceans"]:
-        raise CardRequirementNotMetError(
-            f"Requiere maximo {requirements['max_oceans']} oceanos colocados, "
-            f"hay {globals_['oceans_placed']}"
-        )
-    if "max_temperature" in requirements and globals_["temperature"] > requirements["max_temperature"]:
-        raise CardRequirementNotMetError(
-            f"Requiere temperatura <= {requirements['max_temperature']}C, "
-            f"hay {globals_['temperature']}C"
-        )
-    if "max_oxygen" in requirements and globals_["oxygen"] > requirements["max_oxygen"]:
-        raise CardRequirementNotMetError(
-            f"Requiere oxigeno <= {requirements['max_oxygen']}%, hay {globals_['oxygen']}%"
-        )
+    if "min_temperature" in requirements:
+        threshold = requirements["min_temperature"] - temperature_tolerance
+        if globals_["temperature"] < threshold:
+            raise CardRequirementNotMetError(
+                f"Requiere temperatura >= {threshold}C, hay {globals_['temperature']}C"
+            )
+    if "min_oxygen" in requirements:
+        threshold = requirements["min_oxygen"] - oxygen_tolerance
+        if globals_["oxygen"] < threshold:
+            raise CardRequirementNotMetError(f"Requiere oxigeno >= {threshold}%, hay {globals_['oxygen']}%")
+    if "min_oceans" in requirements:
+        threshold = requirements["min_oceans"] - oceans_tolerance
+        if globals_["oceans_placed"] < threshold:
+            raise CardRequirementNotMetError(
+                f"Requiere {threshold} oceanos colocados, hay {globals_['oceans_placed']}"
+            )
+    if "max_oceans" in requirements:
+        threshold = requirements["max_oceans"] + oceans_tolerance
+        if globals_["oceans_placed"] > threshold:
+            raise CardRequirementNotMetError(
+                f"Requiere maximo {threshold} oceanos colocados, hay {globals_['oceans_placed']}"
+            )
+    if "max_temperature" in requirements:
+        threshold = requirements["max_temperature"] + temperature_tolerance
+        if globals_["temperature"] > threshold:
+            raise CardRequirementNotMetError(
+                f"Requiere temperatura <= {threshold}C, hay {globals_['temperature']}C"
+            )
+    if "max_oxygen" in requirements:
+        threshold = requirements["max_oxygen"] + oxygen_tolerance
+        if globals_["oxygen"] > threshold:
+            raise CardRequirementNotMetError(f"Requiere oxigeno <= {threshold}%, hay {globals_['oxygen']}%")
 
 
 def apply_card_effect(
@@ -624,6 +644,11 @@ def apply_card_effect(
         en este punto -- normalmente ni siquiera se registra como activa).
         Lanza CardEffectError si falta target_card_id o si la carta objetivo
         no esta activa para este jugador.
+      - "target_min_resources": N -- opcional, junto a target_card_resource_delta;
+        exige que la carta objetivo YA tenga al menos N recursos antes de
+        aplicar el delta (ej. CEO's Favorite Project: "add 1 resource to a
+        card with at least 1 resource on it" -- target_min_resources: 1).
+        Lanza CardEffectError si no se cumple.
 
     NOTA sobre "remove up to N <recurso> from any player": varias cartas del
     catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
@@ -749,6 +774,12 @@ def apply_card_effect(
         active_cards = new_player["active_cards"]
         if target_card_id not in active_cards:
             raise CardEffectError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+        min_target_resources = effects.get("target_min_resources")
+        if min_target_resources is not None and active_cards[target_card_id]["resources"] < min_target_resources:
+            raise CardEffectError(
+                f"'{target_card_id}' tiene {active_cards[target_card_id]['resources']} recursos, "
+                f"se necesitan al menos {min_target_resources}"
+            )
         new_active_cards = dict(active_cards)
         new_active_cards[target_card_id] = {
             **new_active_cards[target_card_id],
@@ -959,6 +990,14 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         una carta, una accion) (ej. Arctic Algae: +2 plantas). Aplicado
         directo dentro de place_ocean, no hace falta llamarlo aparte.
       - "card_cost_discount_mc": N -- ver compute_card_cost_discount.
+      - "on_standard_project_used": {"mc_delta": N} -- se suma cada vez que
+        el jugador paga un proyecto estandar que no sea 'sell_patents' (ej.
+        Standard Technology: +3 MC). Ver apply_standard_project_used_bonuses,
+        llamado desde tools.use_standard_project.
+      - "global_requirements_tolerance_steps": N -- relaja N pasos los
+        requisitos de temperatura/oxigeno/oceanos de OTRAS cartas que el
+        jugador quiera jugar despues (ej. Adaptation Technology: N=2). Ver
+        check_card_requirements.
       - "on_tag_played_add_resource": {"matching_tags": ["<tag>", ...], "resource_delta": N (default 1)}
         -- suma N recurso(s) a la propia carta activa cada vez que el jugador juega
         una carta con alguno de esos tags (ej. Ecological Zone: tags animal/plant;
@@ -1036,6 +1075,24 @@ def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str,
             continue
         new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
         new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0)
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
+def apply_standard_project_used_bonuses(player: PlayerState, project_name: str) -> PlayerState:
+    """
+    Aplica el pasivo "on_standard_project_used": {"mc_delta": N} -- se suma
+    cada vez que el jugador paga un proyecto estandar que NO sea
+    'sell_patents' (ej. Standard Technology: +3 MC). Llamar desde
+    tools.use_standard_project justo despues de resolver el proyecto.
+    """
+    if project_name == "sell_patents":
+        return player
+    new_player: dict = dict(player)
+    for effect in player["passive_effects"]:
+        bonus = effect.get("on_standard_project_used")
+        if bonus is None:
+            continue
+        new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
 
 

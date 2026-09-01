@@ -54,6 +54,7 @@ from app.agent.rules_engine import (
     increment_events_played,
     apply_tag_played_resource_bonuses,
     apply_greenery_placed_bonuses,
+    apply_standard_project_used_bonuses,
 )
 
 
@@ -2357,6 +2358,104 @@ def test_insects_plant_production_per_plant_tag_no_include_this():
         {"production_delta_per_tag": {"tag": "plant", "production": "plant_production", "per_tag": 1}},
     )
     assert new_player["plant_production"] == 4  # 1 base + 3, Insects no cuenta a si misma
+
+
+def test_ceos_favorite_project_requires_target_with_at_least_1_resource():
+    player = register_active_card(new_player_state(), "ceos_favorite_project")
+    player = register_active_card(player, "decomposers")
+    globals_ = new_global_parameters()
+    effects = {"target_card_resource_delta": 1, "target_min_resources": 1}
+
+    # Target sin recursos: no cumple
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, globals_, effects, target_card_id="decomposers")
+
+    player["active_cards"]["decomposers"]["resources"] = 1
+    new_player, _ = apply_card_effect(player, globals_, effects, target_card_id="decomposers")
+    assert new_player["active_cards"]["decomposers"]["resources"] == 2
+
+
+def test_anti_gravity_technology_discount_requires_7_science_tags():
+    requirements = {"min_tag_count": {"tag": "science", "count": 7}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(requirements, new_global_parameters(), new_player_state())
+
+    ready = {**new_player_state(), "tags_played": {"science": 7}}
+    check_card_requirements(requirements, new_global_parameters(), ready)
+    player = register_passive_effect(ready, "anti_gravity_technology", {"card_cost_discount_mc": 2})
+    assert compute_card_cost_discount(player, ()) == 2
+
+
+def test_adaptation_technology_relaxes_global_requirements_2_steps():
+    player = register_passive_effect(
+        new_player_state(), "adaptation_technology", {"global_requirements_tolerance_steps": 2}
+    )
+    globals_ = {**new_global_parameters(), "temperature": -30, "oxygen": 0, "oceans_placed": 0}
+
+    # Sin el pasivo, -26C no alcanza para requerir -30C minimo... probamos requisitos que
+    # normalmente fallarian pero se relajan 2 pasos (4C / 2% / 2 oceanos) con el pasivo.
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -26}, globals_, new_player_state())
+    check_card_requirements({"min_temperature": -26}, globals_, player)  # -30 >= -26-4
+
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oxygen": 2}, globals_, new_player_state())
+    check_card_requirements({"min_oxygen": 2}, globals_, player)  # 0 >= 2-2
+
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_oceans": 1}, {**globals_, "oceans_placed": 3}, new_player_state())
+    check_card_requirements({"max_oceans": 1}, {**globals_, "oceans_placed": 3}, player)  # 3 <= 1+2
+
+
+def test_caretaker_contract_spends_heat_for_tr():
+    player = register_active_card(new_player_state(), "caretaker_contract")
+    player["heat"] = 8
+    globals_ = {**new_global_parameters(), "temperature": 0}
+    check_card_requirements({"min_temperature": 0}, globals_)
+
+    action_spec = {"cost": {"heat": 8}, "gains": {"tr_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "caretaker_contract", action_spec)
+    assert new_player["heat"] == 0
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_standard_technology_gains_3_mc_after_non_sell_patents_project():
+    player = register_passive_effect(
+        new_player_state(), "standard_technology", {"on_standard_project_used": {"mc_delta": 3}}
+    )
+    after_power_plant = apply_standard_project_used_bonuses(player, "power_plant")
+    assert after_power_plant["mc"] == player["mc"] + 3
+
+    after_sell_patents = apply_standard_project_used_bonuses(player, "sell_patents")
+    assert after_sell_patents["mc"] == player["mc"]
+
+
+def test_nitrite_reducing_bacteria_starts_with_3_microbes_choice_action():
+    player = register_active_card(new_player_state(), "nitrite_reducing_bacteria", initial_resources=3)
+    globals_ = new_global_parameters()
+    action_spec = {
+        "choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 3}, "gains": {"tr_delta": 1}},
+        ]
+    }
+    p1, _ = use_card_action(player, globals_, "nitrite_reducing_bacteria", action_spec, effect_choice=0)
+    assert p1["active_cards"]["nitrite_reducing_bacteria"]["resources"] == 4
+
+    p2, _ = use_card_action(player, globals_, "nitrite_reducing_bacteria", action_spec, effect_choice=1)
+    assert p2["active_cards"]["nitrite_reducing_bacteria"]["resources"] == 0
+    assert p2["tr"] == TR_START + 1
+
+
+def test_power_supply_consortium_requires_2_power_tags_net_zero_energy():
+    requirements = {"min_tag_count": {"tag": "power", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(requirements, new_global_parameters(), new_player_state())
+
+    ready = {**new_player_state(), "tags_played": {"power": 2}}
+    check_card_requirements(requirements, new_global_parameters(), ready)
+    new_player, _ = apply_card_effect(ready, new_global_parameters(), {"production_deltas": {"energy_production": 0}})
+    assert new_player["energy_production"] == 1  # -1 (any) +1 (propia) = neto 0, ver CARDS_LOG
 
 
 def test_advanced_ecosystems_multi_tag_requirements():

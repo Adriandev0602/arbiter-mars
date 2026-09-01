@@ -602,6 +602,46 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'insects', 'Insects', 9, '{microbe}', '{"min_oxygen": 6}'::jsonb,
         '{"production_delta_per_tag": {"tag": "plant", "production": "plant_production", "per_tag": 1}}'::jsonb
+    ),
+    (
+        'ceos_favorite_project', 'CEO''s Favorite Project', 1, '{}', null,
+        '{"target_card_resource_delta": 1, "target_min_resources": 1}'::jsonb
+    ),
+    (
+        'anti_gravity_technology', 'Anti-Gravity Technology', 14, '{science}', '{"min_tag_count": {"tag": "science", "count": 7}}'::jsonb,
+        '{"passive": {"card_cost_discount_mc": 2}}'::jsonb
+    ),
+    (
+        'adaptation_technology', 'Adaptation Technology', 12, '{science}', null,
+        '{"passive": {"global_requirements_tolerance_steps": 2}}'::jsonb
+    ),
+    (
+        'caretaker_contract', 'Caretaker Contract', 3, '{}', '{"min_temperature": 0}'::jsonb,
+        '{"becomes_active": true, "action": {"cost": {"heat": 8}, "gains": {"tr_delta": 1}}}'::jsonb
+    ),
+    (
+        'designed_microorganisms', 'Designed Microorganisms', 16, '{science,microbe}', '{"max_temperature": -14}'::jsonb,
+        '{"production_deltas": {"plant_production": 2}}'::jsonb
+    ),
+    (
+        'standard_technology', 'Standard Technology', 6, '{science}', null,
+        '{"passive": {"on_standard_project_used": {"mc_delta": 3}}}'::jsonb
+    ),
+    (
+        'nitrite_reducing_bacteria', 'Nitrite Reducing Bacteria', 11, '{microbe}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 3, "action": {"choice": [{"gains": {"card_resource_delta": 1}}, {"cost": {"card_resource": 3}, "gains": {"tr_delta": 1}}]}}'::jsonb
+    ),
+    (
+        'industrial_microbes', 'Industrial Microbes', 12, '{microbe,building}', null,
+        '{"production_deltas": {"energy_production": 1, "steel_production": 1}}'::jsonb
+    ),
+    (
+        'lichen', 'Lichen', 7, '{plant}', '{"min_temperature": -24}'::jsonb,
+        '{"production_deltas": {"plant_production": 1}}'::jsonb
+    ),
+    (
+        'power_supply_consortium', 'Power Supply Consortium', 5, '{power,power}', '{"min_tag_count": {"tag": "power", "count": 2}}'::jsonb,
+        '{"production_deltas": {"energy_production": 0}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -615,4 +655,4 @@ on conflict (id) do update set
 update cards set is_event = true
 where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases',
              'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir',
-             'local_heat_trapping', 'imported_hydrogen', 'large_convoy');
+             'local_heat_trapping', 'imported_hydrogen', 'large_convoy', 'ceos_favorite_project');
