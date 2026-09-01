@@ -642,6 +642,46 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'power_supply_consortium', 'Power Supply Consortium', 5, '{power,power}', '{"min_tag_count": {"tag": "power", "count": 2}}'::jsonb,
         '{"production_deltas": {"energy_production": 0}}'::jsonb
+    ),
+    (
+        'convoy_from_europa', 'Convoy from Europa', 15, '{space}', null,
+        '{"place_oceans": 1, "draw_cards": 1}'::jsonb
+    ),
+    (
+        'imported_ghg', 'Imported GHG', 7, '{earth,space}', null,
+        '{"production_deltas": {"heat_production": 1}, "resource_deltas": {"heat": 3}}'::jsonb
+    ),
+    (
+        'imported_nitrogen', 'Imported Nitrogen', 23, '{earth,space}', null,
+        '{"tr_delta": 1, "resource_deltas": {"plants": 4}, "target_card_resource_delta": 3, "target_card_resource_delta_2": 2}'::jsonb
+    ),
+    (
+        'micro_mills', 'Micro-Mills', 3, '{}', null,
+        '{"production_deltas": {"heat_production": 1}}'::jsonb
+    ),
+    (
+        'magnetic_field_generators', 'Magnetic Field Generators', 20, '{building}', null,
+        '{"production_deltas": {"energy_production": -4, "plant_production": 2}, "tr_delta": 3}'::jsonb
+    ),
+    (
+        'shuttles', 'Shuttles', 10, '{space}', '{"min_oxygen": 5}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 2}, "passive": {"card_cost_discount_mc": 2, "tag_filter": "space"}}'::jsonb
+    ),
+    (
+        'import_of_advanced_ghg', 'Import of Advanced GHG', 9, '{earth,space}', null,
+        '{"production_deltas": {"heat_production": 2}}'::jsonb
+    ),
+    (
+        'windmills', 'Windmills', 6, '{power,building}', '{"min_oxygen": 7}'::jsonb,
+        '{"production_deltas": {"energy_production": 1}}'::jsonb
+    ),
+    (
+        'tundra_farming', 'Tundra Farming', 16, '{plant}', '{"min_temperature": -6}'::jsonb,
+        '{"production_deltas": {"plant_production": 1, "mc_production": 2}, "resource_deltas": {"plants": 1}}'::jsonb
+    ),
+    (
+        'aerobraked_ammonia_asteroid', 'Aerobraked Ammonia Asteroid', 26, '{space,space}', null,
+        '{"target_card_resource_delta": 2, "production_deltas": {"heat_production": 3, "plant_production": 1}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -655,4 +695,6 @@ on conflict (id) do update set
 update cards set is_event = true
 where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases',
              'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir',
-             'local_heat_trapping', 'imported_hydrogen', 'large_convoy', 'ceos_favorite_project');
+             'local_heat_trapping', 'imported_hydrogen', 'large_convoy', 'ceos_favorite_project',
+             'convoy_from_europa', 'imported_ghg', 'imported_nitrogen', 'import_of_advanced_ghg',
+             'aerobraked_ammonia_asteroid');

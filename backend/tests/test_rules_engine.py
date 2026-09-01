@@ -2458,6 +2458,120 @@ def test_power_supply_consortium_requires_2_power_tags_net_zero_energy():
     assert new_player["energy_production"] == 1  # -1 (any) +1 (propia) = neto 0, ver CARDS_LOG
 
 
+def test_convoy_from_europa_places_ocean_and_draws_card():
+    player = {**new_player_state(), "deck": ["card_a"]}
+    new_player, new_globals = apply_card_effect(
+        player, new_global_parameters(), {"place_oceans": 1, "draw_cards": 1}
+    )
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["hand"] == ["card_a"]
+
+
+def test_imported_ghg_heat_production_and_stock():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"heat_production": 1}, "resource_deltas": {"heat": 3}},
+    )
+    assert new_player["heat_production"] == 2
+    assert new_player["heat"] == 3
+
+
+def test_imported_nitrogen_targets_two_different_active_cards():
+    player = register_active_card(new_player_state(), "decomposers")
+    player = register_active_card(player, "ants")
+    globals_ = new_global_parameters()
+    effects = {
+        "tr_delta": 1, "resource_deltas": {"plants": 4},
+        "target_card_resource_delta": 3, "target_card_resource_delta_2": 2,
+    }
+
+    # Requiere target_card_id_2
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, globals_, effects, target_card_id="decomposers")
+
+    new_player, _ = apply_card_effect(
+        player, globals_, effects, target_card_id="decomposers", target_card_id_2="ants"
+    )
+    assert new_player["tr"] == TR_START + 1
+    assert new_player["plants"] == 4
+    assert new_player["active_cards"]["decomposers"]["resources"] == 3
+    assert new_player["active_cards"]["ants"]["resources"] == 2
+
+
+def test_micro_mills_heat_production():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"production_deltas": {"heat_production": 1}}
+    )
+    assert new_player["heat_production"] == 2
+
+
+def test_magnetic_field_generators_swaps_energy_for_plants_and_tr():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"energy_production": -4, "plant_production": 2}, "tr_delta": 3},
+    )
+    assert new_player["energy_production"] == 0  # piso 0, ver _apply_production_floor
+    assert new_player["plant_production"] == 3
+    assert new_player["tr"] == TR_START + 3
+
+
+def test_shuttles_requires_5_oxygen_and_discounts_space_cards():
+    globals_ = {**new_global_parameters(), "oxygen": 5}
+    check_card_requirements({"min_oxygen": 5}, globals_)
+
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_, {"production_deltas": {"energy_production": -1, "mc_production": 2}}
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 3
+
+    player = register_passive_effect(
+        new_player_state(), "shuttles", {"card_cost_discount_mc": 2, "tag_filter": "space"}
+    )
+    assert compute_card_cost_discount(player, ("space",)) == 2
+    assert compute_card_cost_discount(player, ("earth",)) == 0
+
+
+def test_windmills_requires_7_oxygen():
+    globals_ = {**new_global_parameters(), "oxygen": 7}
+    check_card_requirements({"min_oxygen": 7}, globals_)
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_, {"production_deltas": {"energy_production": 1}}
+    )
+    assert new_player["energy_production"] == 2
+
+
+def test_import_of_advanced_ghg_heat_production():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"production_deltas": {"heat_production": 2}}
+    )
+    assert new_player["heat_production"] == 3
+
+
+def test_tundra_farming_requires_minus_6_temperature():
+    globals_ = {**new_global_parameters(), "temperature": -6}
+    check_card_requirements({"min_temperature": -6}, globals_)
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_,
+        {"production_deltas": {"plant_production": 1, "mc_production": 2}, "resource_deltas": {"plants": 1}},
+    )
+    assert new_player["plant_production"] == 2
+    assert new_player["mc_production"] == 3
+    assert new_player["plants"] == 1
+
+
+def test_aerobraked_ammonia_asteroid_targets_card_and_raises_production():
+    player = register_active_card(new_player_state(), "decomposers")
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"target_card_resource_delta": 2, "production_deltas": {"heat_production": 3, "plant_production": 1}},
+        target_card_id="decomposers",
+    )
+    assert new_player["active_cards"]["decomposers"]["resources"] == 2
+    assert new_player["heat_production"] == 4
+    assert new_player["plant_production"] == 2
+
+
 def test_advanced_ecosystems_multi_tag_requirements():
     req = {
         "min_tag_count": [

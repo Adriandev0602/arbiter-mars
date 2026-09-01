@@ -567,6 +567,7 @@ def apply_card_effect(
     effect_amount: int | None = None,
     effect_choice: int | None = None,
     target_card_id: str | None = None,
+    target_card_id_2: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
@@ -649,6 +650,12 @@ def apply_card_effect(
         aplicar el delta (ej. CEO's Favorite Project: "add 1 resource to a
         card with at least 1 resource on it" -- target_min_resources: 1).
         Lanza CardEffectError si no se cumple.
+      - "target_card_resource_delta_2": N -- igual que target_card_resource_delta
+        pero para una SEGUNDA carta objetivo distinta, via el parametro
+        `target_card_id_2` (ej. Imported Nitrogen: agregar 3 microbios a una
+        carta y 2 animales a OTRA carta distinta, en la misma jugada). Sin
+        target_min_resources propio -- si algun dia una carta lo necesita,
+        agregar target_min_resources_2 en vez de generalizar de mas.
 
     NOTA sobre "remove up to N <recurso> from any player": varias cartas del
     catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
@@ -665,14 +672,18 @@ def apply_card_effect(
                 f"Esta carta requiere effect_choice entre 0 y {len(options) - 1}"
             )
         return apply_card_effect(
-            player, globals_, options[effect_choice], effect_amount, target_card_id=target_card_id
+            player, globals_, options[effect_choice], effect_amount,
+            target_card_id=target_card_id, target_card_id_2=target_card_id_2,
         )
 
     if "tag_count_choice" in effects:
         spec = effects["tag_count_choice"]
         have = player["tags_played"].get(spec["tag"], 0)
         branch = spec["if_met"] if have >= spec["count"] else spec["else"]
-        return apply_card_effect(player, globals_, branch, effect_amount, target_card_id=target_card_id)
+        return apply_card_effect(
+            player, globals_, branch, effect_amount,
+            target_card_id=target_card_id, target_card_id_2=target_card_id_2,
+        )
 
     new_player: dict = dict(player)
     new_globals: dict = dict(globals_)
@@ -784,6 +795,20 @@ def apply_card_effect(
         new_active_cards[target_card_id] = {
             **new_active_cards[target_card_id],
             "resources": max(0, new_active_cards[target_card_id]["resources"] + amount),
+        }
+        new_player["active_cards"] = new_active_cards
+
+    if "target_card_resource_delta_2" in effects:
+        amount = effects["target_card_resource_delta_2"]
+        if target_card_id_2 is None:
+            raise CardEffectError("Esta carta requiere target_card_id_2")
+        active_cards = new_player["active_cards"]
+        if target_card_id_2 not in active_cards:
+            raise CardEffectError(f"La carta objetivo '{target_card_id_2}' no esta activa para este jugador")
+        new_active_cards = dict(active_cards)
+        new_active_cards[target_card_id_2] = {
+            **new_active_cards[target_card_id_2],
+            "resources": max(0, new_active_cards[target_card_id_2]["resources"] + amount),
         }
         new_player["active_cards"] = new_active_cards
 

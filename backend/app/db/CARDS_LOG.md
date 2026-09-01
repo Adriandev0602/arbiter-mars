@@ -171,6 +171,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `industrial_microbes` | Industrial Microbes | 158 | 12 MC | +1 producción energía, +1 producción acero |
 | `lichen` | Lichen | 159 | 7 MC | Requiere temperatura ≥-24°C. +1 producción plantas |
 | `power_supply_consortium` | Power Supply Consortium | 160 | 5 MC | Tags power×2. Requiere 2 tags de power ya jugados. "-1 producción energía de cualquier jugador, +1 propia" — en el MVP de un solo jugador ambos targetean al mismo jugador, neto 0 (mismo criterio que Fish/Small Animals, ver nota de diseño más abajo, extendida al caso de un mismo recurso) |
+| `convoy_from_europa` | Convoy from Europa | 161 | 15 MC | Evento, tag space. Coloca 1 océano, roba 1 carta |
+| `imported_ghg` | Imported GHG | 162 | 7 MC | Evento, tags Earth/Space. +1 producción calor, +3 calor (stock) |
+| `imported_nitrogen` | Imported Nitrogen | 163 | 23 MC | Evento, tags Earth/Space. +1 TR, +4 plantas, agrega 3 recursos a una carta activa Y 2 recursos a OTRA carta activa distinta (nuevo `target_card_resource_delta_2`/`target_card_id_2`, dos objetivos en la misma jugada) |
+| `micro_mills` | Micro-Mills | 164 | 3 MC | +1 producción calor |
+| `magnetic_field_generators` | Magnetic Field Generators | 165 | 20 MC | -4 producción energía, +2 producción plantas, +3 TR |
+| `shuttles` | Shuttles | 166 | 10 MC | Requiere oxígeno ≥5%. -1 producción energía, +2 producción MC. Pasivo: -2 MC al costo de cartas con tag space (`card_cost_discount_mc` + `tag_filter`) |
+| `import_of_advanced_ghg` | Import of Advanced GHG | 167 | 9 MC | Evento, tags Earth/Space. +2 producción calor |
+| `windmills` | Windmills | 168 | 6 MC | Requiere oxígeno ≥7%. +1 producción energía |
+| `tundra_farming` | Tundra Farming | 169 | 16 MC | Requiere temperatura ≥-6°C. +1 producción plantas, +2 producción MC, +1 planta (stock) |
+| `aerobraked_ammonia_asteroid` | Aerobraked Ammonia Asteroid | 170 | 26 MC | Evento, tags space×2. Agrega 2 recursos a OTRA carta activa (`target_card_resource_delta`), +3 producción calor, +1 producción plantas |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
