@@ -566,6 +566,42 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'ants', 'Ants', 9, '{microbe}', '{"min_oxygen": 4}'::jsonb,
         '{"becomes_active": true, "action": {"gains": {"move_from_target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'cartel', 'Cartel', 8, '{earth}', null,
+        '{"production_delta_per_tag": {"tag": "earth", "production": "mc_production", "per_tag": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'strip_mine', 'Strip Mine', 25, '{building}', null,
+        '{"production_deltas": {"energy_production": -2, "steel_production": 2, "titanium_production": 1}, "raise_oxygen_steps": 2}'::jsonb
+    ),
+    (
+        'wave_power', 'Wave Power', 8, '{power}', '{"min_oceans": 3}'::jsonb,
+        '{"production_deltas": {"energy_production": 1}}'::jsonb
+    ),
+    (
+        'power_plant_card', 'Power Plant', 4, '{power,building}', null,
+        '{"production_deltas": {"energy_production": 1}}'::jsonb
+    ),
+    (
+        'mohole_area', 'Mohole Area', 20, '{building}', null,
+        '{"production_deltas": {"heat_production": 4}, "place_special_tile": {"hex_type": "ocean"}}'::jsonb
+    ),
+    (
+        'large_convoy', 'Large Convoy', 36, '{earth,space}', null,
+        '{"choice": [{"place_oceans": 1, "draw_cards": 2, "resource_deltas": {"plants": 5}}, {"place_oceans": 1, "draw_cards": 2, "target_card_resource_delta": 4}]}'::jsonb
+    ),
+    (
+        'tectonic_stress_power', 'Tectonic Stress Power', 18, '{science,science,power,building}', '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"production_deltas": {"energy_production": 3}}'::jsonb
+    ),
+    (
+        'herbivores', 'Herbivores', 12, '{animal}', '{"min_oxygen": 8}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 1, "production_deltas": {"plant_production": -1}, "passive": {"on_greenery_placed_add_resource": {"resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'insects', 'Insects', 9, '{microbe}', '{"min_oxygen": 6}'::jsonb,
+        '{"production_delta_per_tag": {"tag": "plant", "production": "plant_production", "per_tag": 1}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -579,4 +615,4 @@ on conflict (id) do update set
 update cards set is_event = true
 where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases',
              'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir',
-             'local_heat_trapping', 'imported_hydrogen');
+             'local_heat_trapping', 'imported_hydrogen', 'large_convoy');

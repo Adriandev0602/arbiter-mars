@@ -53,6 +53,7 @@ from app.agent.rules_engine import (
     register_played_card,
     increment_events_played,
     apply_tag_played_resource_bonuses,
+    apply_greenery_placed_bonuses,
 )
 
 
@@ -2257,6 +2258,105 @@ def test_ants_action_moves_microbe_from_another_active_card():
     new_player, _ = use_card_action(player, globals_, "ants", action_spec, target_card_id="decomposers")
     assert new_player["active_cards"]["decomposers"]["resources"] == 0
     assert new_player["active_cards"]["ants"]["resources"] == 1
+
+
+def test_cartel_mc_production_per_earth_tag_including_this():
+    player = {**new_player_state(), "tags_played": {"earth": 2}}
+    globals_ = new_global_parameters()
+    effects = {
+        "production_delta_per_tag": {"tag": "earth", "production": "mc_production", "per_tag": 1, "include_this": True}
+    }
+    new_player, _ = apply_card_effect(player, globals_, effects)
+    assert new_player["mc_production"] == 4  # 1 base + 3 (2 previos + este)
+
+
+def test_strip_mine_swaps_energy_for_steel_titanium_and_raises_oxygen():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    effects = {
+        "production_deltas": {"energy_production": -2, "steel_production": 2, "titanium_production": 1},
+        "raise_oxygen_steps": 2,
+    }
+    new_player, new_globals = apply_card_effect(player, globals_, effects)
+    assert new_player["energy_production"] == 0
+    assert new_player["steel_production"] == 3
+    assert new_player["titanium_production"] == 2
+    assert new_globals["oxygen"] == 2
+
+
+def test_wave_power_requires_3_oceans():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 3}, globals_)
+
+    globals_["oceans_placed"] = 3
+    check_card_requirements({"min_oceans": 3}, globals_)
+    new_player, _ = apply_card_effect(new_player_state(), globals_, {"production_deltas": {"energy_production": 1}})
+    assert new_player["energy_production"] == 2
+
+
+def test_mohole_area_heat_production():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"production_deltas": {"heat_production": 4}}
+    )
+    assert new_player["heat_production"] == 5
+
+
+def test_large_convoy_choice_nested_place_oceans_and_draw_cards():
+    player = register_active_card(new_player_state(), "decomposers")
+    player = {**player, "deck": ["card_a", "card_b", "card_c"]}
+    globals_ = new_global_parameters()
+    effects = {
+        "choice": [
+            {"place_oceans": 1, "draw_cards": 2, "resource_deltas": {"plants": 5}},
+            {"place_oceans": 1, "draw_cards": 2, "target_card_resource_delta": 4},
+        ]
+    }
+    p1, g1 = apply_card_effect(player, globals_, effects, effect_choice=0)
+    assert g1["oceans_placed"] == 1
+    assert p1["plants"] == 5
+    assert len(p1["hand"]) == 2
+
+    p2, g2 = apply_card_effect(player, globals_, effects, effect_choice=1, target_card_id="decomposers")
+    assert g2["oceans_placed"] == 1
+    assert len(p2["hand"]) == 2
+    assert p2["active_cards"]["decomposers"]["resources"] == 4
+
+
+def test_tectonic_stress_power_requires_2_science_tags_gives_3_energy():
+    requirements = {"min_tag_count": {"tag": "science", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(requirements, new_global_parameters(), new_player_state())
+
+    ready = {**new_player_state(), "tags_played": {"science": 2}}
+    check_card_requirements(requirements, new_global_parameters(), ready)
+    new_player, _ = apply_card_effect(ready, new_global_parameters(), {"production_deltas": {"energy_production": 3}})
+    assert new_player["energy_production"] == 4
+
+
+def test_herbivores_starts_with_1_animal_and_decreases_plant_production():
+    player = register_active_card(new_player_state(), "herbivores", initial_resources=1)
+    globals_ = {**new_global_parameters(), "oxygen": 8}
+    check_card_requirements({"min_oxygen": 8}, globals_)
+
+    new_player, _ = apply_card_effect(player, globals_, {"production_deltas": {"plant_production": -1}})
+    assert new_player["active_cards"]["herbivores"]["resources"] == 1
+    assert new_player["plant_production"] == 0
+
+    player = register_passive_effect(
+        new_player, "herbivores", {"on_greenery_placed_add_resource": {"resource_delta": 1}}
+    )
+    player = apply_greenery_placed_bonuses(player)
+    assert player["active_cards"]["herbivores"]["resources"] == 2
+
+
+def test_insects_plant_production_per_plant_tag_no_include_this():
+    player = {**new_player_state(), "tags_played": {"plant": 3}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": {"tag": "plant", "production": "plant_production", "per_tag": 1}},
+    )
+    assert new_player["plant_production"] == 4  # 1 base + 3, Insects no cuenta a si misma
 
 
 def test_advanced_ecosystems_multi_tag_requirements():
