@@ -56,6 +56,7 @@ from app.agent.rules_engine import (
     apply_greenery_placed_bonuses,
     apply_standard_project_used_bonuses,
     apply_city_placed_bonuses,
+    apply_tag_played_choice,
 )
 
 
@@ -2656,6 +2657,124 @@ def test_fuel_factory_swaps_energy_for_titanium_and_mc():
     assert new_player["energy_production"] == 0
     assert new_player["titanium_production"] == 2
     assert new_player["mc_production"] == 2
+
+
+def test_ice_cap_melting_requires_plus_2_temperature():
+    globals_ = {**new_global_parameters(), "temperature": 2}
+    check_card_requirements({"min_temperature": 2}, globals_)
+    _, new_globals = apply_card_effect(new_player_state(), globals_, {"place_oceans": 1})
+    assert new_globals["oceans_placed"] == 1
+
+
+def test_corporate_stronghold_swaps_energy_for_mc_and_places_city():
+    new_player, new_globals = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 4
+    assert new_globals["city_tiles_placed"] == 1
+
+
+def test_biomass_combustors_requires_6_oxygen():
+    globals_ = {**new_global_parameters(), "oxygen": 6}
+    check_card_requirements({"min_oxygen": 6}, globals_)
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_, {"production_deltas": {"plant_production": -1, "energy_production": 2}}
+    )
+    assert new_player["plant_production"] == 0
+    assert new_player["energy_production"] == 3
+
+
+def test_livestock_requires_9_oxygen_action_adds_animal():
+    globals_ = {**new_global_parameters(), "oxygen": 9}
+    check_card_requirements({"min_oxygen": 9}, globals_)
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_, {"production_deltas": {"plant_production": -1, "mc_production": 2}}
+    )
+    assert new_player["plant_production"] == 0
+    assert new_player["mc_production"] == 3
+
+    player = register_active_card(new_player_state(), "livestock")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player2, _ = use_card_action(player, globals_, "livestock", action_spec)
+    assert new_player2["active_cards"]["livestock"]["resources"] == 1
+
+
+def test_olympus_conference_tag_played_choice_add_or_spend():
+    player = register_active_card(new_player_state(), "olympus_conference")
+    player = register_passive_effect(
+        player, "olympus_conference",
+        {"on_tag_played_choice": {
+            "matching_tags": ["science"],
+            "add_resource_choice": {"resource_delta": 1},
+            "spend_resource_choice": {"card_resource": 1, "draw_cards": 1},
+        }},
+    )
+
+    # None (no elegir) no hace nada
+    unchanged = apply_tag_played_choice(player, ("science",), None)
+    assert unchanged == player
+
+    # No dispara con un tag que no matchea
+    not_triggered = apply_tag_played_choice(player, ("earth",), "add")
+    assert not_triggered == player
+
+    # "add" suma 1 recurso a la propia carta
+    p1 = apply_tag_played_choice(player, ("science",), "add")
+    assert p1["active_cards"]["olympus_conference"]["resources"] == 1
+
+    # "spend" sin recursos guardados falla
+    with pytest.raises(InsufficientResourcesError):
+        apply_tag_played_choice(player, ("science",), "spend")
+
+    # "spend" con 1 recurso guardado: lo gasta y roba 1 carta
+    p1 = {**p1, "deck": ["card_a"]}
+    p2 = apply_tag_played_choice(p1, ("science",), "spend")
+    assert p2["active_cards"]["olympus_conference"]["resources"] == 0
+    assert p2["hand"] == ["card_a"]
+
+
+def test_rad_suits_requires_2_city_tiles():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_city_tiles": 2}, globals_)
+
+    globals_["city_tiles_placed"] = 2
+    check_card_requirements({"min_city_tiles": 2}, globals_)
+    new_player, _ = apply_card_effect(new_player_state(), globals_, {"production_deltas": {"mc_production": 1}})
+    assert new_player["mc_production"] == 2
+
+
+def test_aquifer_pumping_action_spends_mc_for_ocean():
+    player = register_active_card(new_player_state(), "aquifer_pumping")
+    player["mc"] = 8
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"mc": 8}, "gains": {"place_oceans": 1}}
+    new_player, new_globals = use_card_action(player, globals_, "aquifer_pumping", action_spec)
+    assert new_player["mc"] == 0
+    assert new_globals["oceans_placed"] == 1
+
+
+def test_flooding_places_ocean():
+    _, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {"place_oceans": 1})
+    assert new_globals["oceans_placed"] == 1
+
+
+def test_energy_saving_production_per_city_tile():
+    globals_ = {**new_global_parameters(), "city_tiles_placed": 3}
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_,
+        {"production_delta_per_counter": {"production": "energy_production", "counter": "city_tiles_placed", "per_counter": 1}},
+    )
+    assert new_player["energy_production"] == 4
+
+
+def test_permafrost_extraction_requires_minus_8_temperature():
+    globals_ = {**new_global_parameters(), "temperature": -8}
+    check_card_requirements({"min_temperature": -8}, globals_)
+    _, new_globals = apply_card_effect(new_player_state(), globals_, {"place_oceans": 1})
+    assert new_globals["oceans_placed"] == 1
 
 
 def test_advanced_ecosystems_multi_tag_requirements():

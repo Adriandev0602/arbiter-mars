@@ -191,6 +191,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `heat_trappers` | Heat Trappers | 178 | 6 MC | -2 producción calor, +1 producción energía |
 | `soil_factory` | Soil Factory | 179 | 9 MC | -1 producción energía, +1 producción plantas |
 | `fuel_factory` | Fuel Factory | 180 | 6 MC | -1 producción energía, +1 producción titanio, +1 producción MC |
+| `ice_cap_melting` | Ice Cap Melting | 181 | 5 MC | Evento. Requiere temperatura ≥2°C. Coloca 1 océano |
+| `corporate_stronghold` | Corporate Stronghold | 182 | 11 MC | -1 producción energía, +3 producción MC, coloca un tile de ciudad |
+| `biomass_combustors` | Biomass Combustors | 183 | 4 MC | Requiere oxígeno ≥6%. -1 producción plantas, +2 producción energía |
+| `livestock` | Livestock | 184 | 13 MC | Requiere oxígeno ≥9%. -1 producción plantas, +2 producción MC. Acción repetible gratis: +1 animal propio (`card_resource_delta`) |
+| `olympus_conference` | Olympus Conference | 185 | 10 MC | Tags science/earth. Pasivo: al jugar CUALQUIER carta con tag science (incluida esta), elección opcional entre agregar 1 recurso propio O gastar 1 para robar 1 carta (nuevo `on_tag_played_choice`, ver `tools.play_card` param `tag_played_choice`) |
+| `rad_suits` | Rad-Suits | 186 | 6 MC | Requiere 2 ciudades en juego (nuevo requirement `min_city_tiles`). +1 producción MC |
+| `aquifer_pumping` | Aquifer Pumping | 187 | 18 MC | Acción repetible: gasta 8 MC, coloca 1 océano |
+| `flooding` | Flooding | 188 | 7 MC | Evento. Coloca 1 océano (cláusula opcional de robar MC a otro jugador omitida, MVP de un solo jugador) |
+| `energy_saving` | Energy Saving | 189 | 15 MC | +1 producción energía por cada tile de ciudad en el mapa (`production_delta_per_counter`) |
+| `permafrost_extraction` | Permafrost Extraction | 191 | 8 MC | Evento. Requiere temperatura ≥-8°C. Coloca 1 océano |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 

@@ -722,6 +722,46 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'fuel_factory', 'Fuel Factory', 6, '{building}', null,
         '{"production_deltas": {"energy_production": -1, "titanium_production": 1, "mc_production": 1}}'::jsonb
+    ),
+    (
+        'ice_cap_melting', 'Ice Cap Melting', 5, '{}', '{"min_temperature": 2}'::jsonb,
+        '{"place_oceans": 1}'::jsonb
+    ),
+    (
+        'corporate_stronghold', 'Corporate Stronghold', 11, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'biomass_combustors', 'Biomass Combustors', 4, '{power}', '{"min_oxygen": 6}'::jsonb,
+        '{"production_deltas": {"plant_production": -1, "energy_production": 2}}'::jsonb
+    ),
+    (
+        'livestock', 'Livestock', 13, '{animal}', '{"min_oxygen": 9}'::jsonb,
+        '{"production_deltas": {"plant_production": -1, "mc_production": 2}, "becomes_active": true, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'olympus_conference', 'Olympus Conference', 10, '{science,earth}', null,
+        '{"becomes_active": true, "passive": {"on_tag_played_choice": {"matching_tags": ["science"], "add_resource_choice": {"resource_delta": 1}, "spend_resource_choice": {"card_resource": 1, "draw_cards": 1}}}}'::jsonb
+    ),
+    (
+        'rad_suits', 'Rad-Suits', 6, '{}', '{"min_city_tiles": 2}'::jsonb,
+        '{"production_deltas": {"mc_production": 1}}'::jsonb
+    ),
+    (
+        'aquifer_pumping', 'Aquifer Pumping', 18, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"mc": 8}, "gains": {"place_oceans": 1}}}'::jsonb
+    ),
+    (
+        'flooding', 'Flooding', 7, '{}', null,
+        '{"place_oceans": 1}'::jsonb
+    ),
+    (
+        'energy_saving', 'Energy Saving', 15, '{power}', null,
+        '{"production_delta_per_counter": {"production": "energy_production", "counter": "city_tiles_placed", "per_counter": 1}}'::jsonb
+    ),
+    (
+        'permafrost_extraction', 'Permafrost Extraction', 8, '{}', '{"min_temperature": -8}'::jsonb,
+        '{"place_oceans": 1}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -737,4 +777,4 @@ where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'relea
              'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir',
              'local_heat_trapping', 'imported_hydrogen', 'large_convoy', 'ceos_favorite_project',
              'convoy_from_europa', 'imported_ghg', 'imported_nitrogen', 'import_of_advanced_ghg',
-             'aerobraked_ammonia_asteroid');
+             'aerobraked_ammonia_asteroid', 'ice_cap_melting', 'flooding', 'permafrost_extraction');
