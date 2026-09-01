@@ -28,6 +28,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         hand=row.get("hand") or [],
         pending_research=row.get("pending_research") or [],
         played_cards=row.get("played_cards") or [],
+        pending_mc_discount=row.get("pending_mc_discount") or 0,
     )
 
 
@@ -407,7 +408,7 @@ def play_card(
 
     card_tags = tuple(card.get("tags", []))
     steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
-    discount = engine.compute_card_cost_discount(player, card_tags)
+    discount = engine.compute_card_cost_discount(player, card_tags) + player["pending_mc_discount"]
     effective_cost = max(0, card["cost"] - discount)
     change = engine.calculate_card_payment(
         card_cost=effective_cost,
@@ -424,8 +425,26 @@ def play_card(
         "mc": player["mc"] - mc_to_pay,
         "steel": player["steel"] - steel_to_pay,
         "titanium": player["titanium"] - titanium_to_pay,
+        # Se consume el descuento pendiente al jugar esta carta (la haya
+        # cubierto entera o no) -- antes de aplicar el efecto de ESTA carta,
+        # para no borrar un next_card_discount_mc que ella misma otorgue.
+        "pending_mc_discount": 0,
     }
     effects = card.get("effects") or {}
+
+    # Se registra como activa/pasiva ANTES de aplicar el efecto (que puede
+    # colocar oceano/ciudad/greenery mas abajo) para que los pasivos "se
+    # dispara al colocar X, incluida esta" (ej. Immigrant City:
+    # on_city_tile_placed_production_delta) se autodisparen con su propia
+    # colocacion, igual que on_tag_played_add_resource ya se autodispara
+    # con el propio tag (ver apply_tag_played_resource_bonuses mas abajo).
+    if effects.get("becomes_active"):
+        paid_player = engine.register_active_card(
+            paid_player, card_id, initial_resources=effects.get("active_card_starting_resources", 0)
+        )
+    if effects.get("passive"):
+        paid_player = engine.register_passive_effect(paid_player, card_id, effects["passive"])
+
     new_player, new_globals = engine.apply_card_effect(
         paid_player, globals_, effects, effect_amount, effect_choice,
         target_card_id=target_card_id, target_card_id_2=target_card_id_2,
@@ -504,13 +523,6 @@ def play_card(
             ignore_restrictions=greenery_spec.get("ignore_restrictions", False),
         )
 
-    if effects.get("becomes_active"):
-        new_player = engine.register_active_card(
-            new_player, card_id, initial_resources=effects.get("active_card_starting_resources", 0)
-        )
-    if effects.get("passive"):
-        new_player = engine.register_passive_effect(new_player, card_id, effects["passive"])
-
     # Dispara bonus pasivos por tags jugados (ej. Ecological Zone, Decomposers)
     new_player = engine.apply_tag_played_resource_bonuses(new_player, card_tags)
 
@@ -585,6 +597,7 @@ def use_card_action(
     effect_choice: int | None = None,
     ocean_hex_ids: list[str] | None = None,
     target_card_id: str | None = None,
+    effect_amount: int | None = None,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -607,6 +620,9 @@ def use_card_action(
             o MUEVE recursos desde otra carta activa hacia esta (ej.
             Predators: 1 animal; Ants: 1 microbio). None si la accion no
             afecta otra carta.
+        effect_amount: OBLIGATORIO si `effects.action.convert_resource_amount`
+            esta definido (ej. Power Infrastructure: cuanta energia
+            convertir a MC, 1 a 1). None si la accion no lo pide.
 
     Returns:
         dict con el estado actualizado del jugador y, si la accion afecto
@@ -628,7 +644,8 @@ def use_card_action(
     globals_ = _load_global_parameters()
 
     new_player, new_globals = engine.use_card_action(
-        player, globals_, card_id, action_spec, effect_choice, target_card_id=target_card_id
+        player, globals_, card_id, action_spec, effect_choice, target_card_id=target_card_id,
+        effect_amount=effect_amount,
     )
 
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
@@ -653,7 +670,7 @@ def use_card_action(
     _log_transaction(
         player_id, "use_card_action",
         {"card_id": card_id, "effect_choice": effect_choice, "ocean_hex_ids": ocean_hex_ids,
-         "target_card_id": target_card_id},
+         "target_card_id": target_card_id, "effect_amount": effect_amount},
     )
 
     return {"player": dict(new_player), "global_parameters": dict(new_globals)}

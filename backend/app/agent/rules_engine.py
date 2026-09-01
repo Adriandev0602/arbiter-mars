@@ -126,6 +126,14 @@ class PlayerState(TypedDict):
     # building ya jugada -- ver tools.play_card, effects.duplicate_production).
     played_cards: list
 
+    # pending_mc_discount: MC de descuento pendiente para la PROXIMA carta
+    # que el jugador juegue esta generacion (ej. Indentured Workers: -8).
+    # Se consume (vuelve a 0) al jugar la siguiente carta -- la cubra
+    # entera o no -- y tambien se pierde si termina la generacion sin
+    # usarse (ver run_production_phase). Ver apply_card_effect
+    # ("next_card_discount_mc") y tools.play_card.
+    pending_mc_discount: int
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -155,6 +163,7 @@ def new_player_state() -> PlayerState:
         plant_production=1, energy_production=1, heat_production=1,
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
+        pending_mc_discount=0,
     )
 
 
@@ -371,6 +380,8 @@ def run_production_phase(player: PlayerState) -> PlayerState:
       3. El resto de recursos suman su produccion correspondiente.
       4. Las acciones de cartas activas (ej. Ironworks) vuelven a estar
          disponibles -- una accion por carta por generacion.
+      5. Un descuento pendiente sin usar (ej. Indentured Workers, si el
+         jugador no jugo ninguna carta mas esa generacion) se pierde.
     """
     heat_after_energy_conversion = player["heat"] + player["energy"]
 
@@ -390,6 +401,7 @@ def run_production_phase(player: PlayerState) -> PlayerState:
         "energy": player["energy_production"],  # arranca de 0 tras la conversion, mas la produccion nueva
         "heat": heat_after_energy_conversion + player["heat_production"],
         "active_cards": reset_active_cards,
+        "pending_mc_discount": 0,
     }
 
 
@@ -624,6 +636,12 @@ def apply_card_effect(
         max_take=2) porque el texto exige tomar EXACTAMENTE 2 de las 4).
         Mismo mecanismo que use_card_action.gains.start_research, pero
         disparado al jugar la carta en vez de por una accion repetible.
+      - "next_card_discount_mc": N -- suma N a `player.pending_mc_discount`,
+        que tools.play_card resta del costo efectivo de la PROXIMA carta
+        que el jugador juegue esta generacion (ej. Indentured Workers: -8
+        MC). Se consume al jugar esa siguiente carta, la cubra entera o
+        no, y tambien se pierde si termina la generacion sin usarse
+        (run_production_phase lo resetea a 0).
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
@@ -640,6 +658,10 @@ def apply_card_effect(
         escala linealmente) (ej. Miranda Resort: +1 produccion de MC por cada
         tag earth jugado). Tambien lee `tags_played` antes de sumar los tags
         de la carta actual.
+      - "tr_delta_per_tag": {"tag": "<tag>", "per_tag": N (default 1),
+        "include_this": bool} -- igual que production_delta_per_tag pero
+        sube el TR directo en vez de una produccion (ej. Terraforming
+        Ganymede: +1 TR por cada tag jovian jugado, incluido este).
       - "target_card_resource_delta": N -- agrega N recursos a OTRA carta
         activa del jugador, elegida via el parametro `target_card_id` (no un
         sub-efecto de choice; casi siempre aparece dentro de una rama de
@@ -648,9 +670,11 @@ def apply_card_effect(
         cualquier carta animal propia). Mismo mecanismo que
         use_card_action.gains.target_card_resource_delta, pero como efecto
         inmediato al jugar la carta (a diferencia de la version de
-        use_card_action, aca no se valida "no apuntar a si misma" porque la
-        carta que dispara el efecto todavia no tiene un card_id disponible
-        en este punto -- normalmente ni siquiera se registra como activa).
+        use_card_action, aca no se valida "no apuntar a si misma" porque
+        esta funcion no recibe el card_id de la carta que dispara el
+        efecto -- tools.play_card ya registro esa carta como activa/pasiva
+        ANTES de llamar aca, precisamente para que pasivos "se dispara al
+        colocar X, incluida esta" se autodisparen con su propia colocacion).
         Lanza CardEffectError si falta target_card_id o si la carta objetivo
         no esta activa para este jugador.
       - "target_min_resources": N -- opcional, junto a target_card_resource_delta;
@@ -719,6 +743,13 @@ def apply_card_effect(
         delta = (count // tags_per_step) * per_step
         new_player[key] = _apply_production_floor(key, new_player[key] + delta)
 
+    if "tr_delta_per_tag" in effects:
+        spec = effects["tr_delta_per_tag"]
+        count = player["tags_played"].get(spec["tag"], 0)
+        if spec.get("include_this"):
+            count += 1
+        new_player["tr"] = new_player["tr"] + count * spec.get("per_tag", 1)
+
     if "production_delta_per_counter" in effects:
         spec = effects["production_delta_per_counter"]
         key = spec["production"]
@@ -785,6 +816,9 @@ def apply_card_effect(
 
     if "start_research" in effects:
         new_player = dict(start_research_phase(PlayerState(**new_player), effects["start_research"]["n"]))  # type: ignore[typeddict-item]
+
+    if "next_card_discount_mc" in effects:
+        new_player["pending_mc_discount"] = new_player["pending_mc_discount"] + effects["next_card_discount_mc"]
 
     if "target_card_resource_delta" in effects:
         amount = effects["target_card_resource_delta"]
@@ -856,11 +890,21 @@ def use_card_action(
     action_spec: dict,
     effect_choice: int | None = None,
     target_card_id: str | None = None,
+    effect_amount: int | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
     en `cards`). Vocabulario de `action_spec`:
 
+      - "convert_resource_amount": {"from": "<recurso>", "to": "<recurso>",
+        "ratio": N (default 1)} -- convierte `effect_amount` (X, elegido por
+        el jugador) unidades de stock de un recurso a X*ratio del otro,
+        limitado al stock disponible (ej. Power Infrastructure: gastar
+        cualquier cantidad de energia para ganar esa cantidad de MC). A
+        diferencia de "convert_production" (apply_card_effect, convierte
+        PRODUCCION), esta convierte STOCK. Lanza CardEffectError si falta
+        effect_amount o es negativo, InsufficientResourcesError si no hay
+        suficiente stock del recurso origen.
       - "cost": {"<recurso>": N, ...} -- recursos de stock del jugador que se
         gastan (ej. Ironworks: {"energy": 4}). La clave especial
         "card_resource" gasta N recursos guardados en la propia carta (ej.
@@ -910,6 +954,21 @@ def use_card_action(
     new_player: dict = dict(player)
     new_active_cards = dict(player["active_cards"])
     card_resources = new_active_cards[card_id]["resources"]
+
+    if "convert_resource_amount" in action_spec:
+        spec = action_spec["convert_resource_amount"]
+        from_key, to_key = spec["from"], spec["to"]
+        if effect_amount is None or effect_amount < 0:
+            raise CardEffectError("Esta accion requiere effect_amount (X) >= 0")
+        if new_player[from_key] < effect_amount:
+            raise InsufficientResourcesError(
+                f"No hay suficiente {from_key} ({new_player[from_key]}) para convertir {effect_amount}"
+            )
+        new_player[from_key] -= effect_amount
+        new_player[to_key] += effect_amount * spec.get("ratio", 1)
+        new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
+        new_player["active_cards"] = new_active_cards
+        return PlayerState(**new_player), globals_  # type: ignore[typeddict-item]
 
     for key, amount in action_spec.get("cost", {}).items():
         if key == "card_resource":
@@ -1208,32 +1267,44 @@ def apply_greenery_placed_bonuses(player: PlayerState) -> PlayerState:
 
 def apply_city_placed_bonuses(player: PlayerState) -> PlayerState:
     """
-    Aplica el pasivo "on_city_tile_placed_add_resource": {"resource_delta": N}
-    -- suma N recursos a la propia carta activa cada vez que se coloca un
-    tile de CIUDAD en el mapa, sin importar de quien sea ni la fuente
-    (proyecto estandar o una carta) (ej. Pets: +1 animal). Analogo a
-    apply_greenery_placed_bonuses -- llamado desde
-    tools._place_city_and_apply_bonus, el unico punto donde confluyen todos
-    los caminos que colocan una ciudad real en el tablero.
+    Aplica los pasivos que disparan cada vez que se coloca un tile de
+    CIUDAD en el mapa, sin importar de quien sea ni la fuente (proyecto
+    estandar o una carta). Analogo a apply_greenery_placed_bonuses --
+    llamado desde tools._place_city_and_apply_bonus, el unico punto donde
+    confluyen todos los caminos que colocan una ciudad real en el tablero.
+    Vocabulario:
+
+      - "on_city_tile_placed_add_resource": {"resource_delta": N (default 1)}
+        -- suma N recursos a la propia carta activa (ej. Pets: +1 animal).
+      - "on_city_tile_placed_production_delta": {"production":
+        "<recurso>_production", "per_tile": N (default 1)} -- sube esa
+        produccion N pasos (ej. Immigrant City: +1 produccion MC, incluida
+        su propia colocacion -- funciona porque tools.play_card registra
+        la carta como activa/pasiva ANTES de colocar su ciudad).
     """
     new_active_cards = dict(player["active_cards"])
+    new_player: dict = dict(player)
     changed = False
     for effect in player["passive_effects"]:
-        spec = effect.get("on_city_tile_placed_add_resource")
-        if spec is None:
-            continue
-        target_card_id = effect["card_id"]
-        if target_card_id not in new_active_cards:
-            continue
-        current_res = new_active_cards[target_card_id]["resources"]
-        new_active_cards[target_card_id] = {
-            **new_active_cards[target_card_id],
-            "resources": current_res + spec.get("resource_delta", 1),
-        }
-        changed = True
+        resource_spec = effect.get("on_city_tile_placed_add_resource")
+        if resource_spec is not None:
+            target_card_id = effect["card_id"]
+            if target_card_id in new_active_cards:
+                current_res = new_active_cards[target_card_id]["resources"]
+                new_active_cards[target_card_id] = {
+                    **new_active_cards[target_card_id],
+                    "resources": current_res + resource_spec.get("resource_delta", 1),
+                }
+                changed = True
+        production_spec = effect.get("on_city_tile_placed_production_delta")
+        if production_spec is not None:
+            key = production_spec["production"]
+            new_player[key] = _apply_production_floor(key, new_player[key] + production_spec.get("per_tile", 1))
+            changed = True
     if not changed:
         return player
-    return {**player, "active_cards": new_active_cards}
+    new_player["active_cards"] = new_active_cards
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]
 
 
 def player_has_tag_swap_passive(player: PlayerState, played_card_tags: tuple[str, ...]) -> bool:

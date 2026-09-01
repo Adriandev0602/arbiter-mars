@@ -49,6 +49,11 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists pending_mc_discount integer not null default 0;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -103,6 +108,14 @@ create table if not exists players (
     -- para cartas que targetean "una de tus cartas jugadas" por catalogo/tag
     -- en vez de por recursos guardados en la carta (ej. Robotic Workforce).
     played_cards jsonb not null default '[]'::jsonb,
+
+    -- Descuento de MC pendiente para la PROXIMA carta que se juegue esta
+    -- generacion (ej. Indentured Workers: -8 MC). Se consume (vuelve a 0)
+    -- al jugar la siguiente carta, la cubra entera o no, y tambien se
+    -- pierde si termina la generacion sin usarse. Ver
+    -- rules_engine.apply_card_effect ("next_card_discount_mc") y
+    -- tools.play_card.
+    pending_mc_discount integer not null default 0,
 
     created_at timestamptz not null default now()
 );

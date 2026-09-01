@@ -2777,6 +2777,108 @@ def test_permafrost_extraction_requires_minus_8_temperature():
     assert new_globals["oceans_placed"] == 1
 
 
+def test_invention_contest_starts_research_of_3():
+    player = {**new_player_state(), "deck": ["a", "b", "c"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"start_research": {"n": 3}})
+    assert new_player["pending_research"] == ["a", "b", "c"]
+    assert new_player["deck"] == []
+
+
+def test_plantation_requires_2_science_tags_places_greenery_normal_rules():
+    requirements = {"min_tag_count": {"tag": "science", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(requirements, new_global_parameters(), new_player_state())
+
+    ready = {**new_player_state(), "tags_played": {"science": 2}}
+    check_card_requirements(requirements, new_global_parameters(), ready)
+    new_player, new_globals = apply_card_effect(ready, new_global_parameters(), {"raise_oxygen_steps": 1})
+    assert new_globals["oxygen"] == 1
+
+
+def test_power_infrastructure_converts_any_amount_of_energy_to_mc():
+    player = register_active_card(new_player_state(), "power_infrastructure")
+    player["energy"] = 5
+    globals_ = new_global_parameters()
+    action_spec = {"convert_resource_amount": {"from": "energy", "to": "mc", "ratio": 1}}
+
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "power_infrastructure", action_spec)
+
+    new_player, _ = use_card_action(player, globals_, "power_infrastructure", action_spec, effect_amount=3)
+    assert new_player["energy"] == 2
+    assert new_player["mc"] == 3
+
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(player, globals_, "power_infrastructure", action_spec, effect_amount=6)
+
+
+def test_indentured_workers_grants_pending_discount_consumed_next_card():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"next_card_discount_mc": -8})
+    assert new_player["pending_mc_discount"] == -8
+
+    after_generation = run_production_phase(new_player)
+    assert after_generation["pending_mc_discount"] == 0
+
+
+def test_lagrange_observatory_draws_1_card():
+    player = {**new_player_state(), "deck": ["card_a"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 1})
+    assert new_player["hand"] == ["card_a"]
+
+
+def test_terraforming_ganymede_tr_per_jovian_tag_including_this():
+    player = {**new_player_state(), "tags_played": {"jovian": 2}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"tr_delta_per_tag": {"tag": "jovian", "per_tag": 1, "include_this": True}},
+    )
+    assert new_player["tr"] == TR_START + 3  # 2 previos + este
+
+
+def test_immigration_shuttles_mc_production():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 5}}
+    )
+    assert new_player["mc_production"] == 6
+
+
+def test_restricted_area_places_generic_special_tile_and_action_draws():
+    player = register_active_card(new_player_state(), "restricted_area")
+    player["mc"] = 2
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"mc": 2}, "gains": {"draw_cards": 1}}
+    player = {**player, "deck": ["card_a"]}
+    new_player, _ = use_card_action(player, globals_, "restricted_area", action_spec)
+    assert new_player["mc"] == 0
+    assert new_player["hand"] == ["card_a"]
+
+
+def test_immigrant_city_production_bonus_self_triggers_on_own_city():
+    player = register_active_card(new_player_state(), "immigrant_city")
+    player = register_passive_effect(
+        player, "immigrant_city",
+        {"on_city_tile_placed_production_delta": {"production": "mc_production", "per_tile": 1}},
+    )
+    new_player, new_globals = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "mc_production": -2}, "place_city_tiles": 1},
+    )
+    assert new_globals["city_tiles_placed"] == 1
+    # apply_card_effect NO dispara apply_city_placed_bonuses (eso lo hace
+    # tools._place_city_and_apply_bonus via el mapa hexagonal) -- se
+    # prueba aparte para no acoplar rules_engine a board.py.
+    triggered = apply_city_placed_bonuses(new_player)
+    assert triggered["mc_production"] == 0  # 1 base -1 -2 +1 (self-trigger) = -1, piso 0
+
+
+def test_energy_tapping_net_zero_energy_production():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"production_deltas": {"energy_production": 0}}
+    )
+    assert new_player["energy_production"] == 1
+
+
 def test_advanced_ecosystems_multi_tag_requirements():
     req = {
         "min_tag_count": [
