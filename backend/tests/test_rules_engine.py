@@ -2120,6 +2120,74 @@ def test_extreme_cold_fungus_choice_plant_or_target_microbes():
     assert p2["active_cards"]["regolith_eaters"]["resources"] == 2
 
 
+def test_apply_card_effect_target_card_resource_delta():
+    player = register_active_card(new_player_state(), "local_heat_trapping")
+    player = register_active_card(player, "decomposers")
+    globals_ = new_global_parameters()
+
+    effects = {"target_card_resource_delta": 3}
+
+    # Requiere target_card_id
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, globals_, effects)
+
+    # La carta objetivo debe estar activa
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, globals_, effects, target_card_id="no_existe")
+
+    new_player, _ = apply_card_effect(player, globals_, effects, target_card_id="decomposers")
+    assert new_player["active_cards"]["decomposers"]["resources"] == 3
+    assert new_player["active_cards"]["local_heat_trapping"]["resources"] == 0
+
+
+def test_apply_card_effect_choice_threads_target_card_id():
+    player = register_active_card(new_player_state(), "imported_hydrogen")
+    player = register_active_card(player, "decomposers")
+    globals_ = new_global_parameters()
+
+    effects = {
+        "choice": [
+            {"resource_deltas": {"plants": 3}},
+            {"target_card_resource_delta": 2},
+        ]
+    }
+
+    new_player, _ = apply_card_effect(
+        player, globals_, effects, effect_choice=1, target_card_id="decomposers"
+    )
+    assert new_player["active_cards"]["decomposers"]["resources"] == 2
+
+
+def test_predators_moves_animal_from_another_active_card():
+    player = register_active_card(new_player_state(), "predators")
+    player = register_active_card(player, "ecological_zone")
+    player["active_cards"]["ecological_zone"]["resources"] = 2
+    globals_ = new_global_parameters()
+
+    action_spec = {"gains": {"move_from_target_card_resource_delta": 1}}
+
+    # Requiere target_card_id
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "predators", action_spec)
+
+    # No puede apuntar a si misma
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "predators", action_spec, target_card_id="predators")
+
+    # La carta origen debe tener suficientes recursos
+    poor_player = register_active_card(new_player_state(), "predators")
+    poor_player = register_active_card(poor_player, "ecological_zone")
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(poor_player, globals_, "predators", action_spec, target_card_id="ecological_zone")
+
+    new_player, _ = use_card_action(
+        player, globals_, "predators", action_spec, target_card_id="ecological_zone"
+    )
+    assert new_player["active_cards"]["ecological_zone"]["resources"] == 1
+    assert new_player["active_cards"]["predators"]["resources"] == 1
+    assert new_player["active_cards"]["predators"]["action_used"] is True
+
+
 def test_advanced_ecosystems_multi_tag_requirements():
     req = {
         "min_tag_count": [

@@ -546,6 +546,7 @@ def apply_card_effect(
     effects: dict,
     effect_amount: int | None = None,
     effect_choice: int | None = None,
+    target_card_id: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
@@ -610,6 +611,19 @@ def apply_card_effect(
         escala linealmente) (ej. Miranda Resort: +1 produccion de MC por cada
         tag earth jugado). Tambien lee `tags_played` antes de sumar los tags
         de la carta actual.
+      - "target_card_resource_delta": N -- agrega N recursos a OTRA carta
+        activa del jugador, elegida via el parametro `target_card_id` (no un
+        sub-efecto de choice; casi siempre aparece dentro de una rama de
+        "choice", ej. Local Heat Trapping: agregar 3 recursos a una carta
+        animal/microbio propia; Eos Chasma National Park: agregar 1 animal a
+        cualquier carta animal propia). Mismo mecanismo que
+        use_card_action.gains.target_card_resource_delta, pero como efecto
+        inmediato al jugar la carta (a diferencia de la version de
+        use_card_action, aca no se valida "no apuntar a si misma" porque la
+        carta que dispara el efecto todavia no tiene un card_id disponible
+        en este punto -- normalmente ni siquiera se registra como activa).
+        Lanza CardEffectError si falta target_card_id o si la carta objetivo
+        no esta activa para este jugador.
 
     NOTA sobre "remove up to N <recurso> from any player": varias cartas del
     catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
@@ -625,13 +639,15 @@ def apply_card_effect(
             raise CardEffectError(
                 f"Esta carta requiere effect_choice entre 0 y {len(options) - 1}"
             )
-        return apply_card_effect(player, globals_, options[effect_choice], effect_amount)
+        return apply_card_effect(
+            player, globals_, options[effect_choice], effect_amount, target_card_id=target_card_id
+        )
 
     if "tag_count_choice" in effects:
         spec = effects["tag_count_choice"]
         have = player["tags_played"].get(spec["tag"], 0)
         branch = spec["if_met"] if have >= spec["count"] else spec["else"]
-        return apply_card_effect(player, globals_, branch, effect_amount)
+        return apply_card_effect(player, globals_, branch, effect_amount, target_card_id=target_card_id)
 
     new_player: dict = dict(player)
     new_globals: dict = dict(globals_)
@@ -726,6 +742,20 @@ def apply_card_effect(
     if "start_research" in effects:
         new_player = dict(start_research_phase(PlayerState(**new_player), effects["start_research"]["n"]))  # type: ignore[typeddict-item]
 
+    if "target_card_resource_delta" in effects:
+        amount = effects["target_card_resource_delta"]
+        if target_card_id is None:
+            raise CardEffectError("Esta carta requiere target_card_id")
+        active_cards = new_player["active_cards"]
+        if target_card_id not in active_cards:
+            raise CardEffectError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+        new_active_cards = dict(active_cards)
+        new_active_cards[target_card_id] = {
+            **new_active_cards[target_card_id],
+            "resources": max(0, new_active_cards[target_card_id]["resources"] + amount),
+        }
+        new_player["active_cards"] = new_active_cards
+
     return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
 
 
@@ -766,12 +796,17 @@ def use_card_action(
         Regolith Eaters: remover 2 microbios).
       - "gains": {"resource_deltas": {...}, "production_deltas": {...},
         "raise_oxygen_steps": N, "raise_temperature_steps": N,
-        "card_resource_delta": N, "target_card_resource_delta": N, "tr_delta": N,
+        "card_resource_delta": N, "target_card_resource_delta": N,
+        "move_from_target_card_resource_delta": N, "tr_delta": N,
         "mc_per_counter": "<nombre del contador en GlobalParameters>"} -- N > 0 en
         card_resource_delta agrega recursos a la propia carta (ej. Regolith
         Eaters: agregar 1 microbio); target_card_resource_delta agrega N recursos
         a OTRA carta activa (ej. Symbiotic Fungus: 1 microbio; Extreme-Cold Fungus: 2);
-        tr_delta sube el TR directo sin pasar por un parametro global (ej.
+        move_from_target_card_resource_delta MUEVE N recursos desde OTRA carta
+        activa (`target_card_id`, debe tener al menos N) hacia la propia carta
+        (ej. Predators: mover 1 animal; Ants: mover 1 microbio) -- a diferencia
+        de target_card_resource_delta, esta resta del origen ademas de sumar
+        al destino; tr_delta sube el TR directo sin pasar por un parametro global (ej.
         Equatorial Magnetizer); mc_per_counter da tanto MC como valga ese
         contador global (ej. Martian Rails: MC por cada ciudad en Marte via
         "city_tiles_placed"); place_oceans: N coloca N tiles de oceano (+N TR
@@ -838,6 +873,24 @@ def use_card_action(
             **new_active_cards[target_card_id],
             "resources": max(0, new_active_cards[target_card_id]["resources"] + amount),
         }
+    if "move_from_target_card_resource_delta" in gains:
+        amount = gains["move_from_target_card_resource_delta"]
+        if target_card_id is None:
+            raise CardEffectError(f"La accion de '{card_id}' requiere target_card_id")
+        if target_card_id == card_id:
+            raise CardEffectError(f"La accion de '{card_id}' debe mover recursos desde OTRA carta, no desde si misma")
+        if target_card_id not in new_active_cards:
+            raise CardEffectError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+        source_resources = new_active_cards[target_card_id]["resources"]
+        if source_resources < amount:
+            raise InsufficientResourcesError(
+                f"'{target_card_id}' tiene {source_resources} recursos guardados, se necesitan {amount}"
+            )
+        new_active_cards[target_card_id] = {
+            **new_active_cards[target_card_id],
+            "resources": source_resources - amount,
+        }
+        card_resources = card_resources + amount
     if "raise_oxygen_steps" in gains:
         p2, g2 = raise_oxygen(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_oxygen_steps"])  # type: ignore[typeddict-item]
         new_player, new_globals = dict(p2), dict(g2)

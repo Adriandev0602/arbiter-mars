@@ -292,6 +292,7 @@ def play_card(
     special_tile_hex_id: str | None = None,
     discard_for_draw_card_id: str | None = None,
     duplicate_production_target_card_id: str | None = None,
+    target_card_id: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -342,6 +343,12 @@ def play_card(
             el tag requerido (ej. "building"). Se duplica su
             `production_deltas` una vez. None si la carta no tiene esta
             mecanica.
+        target_card_id: OBLIGATORIO si `effects` (o la rama de `choice`
+            elegida via effect_choice) tiene `target_card_resource_delta` --
+            el id de OTRA carta ya activa del jugador (en `active_cards`) a
+            la que se le agregan recursos (ej. Local Heat Trapping, Imported
+            Hydrogen, Eos Chasma National Park). None si la carta no tiene
+            esta mecanica.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -395,7 +402,7 @@ def play_card(
     }
     effects = card.get("effects") or {}
     new_player, new_globals = engine.apply_card_effect(
-        paid_player, globals_, effects, effect_amount, effect_choice
+        paid_player, globals_, effects, effect_amount, effect_choice, target_card_id=target_card_id
     )
 
     # El efecto resuelto (incluso detras de choice/tag_count_choice) puede
@@ -519,7 +526,8 @@ def play_card(
          "effect_amount": effect_amount, "effect_choice": effect_choice,
          "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids,
          "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id,
-         "duplicate_production_target_card_id": duplicate_production_target_card_id},
+         "duplicate_production_target_card_id": duplicate_production_target_card_id,
+         "target_card_id": target_card_id},
     )
 
     return {
@@ -553,8 +561,10 @@ def use_card_action(
             coloca oceano(s) (ej. Water Import from Europa: 1). None si la
             accion no coloca oceanos.
         target_card_id: OBLIGATORIO si la accion agrega recursos a otra carta
-            activa (ej. Symbiotic Fungus: 1 microbio; Extreme-Cold Fungus: 2).
-            None si la accion no afecta otra carta.
+            activa (ej. Symbiotic Fungus: 1 microbio; Extreme-Cold Fungus: 2)
+            o MUEVE recursos desde otra carta activa hacia esta (ej.
+            Predators: 1 animal; Ants: 1 microbio). None si la accion no
+            afecta otra carta.
 
     Returns:
         dict con el estado actualizado del jugador y, si la accion afecto

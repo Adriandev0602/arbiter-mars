@@ -155,17 +155,24 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| 190 | Local Heat Trapping | Elección que además targetea otra carta en juego del propio jugador (agregar recursos a una carta distinta a la que se está jugando, no a la mano/mazo en general — el sistema de mazo ya está, esto es más específico). |
-| 019 | Imported Hydrogen | Misma pieza que Local Heat Trapping: 2 de 3 ramas de su elección agregan microbios/animales a OTRA carta específica. |
-| 024 | Predators | Misma pieza: su acción mueve 1 animal desde OTRA carta hacia esta — necesita elegir la carta origen. |
-| 026 | Eos Chasma National Park | Misma pieza: "add 1 animal to any animal card" — carta destino elegida por el jugador. |
-| 035 | Ants | Misma pieza que Predators: mueve 1 microbio desde OTRA carta. |
-| 074 | Viral Enhancers | Misma pieza: "gain 1 plant OR add 1 resource to that card" — la segunda rama de su elección (opcional, se dispara con cualquier carta de tag plant/microbe/animal que se juegue) targetea otra carta específica en juego. |
+| 074 | Viral Enhancers | Pasivo que dispara con CUALQUIER carta de tag plant/microbe/animal jugada (no solo eventos, no automático como `on_event_played`) y le da al jugador una elección EN ESE MOMENTO: +1 planta O agregar 1 recurso a una carta específica ya en juego. Es distinto de `target_card_resource_delta`/`move_from_target_card_resource_delta` (resuelto abajo) porque esos dos son para un efecto inmediato al jugar la carta o una acción repetible — acá el trigger es el evento "se jugó una carta con tag X" y todavía falta la pieza de pasivo-con-elección-del-jugador-al-dispararse (los pasivos actuales, `on_tag_played_add_resource`, son automáticos sin elección). |
 
-**Nota:** Local Heat Trapping, Imported Hydrogen, Predators, Eos Chasma National Park, Ants y
-Viral Enhancers comparten la misma pieza faltante — "mover/agregar un recurso en una carta
-específica elegida por el jugador, distinta de la que se está jugando/usando". Vale la pena
-implementarla una sola vez y resolver las 6 juntas cuando se aborde.
+**Resuelto (2026-09-01):** la pieza "mover/agregar un recurso a una carta específica elegida
+por el jugador, distinta de la que se está jugando/usando" (identificada primero en Local Heat
+Trapping) quedó implementada en dos partes de `rules_engine.py`:
+- `apply_card_effect(..., target_card_id=...)`: nuevo vocabulario `target_card_resource_delta`
+  (agrega N recursos a otra carta activa) para el efecto INMEDIATO al jugar una carta — cubre
+  Local Heat Trapping, Imported Hydrogen y Eos Chasma National Park.
+- `use_card_action(..., target_card_id=...)`: nuevo `gains.move_from_target_card_resource_delta`
+  (resta N de la carta origen elegida y suma N a la propia) para acciones repetibles que MUEVEN
+  recurso en vez de solo agregarlo — cubre Predators y Ants.
+
+Tests: `test_apply_card_effect_target_card_resource_delta`,
+`test_apply_card_effect_choice_threads_target_card_id`,
+`test_predators_moves_animal_from_another_active_card` en `test_rules_engine.py`. Las 5 cartas
+todavía no están cargadas en `seed_cards.sql` (falta releer sus scans reales y confirmar
+números/tags exactos) — quedan disponibles para el próximo bloque de revisión de cartas, ya sin
+bloqueo de mecánica. Viral Enhancers sigue pendiente por una pieza distinta (ver arriba).
 
 
 **Nota sobre mapa hexagonal (resuelto 2026-08-31):** Mining Area, Mining Rights y Land Claim
