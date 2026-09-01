@@ -546,6 +546,26 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'great_dam', 'Great Dam', 12, '{power,building}', '{"min_oceans": 4}'::jsonb,
         '{"production_deltas": {"energy_production": 2}}'::jsonb
+    ),
+    (
+        'local_heat_trapping', 'Local Heat Trapping', 1, '{}', null,
+        '{"choice": [{"resource_deltas": {"heat": -5, "plants": 4}}, {"resource_deltas": {"heat": -5}, "target_card_resource_delta": 2}]}'::jsonb
+    ),
+    (
+        'imported_hydrogen', 'Imported Hydrogen', 16, '{earth,space}', null,
+        '{"choice": [{"place_oceans": 1, "resource_deltas": {"plants": 3}}, {"place_oceans": 1, "target_card_resource_delta": 3}, {"place_oceans": 1, "target_card_resource_delta": 2}]}'::jsonb
+    ),
+    (
+        'predators', 'Predators', 14, '{animal}', '{"min_oxygen": 11}'::jsonb,
+        '{"becomes_active": true, "action": {"gains": {"move_from_target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'eos_chasma_national_park', 'Eos Chasma National Park', 16, '{plant,building}', '{"min_temperature": -12}'::jsonb,
+        '{"target_card_resource_delta": 1, "resource_deltas": {"plants": 3}, "production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'ants', 'Ants', 9, '{microbe}', '{"min_oxygen": 4}'::jsonb,
+        '{"becomes_active": true, "action": {"gains": {"move_from_target_card_resource_delta": 1}}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -558,4 +578,5 @@ on conflict (id) do update set
 -- cartas al jugarse) las cartas que corresponden en el juego real.
 update cards set is_event = true
 where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases',
-             'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir');
+             'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir',
+             'local_heat_trapping', 'imported_hydrogen');

@@ -147,6 +147,11 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `extreme_cold_fungus` | Extreme-Cold Fungus | 134 | 13 MC | Requiere temperatura ≤-10°C. Acción repetible con elección: +1 planta (stock) O agrega 2 microbios a OTRA carta activa (`target_card_resource_delta`) |
 | `advanced_ecosystems` | Advanced Ecosystems | 135 | 11 MC | Requiere 1 tag plant, 1 tag microbe y 1 tag animal jugados (`min_tag_count` múltiple). Sin efecto directo (solo puntos) |
 | `great_dam` | Great Dam | 136 | 12 MC | Requiere 4 océanos colocados. +2 producción energía |
+| `local_heat_trapping` | Local Heat Trapping | 190 | 1 MC | Evento. Elección: -5 calor +4 plantas, O -5 calor y agregar 2 recursos a OTRA carta activa (`target_card_resource_delta`) |
+| `imported_hydrogen` | Imported Hydrogen | 019 | 16 MC | Evento, tags Earth/Space. Coloca 1 océano y elección: +3 plantas, O agregar 3 recursos a OTRA carta activa, O agregar 2 recursos a OTRA carta activa (`target_card_resource_delta`) |
+| `predators` | Predators | 024 | 14 MC | Requiere oxígeno ≥11%. Acción repetible: mueve 1 animal desde OTRA carta activa hacia esta (`move_from_target_card_resource_delta`) |
+| `eos_chasma_national_park` | Eos Chasma National Park | 026 | 16 MC | Requiere temperatura ≥-12°C. Agrega 1 animal a OTRA carta activa (`target_card_resource_delta`), +3 plantas, +2 producción MC |
+| `ants` | Ants | 035 | 9 MC | Requiere oxígeno ≥4%. Acción repetible: mueve 1 microbio desde OTRA carta activa hacia esta (`move_from_target_card_resource_delta`) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 

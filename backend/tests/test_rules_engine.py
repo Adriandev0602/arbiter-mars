@@ -2188,6 +2188,77 @@ def test_predators_moves_animal_from_another_active_card():
     assert new_player["active_cards"]["predators"]["action_used"] is True
 
 
+def test_local_heat_trapping_choice_plants_or_target_card():
+    player = register_active_card(new_player_state(), "decomposers")
+    player["heat"] = 5
+    globals_ = new_global_parameters()
+
+    effects = {
+        "choice": [
+            {"resource_deltas": {"heat": -5, "plants": 4}},
+            {"resource_deltas": {"heat": -5}, "target_card_resource_delta": 2},
+        ]
+    }
+
+    p1, _ = apply_card_effect(player, globals_, effects, effect_choice=0)
+    assert p1["heat"] == 0
+    assert p1["plants"] == 4
+
+    p2, _ = apply_card_effect(player, globals_, effects, effect_choice=1, target_card_id="decomposers")
+    assert p2["heat"] == 0
+    assert p2["active_cards"]["decomposers"]["resources"] == 2
+
+
+def test_imported_hydrogen_choice_places_ocean_and_targets_card():
+    player = register_active_card(new_player_state(), "decomposers")
+    globals_ = new_global_parameters()
+
+    effects = {
+        "choice": [
+            {"place_oceans": 1, "resource_deltas": {"plants": 3}},
+            {"place_oceans": 1, "target_card_resource_delta": 3},
+            {"place_oceans": 1, "target_card_resource_delta": 2},
+        ]
+    }
+
+    p1, g1 = apply_card_effect(player, globals_, effects, effect_choice=0)
+    assert g1["oceans_placed"] == 1
+    assert p1["plants"] == 3
+
+    p2, g2 = apply_card_effect(player, globals_, effects, effect_choice=1, target_card_id="decomposers")
+    assert g2["oceans_placed"] == 1
+    assert p2["active_cards"]["decomposers"]["resources"] == 3
+
+
+def test_eos_chasma_national_park_adds_animal_plants_and_mc_production():
+    player = register_active_card(new_player_state(), "predators")
+    globals_ = {**new_global_parameters(), "temperature": -12}
+    check_card_requirements({"min_temperature": -12}, globals_)
+
+    effects = {
+        "target_card_resource_delta": 1,
+        "resource_deltas": {"plants": 3},
+        "production_deltas": {"mc_production": 2},
+    }
+    new_player, _ = apply_card_effect(player, globals_, effects, target_card_id="predators")
+    assert new_player["active_cards"]["predators"]["resources"] == 1
+    assert new_player["plants"] == 3
+    assert new_player["mc_production"] == 3
+
+
+def test_ants_action_moves_microbe_from_another_active_card():
+    player = register_active_card(new_player_state(), "ants")
+    player = register_active_card(player, "decomposers")
+    player["active_cards"]["decomposers"]["resources"] = 1
+    globals_ = {**new_global_parameters(), "oxygen": 4}
+    check_card_requirements({"min_oxygen": 4}, globals_)
+
+    action_spec = {"gains": {"move_from_target_card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "ants", action_spec, target_card_id="decomposers")
+    assert new_player["active_cards"]["decomposers"]["resources"] == 0
+    assert new_player["active_cards"]["ants"]["resources"] == 1
+
+
 def test_advanced_ecosystems_multi_tag_requirements():
     req = {
         "min_tag_count": [
