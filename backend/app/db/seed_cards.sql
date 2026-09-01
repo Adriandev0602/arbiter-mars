@@ -464,6 +464,48 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'breathing_filters', 'Breathing Filters', 11, '{science}', '{"min_oxygen": 7}'::jsonb,
         '{}'::jsonb
+    ),
+    (
+        'artificial_lake', 'Artificial Lake', 15, '{building}', '{"min_temperature": -6}'::jsonb,
+        '{"place_oceans": 1, "ocean_placement_bypasses_reservation": true}'::jsonb
+    ),
+    (
+        'geothermal_power', 'Geothermal Power', 11, '{power,building}', null,
+        '{"production_deltas": {"energy_production": 2}}'::jsonb
+    ),
+    (
+        'dust_seals', 'Dust Seals', 2, '{}', '{"max_oceans": 3}'::jsonb,
+        '{}'::jsonb
+    ),
+    (
+        'urbanized_area', 'Urbanized Area', 10, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 2},
+          "place_city_tiles": 1, "city_placement_requires_adjacent_cities": 2}'::jsonb
+    ),
+    (
+        'sabotage', 'Sabotage', 1, '{}', null,
+        '{}'::jsonb
+    ),
+    (
+        'moss', 'Moss', 4, '{plant}', '{"min_oceans": 3}'::jsonb,
+        '{"resource_deltas": {"plants": -1}, "production_deltas": {"plant_production": 1}}'::jsonb
+    ),
+    (
+        'industrial_center', 'Industrial Center', 4, '{building}', null,
+        '{"place_special_tile": {"require_adjacency_to_city": true}, "becomes_active": true,
+          "action": {"cost": {"mc": 7}, "gains": {"production_deltas": {"steel_production": 1}}}}'::jsonb
+    ),
+    (
+        'hired_raiders', 'Hired Raiders', 1, '{}', null,
+        '{}'::jsonb
+    ),
+    (
+        'hackers', 'Hackers', 3, '{science}', null,
+        '{"production_deltas": {"energy_production": -1}}'::jsonb
+    ),
+    (
+        'ghg_factories', 'GHG Factories', 11, '{building}', null,
+        '{"production_deltas": {"energy_production": -1, "heat_production": 4}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -476,4 +518,4 @@ on conflict (id) do update set
 -- cartas al jugarse) las cartas que corresponden en el juego real.
 update cards set is_event = true
 where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases',
-             'business_contacts', 'bribed_committee');
+             'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders');

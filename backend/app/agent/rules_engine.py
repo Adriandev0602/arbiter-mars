@@ -467,7 +467,8 @@ def check_card_requirements(
         -12, solo se puede jugar mientras haga MAS frio que eso).
       - "min_oxygen": oxigeno minimo en % (ej. cartas que piden 8% o mas).
       - "max_oxygen": oxigeno maximo en % (ej. Domed Crater: 7).
-      - "min_oceans": cantidad minima de tiles de oceano colocados.
+      - "min_oceans" / "max_oceans": cantidad minima/maxima de tiles de
+        oceano colocados (ej. Dust Seals: maximo 3).
       - "min_tag_count": {"tag": "<tag>", "count": N} -- requiere que el
         jugador haya jugado al menos N cartas con ese tag (ej. Mass
         Converter: 5 tags de ciencia). Requiere pasar `player`.
@@ -518,6 +519,11 @@ def check_card_requirements(
     if "min_oceans" in requirements and globals_["oceans_placed"] < requirements["min_oceans"]:
         raise CardRequirementNotMetError(
             f"Requiere {requirements['min_oceans']} oceanos colocados, "
+            f"hay {globals_['oceans_placed']}"
+        )
+    if "max_oceans" in requirements and globals_["oceans_placed"] > requirements["max_oceans"]:
+        raise CardRequirementNotMetError(
+            f"Requiere maximo {requirements['max_oceans']} oceanos colocados, "
             f"hay {globals_['oceans_placed']}"
         )
     if "max_temperature" in requirements and globals_["temperature"] > requirements["max_temperature"]:

@@ -248,6 +248,35 @@ def can_place_city(board: Board, hex_id: str) -> bool:
     return not any(tile["tile_type"] == "city" for tile in get_adjacent_tiles(board, hex_id))
 
 
+def can_place_city_adjacent_to_cities(board: Board, hex_id: str, min_adjacent_cities: int) -> bool:
+    """
+    Para cartas como Urbanized Area: "place a city tile ADJACENT TO AT LEAST
+    N OTHER CITY TILES" -- exactamente lo inverso de can_place_city (que
+    RECHAZA adyacencia a cualquier ciudad). Sigue exigiendo tierra vacia y
+    no reservada, pero en vez de rechazar ciudades vecinas, las exige.
+    """
+    hex_def = HEX_DEFS.get(hex_id)
+    if hex_def is None:
+        raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
+    if hex_def["hex_type"] != "land" or not is_hex_empty(board, hex_id):
+        return False
+    if hex_def["reserved_city"] is not None:
+        return False
+    adjacent_cities = sum(1 for tile in get_adjacent_tiles(board, hex_id) if tile["tile_type"] == "city")
+    return adjacent_cities >= min_adjacent_cities
+
+
+def place_city_tile_adjacent_to_cities(
+    board: Board, hex_id: str, player_id: str, min_adjacent_cities: int
+) -> tuple[Board, list[tuple[str, int]], int]:
+    """Contraparte de place_city_tile para cartas que EXIGEN adyacencia a ciudades."""
+    if not can_place_city_adjacent_to_cities(board, hex_id, min_adjacent_cities):
+        raise InvalidPlacementError(
+            f"'{hex_id}' no es adyacente a al menos {min_adjacent_cities} ciudad(es)"
+        )
+    return _place(board, hex_id, "city", owner=player_id)
+
+
 def can_place_greenery(board: Board, hex_id: str, player_id: str) -> bool:
     """
     Regla oficial: debe ser adyacente a un tile propio SI existe alguna opcion
@@ -307,6 +336,27 @@ def place_ocean_tile(board: Board, hex_id: str) -> tuple[Board, list[tuple[str, 
     return _place(board, hex_id, "ocean", owner=None)
 
 
+def can_place_ocean_on_land(board: Board, hex_id: str) -> bool:
+    """
+    Para cartas como Artificial Lake: "place 1 ocean tile ON AN AREA NOT
+    RESERVED FOR OCEAN" -- exactamente lo inverso de can_place_ocean (exige
+    tierra vacia, no reservada para ciudad, en vez de un hex tipo oceano).
+    """
+    hex_def = HEX_DEFS.get(hex_id)
+    if hex_def is None:
+        raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
+    if hex_def["hex_type"] != "land" or not is_hex_empty(board, hex_id):
+        return False
+    return hex_def["reserved_city"] is None
+
+
+def place_ocean_tile_on_land(board: Board, hex_id: str) -> tuple[Board, list[tuple[str, int]], int]:
+    """Contraparte de place_ocean_tile para cartas que bypasean la reserva de oceano."""
+    if not can_place_ocean_on_land(board, hex_id):
+        raise InvalidPlacementError(f"No se puede colocar oceano (en tierra) en '{hex_id}'")
+    return _place(board, hex_id, "ocean", owner=None)
+
+
 def place_city_tile(board: Board, hex_id: str, player_id: str) -> tuple[Board, list[tuple[str, int]], int]:
     if not can_place_city(board, hex_id):
         raise InvalidPlacementError(f"No se puede colocar ciudad en '{hex_id}'")
@@ -331,6 +381,10 @@ def can_place_special_tile(board: Board, hex_id: str, requirement: dict, player_
         Ausente/None = cualquier hexagono de tierra sirve.
       - "require_adjacency_to_own_tile": bool -- si True, exige que el hex
         elegido sea adyacente a un tile propio del jugador (ej. Mining Area).
+      - "require_adjacency_to_city": bool -- si True, exige que el hex
+        elegido sea adyacente a un tile de ciudad, de CUALQUIER dueno (ej.
+        Industrial Center) -- distinto de require_adjacency_to_own_tile,
+        que exige un tile propio de cualquier tipo.
     """
     hex_def = HEX_DEFS.get(hex_id)
     if hex_def is None:
@@ -346,6 +400,9 @@ def can_place_special_tile(board: Board, hex_id: str, requirement: dict, player_
             return False
     if requirement.get("require_adjacency_to_own_tile"):
         if count_adjacent_owned_by(board, hex_id, player_id) == 0:
+            return False
+    if requirement.get("require_adjacency_to_city"):
+        if not any(tile["tile_type"] == "city" for tile in get_adjacent_tiles(board, hex_id)):
             return False
     return True
 

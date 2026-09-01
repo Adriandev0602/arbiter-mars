@@ -26,6 +26,10 @@ from app.agent.board import (
     place_city_tile,
     place_greenery_tile,
     place_special_tile,
+    can_place_ocean_on_land,
+    place_ocean_tile_on_land,
+    can_place_city_adjacent_to_cities,
+    place_city_tile_adjacent_to_cities,
     HexOccupiedError,
     InvalidPlacementError,
     UnknownHexError,
@@ -285,3 +289,73 @@ def test_place_special_tile_without_matching_bonus_raises():
     plain_hex = "05"
     with pytest.raises(InvalidPlacementError):
         place_special_tile(board, plain_hex, requirement, "player-1", "mining_rights")
+
+
+# ---------------------------------------------------------------------------
+# Oceano sobre tierra (Artificial Lake: "place on an area NOT reserved for ocean")
+# ---------------------------------------------------------------------------
+
+def test_can_place_ocean_on_land_only_on_land_hex():
+    board = new_board()
+    land_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "land" and h["reserved_city"] is None)
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+    assert can_place_ocean_on_land(board, land_hex) is True
+    assert can_place_ocean_on_land(board, ocean_hex) is False
+
+
+def test_place_ocean_tile_on_land_occupies_hex_as_ocean():
+    board = new_board()
+    land_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "land" and h["reserved_city"] is None)
+    new_board_state, _, _ = place_ocean_tile_on_land(board, land_hex)
+    assert new_board_state[land_hex]["tile_type"] == "ocean"
+    assert new_board_state[land_hex]["owner"] is None
+
+
+def test_place_ocean_tile_on_land_rejects_ocean_reserved_hex():
+    board = new_board()
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+    with pytest.raises(InvalidPlacementError):
+        place_ocean_tile_on_land(board, ocean_hex)
+
+
+def test_place_ocean_tile_on_land_rejects_noctis_city_hex():
+    board = new_board()
+    with pytest.raises(InvalidPlacementError):
+        place_ocean_tile_on_land(board, NOCTIS_CITY_HEX_ID)
+
+
+# ---------------------------------------------------------------------------
+# Ciudad que EXIGE adyacencia a otras ciudades (Urbanized Area)
+# ---------------------------------------------------------------------------
+
+def test_can_place_city_adjacent_to_cities_requires_min_count():
+    # hex 08 tiene dos vecinos de tierra (03 y 15) que NO son adyacentes
+    # entre si, asi que se puede colocar ciudad en ambos sin violar la regla
+    # normal de "no ciudad adyacente a ciudad".
+    board = new_board()
+    center_hex, neighbor_a, neighbor_b = "08", "03", "15"
+    assert neighbor_a in get_neighbors(center_hex) and neighbor_b in get_neighbors(center_hex)
+
+    assert can_place_city_adjacent_to_cities(board, center_hex, 2) is False  # sin ciudades vecinas todavia
+
+    board, _, _ = place_city_tile(board, neighbor_a, "player-1")
+    assert can_place_city_adjacent_to_cities(board, center_hex, 2) is False  # solo 1 ciudad vecina
+
+    board, _, _ = place_city_tile(board, neighbor_b, "player-1")
+    assert can_place_city_adjacent_to_cities(board, center_hex, 2) is True  # ya hay 2
+
+
+def test_place_city_tile_adjacent_to_cities_illegal_raises():
+    board = new_board()
+    with pytest.raises(InvalidPlacementError):
+        place_city_tile_adjacent_to_cities(board, "08", "player-1", 2)
+
+
+def test_place_city_tile_adjacent_to_cities_succeeds_when_legal():
+    board = new_board()
+    center_hex, neighbor_a, neighbor_b = "08", "03", "15"
+    board, _, _ = place_city_tile(board, neighbor_a, "player-1")
+    board, _, _ = place_city_tile(board, neighbor_b, "player-1")
+    new_board_state, _, _ = place_city_tile_adjacent_to_cities(board, center_hex, "player-2", 2)
+    assert new_board_state[center_hex]["tile_type"] == "city"
+    assert new_board_state[center_hex]["owner"] == "player-2"

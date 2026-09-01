@@ -84,18 +84,35 @@ def _apply_hex_bonus(player: engine.PlayerState, hex_bonus: list[tuple[str, int]
 
 
 def _place_ocean_and_apply_bonus(
-    board: boardlib.Board, player: engine.PlayerState, hex_id: str
+    board: boardlib.Board, player: engine.PlayerState, hex_id: str, on_land: bool = False
 ) -> tuple[boardlib.Board, engine.PlayerState]:
-    new_board, hex_bonus, ocean_bonus_mc = boardlib.place_ocean_tile(board, hex_id)
+    """
+    on_land=True: para cartas como Artificial Lake, que colocan el oceano
+    "en un area NO reservada para oceano" -- exactamente lo inverso de la
+    colocacion normal (ver boardlib.place_ocean_tile_on_land).
+    """
+    place_fn = boardlib.place_ocean_tile_on_land if on_land else boardlib.place_ocean_tile
+    new_board, hex_bonus, ocean_bonus_mc = place_fn(board, hex_id)
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     return new_board, new_player  # type: ignore[return-value]
 
 
 def _place_city_and_apply_bonus(
-    board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str
+    board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str,
+    require_adjacent_cities: int | None = None,
 ) -> tuple[boardlib.Board, engine.PlayerState]:
-    new_board, hex_bonus, ocean_bonus_mc = boardlib.place_city_tile(board, hex_id, owner_id)
+    """
+    require_adjacent_cities: para cartas como Urbanized Area, que EXIGEN
+    adyacencia a N ciudades ya existentes (lo inverso de la regla normal,
+    ver boardlib.place_city_tile_adjacent_to_cities).
+    """
+    if require_adjacent_cities is not None:
+        new_board, hex_bonus, ocean_bonus_mc = boardlib.place_city_tile_adjacent_to_cities(
+            board, hex_id, owner_id, require_adjacent_cities
+        )
+    else:
+        new_board, hex_bonus, ocean_bonus_mc = boardlib.place_city_tile(board, hex_id, owner_id)
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     return new_board, new_player  # type: ignore[return-value]
@@ -395,20 +412,30 @@ def play_card(
             raise ValueError(
                 f"Esta carta coloca {oceans_delta} oceano(s); se recibieron {len(chosen)} hex_id(s)"
             )
+        on_land = bool(effects.get("ocean_placement_bypasses_reservation"))
+        can_place_fn = boardlib.can_place_ocean_on_land if on_land else boardlib.can_place_ocean
         for hid in chosen:
-            if not boardlib.can_place_ocean(board, hid):
+            if not can_place_fn(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
-            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid, on_land=on_land)
     if cities_delta > 0:
         chosen = city_hex_ids or []
         if len(chosen) != cities_delta:
             raise ValueError(
                 f"Esta carta coloca {cities_delta} ciudad(es); se recibieron {len(chosen)} hex_id(s)"
             )
+        require_adjacent_cities = effects.get("city_placement_requires_adjacent_cities")
         for hid in chosen:
-            if not boardlib.can_place_city(board, hid):
+            if require_adjacent_cities is not None:
+                if not boardlib.can_place_city_adjacent_to_cities(board, hid, require_adjacent_cities):
+                    raise boardlib.InvalidPlacementError(
+                        f"'{hid}' no es adyacente a al menos {require_adjacent_cities} ciudad(es)"
+                    )
+            elif not boardlib.can_place_city(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hid}'")
-            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id)
+            board, new_player = _place_city_and_apply_bonus(
+                board, new_player, hid, player_id, require_adjacent_cities=require_adjacent_cities
+            )
 
     special_tile_spec = effects.get("place_special_tile")
     if special_tile_spec is not None:
@@ -419,15 +446,18 @@ def play_card(
         board, hex_bonus, ocean_bonus_mc = boardlib.place_special_tile(
             board, special_tile_hex_id, special_tile_spec, player_id, card_id
         )
-        # El bonus del hex se convierte en produccion permanente del recurso
-        # que matchea (no se aplica como stock de una sola vez, a diferencia
-        # de un tile normal) -- ej. Mining Rights: +1 produccion de steel si
-        # el hex elegido tenia bonus de steel.
-        resource_bumped = next(r for r, _ in hex_bonus if r in special_tile_spec["hex_bonus_resource"])
-        production_key = f"{resource_bumped}_production"
-        new_player, new_globals = engine.apply_card_effect(
-            new_player, new_globals, {"production_deltas": {production_key: 1}}
-        )
+        # Si la carta pide un hex con bonus de recurso especifico (ej. Mining
+        # Rights), ese bonus se convierte en produccion permanente del
+        # recurso que matchea (no se aplica como stock de una sola vez).
+        # Cartas como Industrial Center no tienen hex_bonus_resource -- solo
+        # exigen la posicion (adyacente a una ciudad) y ganan su efecto por
+        # otro lado (ej. su propia accion repetible), sin bump automatico aca.
+        if "hex_bonus_resource" in special_tile_spec:
+            resource_bumped = next(r for r, _ in hex_bonus if r in special_tile_spec["hex_bonus_resource"])
+            production_key = f"{resource_bumped}_production"
+            new_player, new_globals = engine.apply_card_effect(
+                new_player, new_globals, {"production_deltas": {production_key: 1}}
+            )
         new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
 
     if effects.get("becomes_active"):

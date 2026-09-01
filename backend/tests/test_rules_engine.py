@@ -1852,3 +1852,111 @@ def test_breathing_filters_requires_7_oxygen_no_modeled_effect():
     new_player, new_globals = apply_card_effect(player, globals_, {})
     assert new_player == player
     assert new_globals == globals_
+
+
+# ---------------------------------------------------------------------------
+# Bloque 11 (CARDS_PENDING_REVIEW.md filas #1-10)
+# ---------------------------------------------------------------------------
+
+def test_artificial_lake_requires_minus_6_degrees_and_places_ocean():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -6}, globals_)
+    globals_["temperature"] = -6
+    check_card_requirements({"min_temperature": -6}, globals_)  # no lanza
+    player = new_player_state()
+    # el marcador ocean_placement_bypasses_reservation es solo para tools.py
+    # (decide que primitivo de board.py usar) -- apply_card_effect lo ignora
+    # y sigue tratando "place_oceans" igual que siempre.
+    new_player, new_globals = apply_card_effect(
+        player, globals_, {"place_oceans": 1, "ocean_placement_bypasses_reservation": True}
+    )
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_geothermal_power_gives_plus_2_energy_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"energy_production": 2}}
+    )
+    assert new_player["energy_production"] == 3
+
+
+def test_dust_seals_requires_max_3_oceans():
+    globals_ = new_global_parameters()
+    check_card_requirements({"max_oceans": 3}, globals_)  # no lanza, 0 oceanos
+    globals_["oceans_placed"] = 3
+    check_card_requirements({"max_oceans": 3}, globals_)  # no lanza, justo en el limite
+    globals_["oceans_placed"] = 4
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_oceans": 3}, globals_)
+
+
+def test_urbanized_area_minus_1_energy_plus_2_mc_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "mc_production": 2}},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 3
+    # city_placement_requires_adjacent_cities es un marcador para tools.py
+    # (decide que primitivo de board.py usar), no se procesa aca
+
+
+def test_sabotage_has_no_modeled_effect_remove_up_to_clause_omitted():
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), {})
+    assert new_player == player
+    assert new_globals == new_global_parameters()
+
+
+def test_moss_requires_3_oceans_and_costs_1_plant_for_1_plant_production():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 3}, globals_)
+    globals_["oceans_placed"] = 3
+    check_card_requirements({"min_oceans": 3}, globals_)  # no lanza
+    player = {**new_player_state(), "plants": 1}
+    new_player, _ = apply_card_effect(
+        player, globals_, {"resource_deltas": {"plants": -1}, "production_deltas": {"plant_production": 1}}
+    )
+    assert new_player["plants"] == 0
+    assert new_player["plant_production"] == 2
+
+
+def test_industrial_center_action_spends_7_mc_for_1_steel_production():
+    player = register_active_card({**new_player_state(), "mc": 7}, "industrial_center")
+    globals_ = new_global_parameters()
+    action_spec = {"cost": {"mc": 7}, "gains": {"production_deltas": {"steel_production": 1}}}
+    new_player, _ = use_card_action(player, globals_, "industrial_center", action_spec)
+    assert new_player["mc"] == 0
+    assert new_player["steel_production"] == 2
+    # placement adyacente a una ciudad es responsabilidad de tools.py/board.py
+
+
+def test_hired_raiders_has_no_modeled_effect_steal_up_to_clause_omitted():
+    player = new_player_state()
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), {})
+    assert new_player == player
+    assert new_globals == new_global_parameters()
+
+
+def test_hackers_minus_1_energy_production_mc_swap_cancels():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"production_deltas": {"energy_production": -1}}
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 1  # -2 a "cualquiera" +2 propio se cancela en single-player
+
+
+def test_ghg_factories_minus_1_energy_plus_4_heat_production():
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "heat_production": 4}},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["heat_production"] == 5

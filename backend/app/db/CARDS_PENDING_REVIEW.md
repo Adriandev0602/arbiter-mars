@@ -1,5 +1,12 @@
 # Cartas descargadas, pendientes de revisión
 
+**DEPRECADO desde 2026-08-31** — este archivo quedó congelado en el bloque 10. La cola de
+revisión real ahora vive en la tabla `card_review_queue` de Supabase (poblada por
+`backend/scripts/enqueue_card_review_queue.py`, marcada por `backend/scripts/mark_reviewed.py`
+al cargar cada carta). Consultar `select * from card_review_queue where reviewed = false order
+by id limit 10` para el próximo bloque, no este archivo. Se deja como referencia histórica de
+cómo se llegó hasta acá.
+
 Cartas cuyo scan ya se descargó de tm.hadronikle.com (prueba de capacidad de scraping
 espaciado) pero cuya lógica **todavía no se leyó ni se implementó**. No confundir con
 `CARDS_LOG.md` (cartas ya cargadas y verificadas) ni con la sección "Pendientes" de ese mismo

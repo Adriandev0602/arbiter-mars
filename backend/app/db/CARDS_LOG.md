@@ -127,6 +127,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `business_contacts` | Business Contacts | 111 | 7 MC | Evento. Roba 4 a investigación pendiente (`start_research` inmediato); se resuelve con `resolve_research_phase(cost_per_card=0, max_take=2)` — exige tomar exactamente 2 |
 | `bribed_committee` | Bribed Committee | 112 | 7 MC | Evento. +2 TR directo |
 | `breathing_filters` | Breathing Filters | 114 | 11 MC | Requiere oxígeno ≥7%. Sin efecto modelado — solo puntos, no trackeados |
+| `artificial_lake` | Artificial Lake | 116 | 15 MC | Requiere temperatura ≥-6°C. Coloca 1 océano en hex NO reservado para océano (`place_ocean_tile_on_land`, lo inverso de la regla normal) |
+| `geothermal_power` | Geothermal Power | 117 | 11 MC | +2 producción energía |
+| `dust_seals` | Dust Seals | 119 | 2 MC | Requiere máximo 3 océanos colocados (`max_oceans`, nuevo) |
+| `urbanized_area` | Urbanized Area | 120 | 10 MC | -1 producción energía, +2 producción MC, +1 ciudad EXIGIENDO adyacencia a 2+ ciudades (`place_city_tile_adjacent_to_cities`, lo inverso de la regla normal) |
+| `sabotage` | Sabotage | 121 | 1 MC | Evento. Sin efecto modelado — cláusula "steal up to" omitida (single-player) |
+| `moss` | Moss | 122 | 4 MC | Requiere 3 océanos colocados. -1 planta (costo obligatorio), +1 producción plantas |
+| `industrial_center` | Industrial Center | 123 | 4 MC | Special tile adyacente a una ciudad de cualquier dueño (`require_adjacency_to_city`, nuevo); acción repetible: -7 MC → +1 producción steel |
+| `hired_raiders` | Hired Raiders | 124 | 1 MC | Evento. Sin efecto modelado — cláusula "steal up to" omitida |
+| `hackers` | Hackers | 125 | 3 MC | -1 producción energía (swap de producción MC a "cualquiera" se cancela en single-player) |
+| `ghg_factories` | GHG Factories | 126 | 11 MC | -1 producción energía, +4 producción calor |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -226,6 +236,25 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
   objetivo — `apply_card_effect` en sí no conoce el catálogo, solo recibe el
   `production_deltas` ya resuelto.
 
+## Colocaciones "inversas" en el tablero (`board.py`)
+
+Algunas cartas piden exactamente lo opuesto de la regla normal de colocación. En vez de
+generalizar prematuramente, se agregó una función pareja por cada caso encontrado —
+`tools.play_card` decide cuál usar leyendo un marcador explícito en `effects` (ignorado por
+`apply_card_effect`, que sigue sin saber nada del tablero):
+
+- `ocean_placement_bypasses_reservation: true` (en el mismo `effects` que `place_oceans`) —
+  usa `board.place_ocean_tile_on_land`/`can_place_ocean_on_land` en vez de los normales: coloca
+  el océano en un hex de tierra NO reservado para océano (ej. Artificial Lake), justo lo
+  inverso de la regla estándar.
+- `city_placement_requires_adjacent_cities: N` (junto a `place_city_tiles`) — usa
+  `board.place_city_tile_adjacent_to_cities`/`can_place_city_adjacent_to_cities`: EXIGE que el
+  hex elegido sea adyacente a al menos N ciudades ya existentes (ej. Urbanized Area: 2), en vez
+  de rechazar toda adyacencia a ciudad como la regla normal.
+- `place_special_tile.require_adjacency_to_city: true` — variante de `place_special_tile` que
+  exige adyacencia a un tile de ciudad de CUALQUIER dueño (ej. Industrial Center), distinta de
+  `require_adjacency_to_own_tile` (que exige un tile propio de cualquier tipo).
+
 ## Historial de cartas jugadas (`PlayerState.played_cards`)
 
 Lista de `card_id` en el orden en que se jugaron, sin sacar nunca ninguno (a diferencia de
@@ -304,6 +333,8 @@ oficial). `player.active_cards` (jsonb en Supabase) guarda `{card_id: {resources
 - `min_production`: `{"key": "<recurso>_production", "count": N}` — requiere que el jugador ya
   tenga esa producción propia en al menos N (ej. Great Escarpment Consortium: requiere
   producción de steel ≥1). Requiere pasar `player`.
+- `max_oceans`: cantidad máxima de océanos colocados (ej. Dust Seals: máximo 3) — contraparte
+  de `min_oceans`.
 
 `tools.play_card` valida el requisito contra `global_parameters` antes de cobrar la carta —
 si no se cumple, lanza `CardRequirementNotMetError` y no se paga nada.
