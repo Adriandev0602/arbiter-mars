@@ -181,6 +181,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `windmills` | Windmills | 168 | 6 MC | Requiere oxígeno ≥7%. +1 producción energía |
 | `tundra_farming` | Tundra Farming | 169 | 16 MC | Requiere temperatura ≥-6°C. +1 producción plantas, +2 producción MC, +1 planta (stock) |
 | `aerobraked_ammonia_asteroid` | Aerobraked Ammonia Asteroid | 170 | 26 MC | Evento, tags space×2. Agrega 2 recursos a OTRA carta activa (`target_card_resource_delta`), +3 producción calor, +1 producción plantas |
+| `magnetic_field_dome` | Magnetic Field Dome | 171 | 5 MC | -2 producción energía, +1 producción plantas, +1 TR |
+| `pets` | Pets | 172 | 10 MC | Arranca con 1 animal (`active_card_starting_resources`). Pasivo: +1 animal cada vez que se coloca CUALQUIER tile de ciudad en el mapa (nuevo `on_city_tile_placed_add_resource`, aplicado desde `tools._place_city_and_apply_bonus`) |
+| `protected_habitats` | Protected Habitats | 173 | 5 MC | "Opponents may not remove your plant/animal/microbe resources" — fuera de alcance por diseño en el MVP de un solo jugador (no hay mecánica de remoción por otro jugador que proteger); se paga pero `effects: {}`, mismo criterio que Virus |
+| `protected_valley` | Protected Valley | 174 | 23 MC | +2 producción MC, sube oxígeno 1 paso, coloca un tile de greenery ignorando restricciones normales (nuevo `effects.place_greenery` + `board.can_place_greenery(..., ignore_restrictions=True)`, permite colocarlo incluso en un hex reservado a océano) |
+| `satellites` | Satellites | 175 | 10 MC | +1 producción MC por cada tag space jugado, incluido este (`production_delta_per_tag` con `include_this: true`) |
+| `noctis_farming` | Noctis Farming | 176 | 10 MC | Requiere temperatura ≥-20°C. +1 producción MC, +2 plantas (stock) |
+| `water_splitting_plant` | Water Splitting Plant | 177 | 12 MC | Requiere 2 océanos colocados. Acción repetible: gasta 3 energía, sube oxígeno 1 paso |
+| `heat_trappers` | Heat Trappers | 178 | 6 MC | -2 producción calor, +1 producción energía |
+| `soil_factory` | Soil Factory | 179 | 9 MC | -1 producción energía, +1 producción plantas |
+| `fuel_factory` | Fuel Factory | 180 | 6 MC | -1 producción energía, +1 producción titanio, +1 producción MC |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 

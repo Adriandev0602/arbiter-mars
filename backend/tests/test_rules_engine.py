@@ -55,6 +55,7 @@ from app.agent.rules_engine import (
     apply_tag_played_resource_bonuses,
     apply_greenery_placed_bonuses,
     apply_standard_project_used_bonuses,
+    apply_city_placed_bonuses,
 )
 
 
@@ -2570,6 +2571,91 @@ def test_aerobraked_ammonia_asteroid_targets_card_and_raises_production():
     assert new_player["active_cards"]["decomposers"]["resources"] == 2
     assert new_player["heat_production"] == 4
     assert new_player["plant_production"] == 2
+
+
+def test_magnetic_field_dome_swaps_energy_for_plants_and_tr():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"energy_production": -2, "plant_production": 1}, "tr_delta": 1},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["plant_production"] == 2
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_pets_starts_with_1_animal_and_reacts_to_city_tiles():
+    player = register_active_card(new_player_state(), "pets", initial_resources=1)
+    player = register_passive_effect(player, "pets", {"on_city_tile_placed_add_resource": {"resource_delta": 1}})
+    player = apply_city_placed_bonuses(player)
+    assert player["active_cards"]["pets"]["resources"] == 2
+
+
+def test_protected_habitats_has_no_modeled_effect_in_solo():
+    # Efecto real (proteger recursos de OTROS jugadores) no aplica en el
+    # MVP de un solo jugador -- se paga pero no cambia nada del estado.
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {})
+    assert new_player == new_player_state()
+    assert new_globals == new_global_parameters()
+
+
+def test_satellites_mc_production_per_space_tag_including_this():
+    player = {**new_player_state(), "tags_played": {"space": 3}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": {"tag": "space", "production": "mc_production", "per_tag": 1, "include_this": True}},
+    )
+    assert new_player["mc_production"] == 5  # 1 base + 4 (3 previos + este)
+
+
+def test_noctis_farming_requires_minus_20_temperature():
+    globals_ = {**new_global_parameters(), "temperature": -20}
+    check_card_requirements({"min_temperature": -20}, globals_)
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_,
+        {"production_deltas": {"mc_production": 1}, "resource_deltas": {"plants": 2}},
+    )
+    assert new_player["mc_production"] == 2
+    assert new_player["plants"] == 2
+
+
+def test_water_splitting_plant_requires_2_oceans_action_raises_oxygen():
+    globals_ = {**new_global_parameters(), "oceans_placed": 2}
+    check_card_requirements({"min_oceans": 2}, globals_)
+
+    player = register_active_card(new_player_state(), "water_splitting_plant")
+    player["energy"] = 3
+    action_spec = {"cost": {"energy": 3}, "gains": {"raise_oxygen_steps": 1}}
+    new_player, new_globals = use_card_action(player, globals_, "water_splitting_plant", action_spec)
+    assert new_player["energy"] == 0
+    assert new_globals["oxygen"] == 1
+
+
+def test_heat_trappers_swaps_heat_for_energy():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"heat_production": -2, "energy_production": 1}},
+    )
+    assert new_player["heat_production"] == 0
+    assert new_player["energy_production"] == 2
+
+
+def test_soil_factory_swaps_energy_for_plants():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "plant_production": 1}},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["plant_production"] == 2
+
+
+def test_fuel_factory_swaps_energy_for_titanium_and_mc():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"energy_production": -1, "titanium_production": 1, "mc_production": 1}},
+    )
+    assert new_player["energy_production"] == 0
+    assert new_player["titanium_production"] == 2
+    assert new_player["mc_production"] == 2
 
 
 def test_advanced_ecosystems_multi_tag_requirements():

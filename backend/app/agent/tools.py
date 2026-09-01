@@ -115,13 +115,17 @@ def _place_city_and_apply_bonus(
         new_board, hex_bonus, ocean_bonus_mc = boardlib.place_city_tile(board, hex_id, owner_id)
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
+    new_player = engine.apply_city_placed_bonuses(new_player)
     return new_board, new_player  # type: ignore[return-value]
 
 
 def _place_greenery_and_apply_bonus(
-    board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str
+    board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str,
+    ignore_restrictions: bool = False,
 ) -> tuple[boardlib.Board, engine.PlayerState]:
-    new_board, hex_bonus, ocean_bonus_mc = boardlib.place_greenery_tile(board, hex_id, owner_id)
+    new_board, hex_bonus, ocean_bonus_mc = boardlib.place_greenery_tile(
+        board, hex_id, owner_id, ignore_restrictions=ignore_restrictions
+    )
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     new_player = engine.apply_greenery_placed_bonuses(new_player)
@@ -292,6 +296,7 @@ def play_card(
     effect_choice: int | None = None,
     ocean_hex_ids: list[str] | None = None,
     city_hex_ids: list[str] | None = None,
+    greenery_hex_id: str | None = None,
     special_tile_hex_id: str | None = None,
     discard_for_draw_card_id: str | None = None,
     duplicate_production_target_card_id: str | None = None,
@@ -329,6 +334,11 @@ def play_card(
             la carta no coloca oceanos.
         city_hex_ids: igual que ocean_hex_ids pero para cartas que colocan
             ciudad(es) (ej. Capital: 1).
+        greenery_hex_id: OBLIGATORIO si `effects.place_greenery` esta definido
+            (ej. Protected Valley: coloca un greenery ignorando restricciones
+            normales, incluso sobre un hex reservado a oceano). Distinto de
+            standard_project_greenery/convert_plants_to_greenery (esos son
+            acciones aparte, no un efecto de carta).
         special_tile_hex_id: OBLIGATORIO si `effects.place_special_tile` esta
             definido en la carta (ej. Mining Rights, Mining Area) -- el hex
             debe tener el bonus de recurso que pide la carta (steel/titanium)
@@ -476,6 +486,17 @@ def play_card(
             )
         new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
 
+    greenery_spec = effects.get("place_greenery")
+    if greenery_spec is not None:
+        if greenery_hex_id is None:
+            raise ValueError(f"La carta '{card_id}' requiere greenery_hex_id")
+        if board is None:
+            board = _load_board()
+        board, new_player = _place_greenery_and_apply_bonus(
+            board, new_player, greenery_hex_id, player_id,
+            ignore_restrictions=greenery_spec.get("ignore_restrictions", False),
+        )
+
     if effects.get("becomes_active"):
         new_player = engine.register_active_card(
             new_player, card_id, initial_resources=effects.get("active_card_starting_resources", 0)
@@ -535,7 +556,7 @@ def play_card(
          "titanium_to_pay": titanium_to_pay, "change_not_refunded": change,
          "cost_discount_applied": discount,
          "effect_amount": effect_amount, "effect_choice": effect_choice,
-         "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids,
+         "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids, "greenery_hex_id": greenery_hex_id,
          "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id,
          "duplicate_production_target_card_id": duplicate_production_target_card_id,
          "target_card_id": target_card_id, "target_card_id_2": target_card_id_2},
