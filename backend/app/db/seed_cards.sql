@@ -762,6 +762,46 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'permafrost_extraction', 'Permafrost Extraction', 8, '{}', '{"min_temperature": -8}'::jsonb,
         '{"place_oceans": 1}'::jsonb
+    ),
+    (
+        'invention_contest', 'Invention Contest', 2, '{science}', null,
+        '{"start_research": {"n": 3}}'::jsonb
+    ),
+    (
+        'plantation', 'Plantation', 15, '{science,science}', '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"raise_oxygen_steps": 1, "place_greenery": {}}'::jsonb
+    ),
+    (
+        'power_infrastructure', 'Power Infrastructure', 4, '{power,building}', null,
+        '{"becomes_active": true, "action": {"convert_resource_amount": {"from": "energy", "to": "mc", "ratio": 1}}}'::jsonb
+    ),
+    (
+        'indentured_workers', 'Indentured Workers', 0, '{}', null,
+        '{"next_card_discount_mc": -8}'::jsonb
+    ),
+    (
+        'lagrange_observatory', 'Lagrange Observatory', 9, '{science,space}', null,
+        '{"draw_cards": 1}'::jsonb
+    ),
+    (
+        'terraforming_ganymede', 'Terraforming Ganymede', 33, '{earth,jovian}', null,
+        '{"tr_delta_per_tag": {"tag": "jovian", "per_tag": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'immigration_shuttles', 'Immigration Shuttles', 31, '{earth,earth}', null,
+        '{"production_deltas": {"mc_production": 5}}'::jsonb
+    ),
+    (
+        'restricted_area', 'Restricted Area', 11, '{science}', null,
+        '{"becomes_active": true, "place_special_tile": {}, "action": {"cost": {"mc": 2}, "gains": {"draw_cards": 1}}}'::jsonb
+    ),
+    (
+        'immigrant_city', 'Immigrant City', 13, '{city,building}', null,
+        '{"production_deltas": {"energy_production": -1, "mc_production": -2}, "place_city_tiles": 1, "becomes_active": true, "passive": {"on_city_tile_placed_production_delta": {"production": "mc_production", "per_tile": 1}}}'::jsonb
+    ),
+    (
+        'energy_tapping', 'Energy Tapping', 3, '{power}', null,
+        '{"production_deltas": {"energy_production": 0}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -777,4 +817,5 @@ where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'relea
              'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir',
              'local_heat_trapping', 'imported_hydrogen', 'large_convoy', 'ceos_favorite_project',
              'convoy_from_europa', 'imported_ghg', 'imported_nitrogen', 'import_of_advanced_ghg',
-             'aerobraked_ammonia_asteroid', 'ice_cap_melting', 'flooding', 'permafrost_extraction');
+             'aerobraked_ammonia_asteroid', 'ice_cap_melting', 'flooding', 'permafrost_extraction',
+             'indentured_workers');

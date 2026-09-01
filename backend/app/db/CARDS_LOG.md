@@ -201,6 +201,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `flooding` | Flooding | 188 | 7 MC | Evento. Coloca 1 océano (cláusula opcional de robar MC a otro jugador omitida, MVP de un solo jugador) |
 | `energy_saving` | Energy Saving | 189 | 15 MC | +1 producción energía por cada tile de ciudad en el mapa (`production_delta_per_counter`) |
 | `permafrost_extraction` | Permafrost Extraction | 191 | 8 MC | Evento. Requiere temperatura ≥-8°C. Coloca 1 océano |
+| `invention_contest` | Invention Contest | 192 | 2 MC | Evento. Roba 3 a `pending_research` (`start_research`, se resuelve después con `resolve_research_phase(cost_per_card=0, max_take=1)`) |
+| `plantation` | Plantation | 193 | 15 MC | Requiere 2 tags de ciencia ya jugados. Sube oxígeno 1 paso, coloca greenery con reglas normales (`place_greenery` sin `ignore_restrictions`) |
+| `power_infrastructure` | Power Infrastructure | 194 | 4 MC | Acción repetible: convierte cualquier cantidad de energía a esa misma cantidad de MC (nuevo `action.convert_resource_amount` + `effect_amount` en `use_card_action`) |
+| `indentured_workers` | Indentured Workers | 195 | 0 MC | Evento. La próxima carta que el jugador juegue esta generación cuesta 8 MC menos (nuevo campo `pending_mc_discount` en `players` + `effects.next_card_discount_mc`, se consume al jugar la siguiente carta o se pierde al terminar la generación) |
+| `lagrange_observatory` | Lagrange Observatory | 196 | 9 MC | Roba 1 carta |
+| `terraforming_ganymede` | Terraforming Ganymede | 197 | 33 MC | +1 TR por cada tag jovian jugado, incluido este (nuevo `tr_delta_per_tag`) |
+| `immigration_shuttles` | Immigration Shuttles | 198 | 31 MC | +5 producción MC |
+| `restricted_area` | Restricted Area | 199 | 11 MC | Coloca una special tile genérica sin requisito (`place_special_tile: {}`). Acción repetible: gasta 2 MC, roba 1 carta |
+| `immigrant_city` | Immigrant City | 200 | 13 MC | -1 producción energía, -2 producción MC, coloca un tile de ciudad. Pasivo: +1 producción MC cada vez que se coloca CUALQUIER ciudad, incluida la propia (nuevo `on_city_tile_placed_production_delta`; se autodispara porque `tools.play_card` ahora registra la carta como activa/pasiva ANTES de colocar su tile) |
+| `energy_tapping` | Energy Tapping | 201 | 3 MC | "-1 producción energía de cualquier jugador, +1 propia" — neto 0 en el MVP de un solo jugador (mismo criterio que Power Supply Consortium) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
