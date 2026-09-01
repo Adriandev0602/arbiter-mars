@@ -506,6 +506,66 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'ghg_factories', 'GHG Factories', 11, '{building}', null,
         '{"production_deltas": {"energy_production": -1, "heat_production": 4}}'::jsonb
+    ),
+    (
+        'subterranean_reservoir', 'Subterranean Reservoir', 11, '{}', null,
+        '{"place_oceans": 1}'::jsonb
+    ),
+    (
+        'ecological_zone', 'Ecological Zone', 12, '{animal,plant}', null,
+        '{"becomes_active": true, "place_special_tile": {"require_adjacency_to_greenery": true, "require_player_has_greenery": true}, "passive": {"on_tag_played_add_resource": {"matching_tags": ["animal", "plant"], "resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'zeppelins', 'Zeppelins', 13, '{}', '{"min_oxygen": 5}'::jsonb,
+        '{"production_delta_per_counter": {"production": "mc_production", "counter": "city_tiles_placed", "per_counter": 1}}'::jsonb
+    ),
+    (
+        'worms', 'Worms', 8, '{microbe}', '{"min_oxygen": 4}'::jsonb,
+        '{"production_delta_per_tag": {"tag": "microbe", "production": "plant_production", "tags_per_step": 2, "include_this": true}}'::jsonb
+    ),
+    (
+        'decomposers', 'Decomposers', 5, '{microbe}', '{"min_oxygen": 3}'::jsonb,
+        '{"becomes_active": true, "passive": {"on_tag_played_add_resource": {"matching_tags": ["animal", "plant", "microbe"], "resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'fusion_power', 'Fusion Power', 14, '{science,power,building}', '{"min_tag_count": {"tag": "power", "count": 2}}'::jsonb,
+        '{"production_deltas": {"energy_production": 3}}'::jsonb
+    ),
+    (
+        'symbiotic_fungus', 'Symbiotic Fungus', 4, '{microbe}', '{"min_temperature": -14}'::jsonb,
+        '{"becomes_active": true, "action": {"gains": {"target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'extreme_cold_fungus', 'Extreme-Cold Fungus', 13, '{microbe}', '{"max_temperature": -10}'::jsonb,
+        '{"becomes_active": true, "action": {"choice": [{"gains": {"resource_deltas": {"plants": 1}}}, {"gains": {"target_card_resource_delta": 2}}]}}'::jsonb
+    ),
+    (
+        'advanced_ecosystems', 'Advanced Ecosystems', 11, '{plant,microbe,animal}', '{"min_tag_count": [{"tag": "plant", "count": 1}, {"tag": "microbe", "count": 1}, {"tag": "animal", "count": 1}]}'::jsonb,
+        '{}'::jsonb
+    ),
+    (
+        'great_dam', 'Great Dam', 12, '{power,building}', '{"min_oceans": 4}'::jsonb,
+        '{"production_deltas": {"energy_production": 2}}'::jsonb
+    ),
+    (
+        'local_heat_trapping', 'Local Heat Trapping', 1, '{}', null,
+        '{"choice": [{"resource_deltas": {"heat": -5, "plants": 4}}, {"resource_deltas": {"heat": -5}, "target_card_resource_delta": 2}]}'::jsonb
+    ),
+    (
+        'imported_hydrogen', 'Imported Hydrogen', 16, '{earth,space}', null,
+        '{"choice": [{"place_oceans": 1, "resource_deltas": {"plants": 3}}, {"place_oceans": 1, "target_card_resource_delta": 3}, {"place_oceans": 1, "target_card_resource_delta": 2}]}'::jsonb
+    ),
+    (
+        'predators', 'Predators', 14, '{animal}', '{"min_oxygen": 11}'::jsonb,
+        '{"becomes_active": true, "action": {"gains": {"move_from_target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'eos_chasma_national_park', 'Eos Chasma National Park', 16, '{plant,building}', '{"min_temperature": -12}'::jsonb,
+        '{"target_card_resource_delta": 1, "resource_deltas": {"plants": 3}, "production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'ants', 'Ants', 9, '{microbe}', '{"min_oxygen": 4}'::jsonb,
+        '{"becomes_active": true, "action": {"gains": {"move_from_target_card_resource_delta": 1}}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -518,4 +578,5 @@ on conflict (id) do update set
 -- cartas al jugarse) las cartas que corresponden en el juego real.
 update cards set is_event = true
 where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'release_of_inert_gases',
-             'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders');
+             'business_contacts', 'bribed_committee', 'sabotage', 'hired_raiders', 'subterranean_reservoir',
+             'local_heat_trapping', 'imported_hydrogen');

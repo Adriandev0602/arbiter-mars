@@ -52,6 +52,7 @@ from app.agent.rules_engine import (
     swap_card_for_draw,
     register_played_card,
     increment_events_played,
+    apply_tag_played_resource_bonuses,
 )
 
 
@@ -1960,3 +1961,333 @@ def test_ghg_factories_minus_1_energy_plus_4_heat_production():
     )
     assert new_player["energy_production"] == 0
     assert new_player["heat_production"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Bloque 12 (scans 127-136)
+# ---------------------------------------------------------------------------
+
+def test_subterranean_reservoir_places_1_ocean():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    new_player, new_globals = apply_card_effect(player, globals_, {"place_oceans": 1})
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_ecological_zone_passive_adds_animals_on_animal_or_plant_tags():
+    # 1. Al jugarse, Ecological Zone se activa y gana 2 animales (1 por tag animal, 1 por tag plant)
+    player = register_active_card(new_player_state(), "ecological_zone")
+    player = register_passive_effect(
+        player,
+        "ecological_zone",
+        {"on_tag_played_add_resource": {"matching_tags": ["animal", "plant"], "resource_delta": 1}},
+    )
+    player = apply_tag_played_resource_bonuses(player, ("animal", "plant"))
+    assert player["active_cards"]["ecological_zone"]["resources"] == 2
+
+    # 2. Al jugar luego una carta con tag plant, suma 1 animal mas
+    player = apply_tag_played_resource_bonuses(player, ("plant",))
+    assert player["active_cards"]["ecological_zone"]["resources"] == 3
+
+    # 3. Al jugar una carta espacial/power, no suma nada
+    player = apply_tag_played_resource_bonuses(player, ("space", "power"))
+    assert player["active_cards"]["ecological_zone"]["resources"] == 3
+
+
+def test_zeppelins_mc_production_per_city_on_mars():
+    globals_ = {**new_global_parameters(), "oxygen": 5, "city_tiles_placed": 4}
+    check_card_requirements({"min_oxygen": 5}, globals_)
+
+    player = new_player_state()
+    effects = {
+        "production_delta_per_counter": {
+            "production": "mc_production",
+            "counter": "city_tiles_placed",
+            "per_counter": 1,
+        }
+    }
+    new_player, _ = apply_card_effect(player, globals_, effects)
+    assert new_player["mc_production"] == 1 + 4  # 1 inicial + 4 por las ciudades
+
+
+def test_worms_plant_production_per_2_microbe_tags_including_this():
+    globals_ = {**new_global_parameters(), "oxygen": 4}
+    check_card_requirements({"min_oxygen": 4}, globals_)
+
+    effects = {
+        "production_delta_per_tag": {
+            "tag": "microbe",
+            "production": "plant_production",
+            "tags_per_step": 2,
+            "include_this": True,
+        }
+    }
+
+    # Sin tags previos: total con Worms = 1 microbe tag -> 1 // 2 = 0 produccion extra
+    player = new_player_state()
+    p1, _ = apply_card_effect(player, globals_, effects)
+    assert p1["plant_production"] == 1
+
+    # Con 1 tag previo: total con Worms = 2 microbe tags -> 2 // 2 = +1 produccion
+    player_with_1 = {**new_player_state(), "tags_played": {"microbe": 1}}
+    p2, _ = apply_card_effect(player_with_1, globals_, effects)
+    assert p2["plant_production"] == 2
+
+    # Con 3 tags previos: total con Worms = 4 microbe tags -> 4 // 2 = +2 produccion
+    player_with_3 = {**new_player_state(), "tags_played": {"microbe": 3}}
+    p3, _ = apply_card_effect(player_with_3, globals_, effects)
+    assert p3["plant_production"] == 3
+
+
+def test_decomposers_passive_adds_microbes_on_bio_tags():
+    player = register_active_card(new_player_state(), "decomposers")
+    player = register_passive_effect(
+        player,
+        "decomposers",
+        {"on_tag_played_add_resource": {"matching_tags": ["animal", "plant", "microbe"], "resource_delta": 1}},
+    )
+    # Al jugarse Decomposers (tag microbe), suma 1 microbio inicial
+    player = apply_tag_played_resource_bonuses(player, ("microbe",))
+    assert player["active_cards"]["decomposers"]["resources"] == 1
+
+    # Al jugar una carta con plant y animal (ej. Ecological Zone), suma 2 microbios
+    player = apply_tag_played_resource_bonuses(player, ("plant", "animal"))
+    assert player["active_cards"]["decomposers"]["resources"] == 3
+
+
+def test_fusion_power_requires_2_power_tags_and_gives_3_energy_prod():
+    player = new_player_state()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "power", "count": 2}}, new_global_parameters(), player)
+
+    player_ready = {**player, "tags_played": {"power": 2}}
+    check_card_requirements({"min_tag_count": {"tag": "power", "count": 2}}, new_global_parameters(), player_ready)
+
+    new_player, _ = apply_card_effect(
+        player_ready, new_global_parameters(), {"production_deltas": {"energy_production": 3}}
+    )
+    assert new_player["energy_production"] == 4
+
+
+def test_symbiotic_fungus_adds_microbe_to_another_active_card():
+    globals_ = {**new_global_parameters(), "temperature": -14}
+    check_card_requirements({"min_temperature": -14}, globals_)
+
+    player = register_active_card(new_player_state(), "symbiotic_fungus")
+    player = register_active_card(player, "decomposers")
+
+    action_spec = {"gains": {"target_card_resource_delta": 1}}
+
+    # Requiere target_card_id
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "symbiotic_fungus", action_spec)
+
+    # No puede agregarse a si misma
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "symbiotic_fungus", action_spec, target_card_id="symbiotic_fungus")
+
+    # Agrega 1 a decomposers
+    new_player, _ = use_card_action(
+        player, globals_, "symbiotic_fungus", action_spec, target_card_id="decomposers"
+    )
+    assert new_player["active_cards"]["decomposers"]["resources"] == 1
+    assert new_player["active_cards"]["symbiotic_fungus"]["action_used"] is True
+
+
+def test_extreme_cold_fungus_choice_plant_or_target_microbes():
+    globals_ = {**new_global_parameters(), "temperature": -10}
+    check_card_requirements({"max_temperature": -10}, globals_)
+
+    player = register_active_card(new_player_state(), "extreme_cold_fungus")
+    player = register_active_card(player, "regolith_eaters")
+
+    action_spec = {
+        "choice": [
+            {"gains": {"resource_deltas": {"plants": 1}}},
+            {"gains": {"target_card_resource_delta": 2}},
+        ]
+    }
+
+    # Choice 0: gana 1 planta
+    p1, _ = use_card_action(player, globals_, "extreme_cold_fungus", action_spec, effect_choice=0)
+    assert p1["plants"] == 1
+
+    # Choice 1: agrega 2 microbios a regolith_eaters
+    p2, _ = use_card_action(
+        player, globals_, "extreme_cold_fungus", action_spec, effect_choice=1, target_card_id="regolith_eaters"
+    )
+    assert p2["active_cards"]["regolith_eaters"]["resources"] == 2
+
+
+def test_apply_card_effect_target_card_resource_delta():
+    player = register_active_card(new_player_state(), "local_heat_trapping")
+    player = register_active_card(player, "decomposers")
+    globals_ = new_global_parameters()
+
+    effects = {"target_card_resource_delta": 3}
+
+    # Requiere target_card_id
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, globals_, effects)
+
+    # La carta objetivo debe estar activa
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, globals_, effects, target_card_id="no_existe")
+
+    new_player, _ = apply_card_effect(player, globals_, effects, target_card_id="decomposers")
+    assert new_player["active_cards"]["decomposers"]["resources"] == 3
+    assert new_player["active_cards"]["local_heat_trapping"]["resources"] == 0
+
+
+def test_apply_card_effect_choice_threads_target_card_id():
+    player = register_active_card(new_player_state(), "imported_hydrogen")
+    player = register_active_card(player, "decomposers")
+    globals_ = new_global_parameters()
+
+    effects = {
+        "choice": [
+            {"resource_deltas": {"plants": 3}},
+            {"target_card_resource_delta": 2},
+        ]
+    }
+
+    new_player, _ = apply_card_effect(
+        player, globals_, effects, effect_choice=1, target_card_id="decomposers"
+    )
+    assert new_player["active_cards"]["decomposers"]["resources"] == 2
+
+
+def test_predators_moves_animal_from_another_active_card():
+    player = register_active_card(new_player_state(), "predators")
+    player = register_active_card(player, "ecological_zone")
+    player["active_cards"]["ecological_zone"]["resources"] = 2
+    globals_ = new_global_parameters()
+
+    action_spec = {"gains": {"move_from_target_card_resource_delta": 1}}
+
+    # Requiere target_card_id
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "predators", action_spec)
+
+    # No puede apuntar a si misma
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "predators", action_spec, target_card_id="predators")
+
+    # La carta origen debe tener suficientes recursos
+    poor_player = register_active_card(new_player_state(), "predators")
+    poor_player = register_active_card(poor_player, "ecological_zone")
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(poor_player, globals_, "predators", action_spec, target_card_id="ecological_zone")
+
+    new_player, _ = use_card_action(
+        player, globals_, "predators", action_spec, target_card_id="ecological_zone"
+    )
+    assert new_player["active_cards"]["ecological_zone"]["resources"] == 1
+    assert new_player["active_cards"]["predators"]["resources"] == 1
+    assert new_player["active_cards"]["predators"]["action_used"] is True
+
+
+def test_local_heat_trapping_choice_plants_or_target_card():
+    player = register_active_card(new_player_state(), "decomposers")
+    player["heat"] = 5
+    globals_ = new_global_parameters()
+
+    effects = {
+        "choice": [
+            {"resource_deltas": {"heat": -5, "plants": 4}},
+            {"resource_deltas": {"heat": -5}, "target_card_resource_delta": 2},
+        ]
+    }
+
+    p1, _ = apply_card_effect(player, globals_, effects, effect_choice=0)
+    assert p1["heat"] == 0
+    assert p1["plants"] == 4
+
+    p2, _ = apply_card_effect(player, globals_, effects, effect_choice=1, target_card_id="decomposers")
+    assert p2["heat"] == 0
+    assert p2["active_cards"]["decomposers"]["resources"] == 2
+
+
+def test_imported_hydrogen_choice_places_ocean_and_targets_card():
+    player = register_active_card(new_player_state(), "decomposers")
+    globals_ = new_global_parameters()
+
+    effects = {
+        "choice": [
+            {"place_oceans": 1, "resource_deltas": {"plants": 3}},
+            {"place_oceans": 1, "target_card_resource_delta": 3},
+            {"place_oceans": 1, "target_card_resource_delta": 2},
+        ]
+    }
+
+    p1, g1 = apply_card_effect(player, globals_, effects, effect_choice=0)
+    assert g1["oceans_placed"] == 1
+    assert p1["plants"] == 3
+
+    p2, g2 = apply_card_effect(player, globals_, effects, effect_choice=1, target_card_id="decomposers")
+    assert g2["oceans_placed"] == 1
+    assert p2["active_cards"]["decomposers"]["resources"] == 3
+
+
+def test_eos_chasma_national_park_adds_animal_plants_and_mc_production():
+    player = register_active_card(new_player_state(), "predators")
+    globals_ = {**new_global_parameters(), "temperature": -12}
+    check_card_requirements({"min_temperature": -12}, globals_)
+
+    effects = {
+        "target_card_resource_delta": 1,
+        "resource_deltas": {"plants": 3},
+        "production_deltas": {"mc_production": 2},
+    }
+    new_player, _ = apply_card_effect(player, globals_, effects, target_card_id="predators")
+    assert new_player["active_cards"]["predators"]["resources"] == 1
+    assert new_player["plants"] == 3
+    assert new_player["mc_production"] == 3
+
+
+def test_ants_action_moves_microbe_from_another_active_card():
+    player = register_active_card(new_player_state(), "ants")
+    player = register_active_card(player, "decomposers")
+    player["active_cards"]["decomposers"]["resources"] = 1
+    globals_ = {**new_global_parameters(), "oxygen": 4}
+    check_card_requirements({"min_oxygen": 4}, globals_)
+
+    action_spec = {"gains": {"move_from_target_card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "ants", action_spec, target_card_id="decomposers")
+    assert new_player["active_cards"]["decomposers"]["resources"] == 0
+    assert new_player["active_cards"]["ants"]["resources"] == 1
+
+
+def test_advanced_ecosystems_multi_tag_requirements():
+    req = {
+        "min_tag_count": [
+            {"tag": "plant", "count": 1},
+            {"tag": "microbe", "count": 1},
+            {"tag": "animal", "count": 1},
+        ]
+    }
+    player = {**new_player_state(), "tags_played": {"plant": 1, "microbe": 1}}
+    # Falta tag animal
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player)
+
+    # Con los 3 tags
+    player_ready = {**new_player_state(), "tags_played": {"plant": 1, "microbe": 1, "animal": 1}}
+    check_card_requirements(req, new_global_parameters(), player_ready)  # no lanza
+
+
+def test_great_dam_requires_4_oceans_and_gives_2_energy_production():
+    globals_ = new_global_parameters()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 4}, globals_)
+
+    globals_["oceans_placed"] = 4
+    check_card_requirements({"min_oceans": 4}, globals_)
+
+    player = new_player_state()
+    new_player, _ = apply_card_effect(
+        player, globals_, {"production_deltas": {"energy_production": 2}}
+    )
+    assert new_player["energy_production"] == 3
+

@@ -359,3 +359,32 @@ def test_place_city_tile_adjacent_to_cities_succeeds_when_legal():
     new_board_state, _, _ = place_city_tile_adjacent_to_cities(board, center_hex, "player-2", 2)
     assert new_board_state[center_hex]["tile_type"] == "city"
     assert new_board_state[center_hex]["owner"] == "player-2"
+
+
+# ---------------------------------------------------------------------------
+# Special tile adyacente a Greenery (Ecological Zone)
+# ---------------------------------------------------------------------------
+
+def test_place_special_tile_ecological_zone_requires_player_has_greenery():
+    board = new_board()
+    spec = {"require_adjacency_to_greenery": True, "require_player_has_greenery": True}
+    # Sin greenerys en el mapa
+    assert can_place_special_tile(board, "08", spec, "player-1") is False
+
+    # Con greenery de otro jugador en hex 03
+    board, _, _ = place_greenery_tile(board, "03", "player-2")
+    # player-1 todavía no tiene greenery propia
+    assert can_place_special_tile(board, "08", spec, "player-1") is False
+
+    # player-1 coloca greenery en hex 20 (lejos)
+    board, _, _ = place_greenery_tile(board, "20", "player-1")
+    # Ahora player-1 sí tiene greenery propia, y 08 es adyacente a una greenery (la de 03)
+    assert can_place_special_tile(board, "08", spec, "player-1") is True
+    # Hex no adyacente a ninguna greenery (ej. 50) sigue siendo inválido
+    assert can_place_special_tile(board, "50", spec, "player-1") is False
+
+    new_board_state, _, _ = place_special_tile(board, "08", spec, "player-1", "ecological_zone")
+    assert new_board_state["08"]["tile_type"] == "special"
+    assert new_board_state["08"]["card"] == "ecological_zone"
+    assert new_board_state["08"]["owner"] == "player-1"
+
