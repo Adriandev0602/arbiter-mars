@@ -161,6 +161,26 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `tectonic_stress_power` | Tectonic Stress Power | 145 | 18 MC | Tags science×2/power/building. Requiere 2 tags de ciencia ya jugados (`min_tag_count`). +3 producción energía |
 | `herbivores` | Herbivores | 147 | 12 MC | Requiere oxígeno ≥8%. Arranca con 1 animal en la propia carta (`active_card_starting_resources`, nuevo campo de `register_active_card`), -1 producción plantas. Pasivo: +1 animal cada vez que se coloca un tile de greenery (`on_greenery_placed_add_resource`, nuevo pasivo disparado desde `tools._place_greenery_and_apply_bonus`) |
 | `insects` | Insects | 148 | 9 MC | Requiere oxígeno ≥6%. +1 producción plantas por cada tag plant ya jugado (`production_delta_per_tag`, sin `include_this` porque Insects no tiene tag plant) |
+| `ceos_favorite_project` | CEO's Favorite Project | 149 | 1 MC | Evento. Agrega 1 recurso a OTRA carta activa que YA tenga al menos 1 recurso (`target_card_resource_delta` + nuevo `target_min_resources`) |
+| `anti_gravity_technology` | Anti-Gravity Technology | 150 | 14 MC | Requiere 7 tags de ciencia ya jugados. Pasivo: -2 MC al costo de CUALQUIER carta futura (`card_cost_discount_mc` sin `tag_filter`) |
+| `adaptation_technology` | Adaptation Technology | 153 | 12 MC | Pasivo: relaja 2 pasos los requisitos de temperatura/oxígeno/océanos de futuras cartas, en la dirección favorable (nuevo `global_requirements_tolerance_steps`, ver `check_card_requirements`) |
+| `caretaker_contract` | Caretaker Contract | 154 | 3 MC | Requiere temperatura ≥0°C. Acción repetible: gasta 8 calor, +1 TR |
+| `designed_microorganisms` | Designed Microorganisms | 155 | 16 MC | Requiere temperatura ≤-14°C. +2 producción plantas |
+| `standard_technology` | Standard Technology | 156 | 6 MC | Pasivo: +3 MC cada vez que se paga un proyecto estándar (excepto Sell Patents) (nuevo `on_standard_project_used`, aplicado desde `tools.use_standard_project`) |
+| `nitrite_reducing_bacteria` | Nitrite Reducing Bacteria | 157 | 11 MC | Arranca con 3 microbios (`active_card_starting_resources`). Acción repetible con elección: +1 microbio propio, O gastar 3 microbios propios (`cost.card_resource`) por +1 TR |
+| `industrial_microbes` | Industrial Microbes | 158 | 12 MC | +1 producción energía, +1 producción acero |
+| `lichen` | Lichen | 159 | 7 MC | Requiere temperatura ≥-24°C. +1 producción plantas |
+| `power_supply_consortium` | Power Supply Consortium | 160 | 5 MC | Tags power×2. Requiere 2 tags de power ya jugados. "-1 producción energía de cualquier jugador, +1 propia" — en el MVP de un solo jugador ambos targetean al mismo jugador, neto 0 (mismo criterio que Fish/Small Animals, ver nota de diseño más abajo, extendida al caso de un mismo recurso) |
+| `convoy_from_europa` | Convoy from Europa | 161 | 15 MC | Evento, tag space. Coloca 1 océano, roba 1 carta |
+| `imported_ghg` | Imported GHG | 162 | 7 MC | Evento, tags Earth/Space. +1 producción calor, +3 calor (stock) |
+| `imported_nitrogen` | Imported Nitrogen | 163 | 23 MC | Evento, tags Earth/Space. +1 TR, +4 plantas, agrega 3 recursos a una carta activa Y 2 recursos a OTRA carta activa distinta (nuevo `target_card_resource_delta_2`/`target_card_id_2`, dos objetivos en la misma jugada) |
+| `micro_mills` | Micro-Mills | 164 | 3 MC | +1 producción calor |
+| `magnetic_field_generators` | Magnetic Field Generators | 165 | 20 MC | -4 producción energía, +2 producción plantas, +3 TR |
+| `shuttles` | Shuttles | 166 | 10 MC | Requiere oxígeno ≥5%. -1 producción energía, +2 producción MC. Pasivo: -2 MC al costo de cartas con tag space (`card_cost_discount_mc` + `tag_filter`) |
+| `import_of_advanced_ghg` | Import of Advanced GHG | 167 | 9 MC | Evento, tags Earth/Space. +2 producción calor |
+| `windmills` | Windmills | 168 | 6 MC | Requiere oxígeno ≥7%. +1 producción energía |
+| `tundra_farming` | Tundra Farming | 169 | 16 MC | Requiere temperatura ≥-6°C. +1 producción plantas, +2 producción MC, +1 planta (stock) |
+| `aerobraked_ammonia_asteroid` | Aerobraked Ammonia Asteroid | 170 | 26 MC | Evento, tags space×2. Agrega 2 recursos a OTRA carta activa (`target_card_resource_delta`), +3 producción calor, +1 producción plantas |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 

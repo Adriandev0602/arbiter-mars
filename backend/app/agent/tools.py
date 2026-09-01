@@ -200,6 +200,8 @@ def use_standard_project(
             f"aquifer, greenery, city. Recibido: {project_name}"
         )
 
+    new_player = engine.apply_standard_project_used_bonuses(new_player, project_name)
+
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
@@ -294,6 +296,7 @@ def play_card(
     discard_for_draw_card_id: str | None = None,
     duplicate_production_target_card_id: str | None = None,
     target_card_id: str | None = None,
+    target_card_id_2: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -350,6 +353,10 @@ def play_card(
             la que se le agregan recursos (ej. Local Heat Trapping, Imported
             Hydrogen, Eos Chasma National Park). None si la carta no tiene
             esta mecanica.
+        target_card_id_2: OBLIGATORIO si `effects` tiene `target_card_resource_delta_2`
+            -- una SEGUNDA carta activa distinta a la de target_card_id (ej.
+            Imported Nitrogen: 3 microbios a una carta, 2 animales a otra).
+            None si la carta no tiene esta mecanica.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -403,7 +410,8 @@ def play_card(
     }
     effects = card.get("effects") or {}
     new_player, new_globals = engine.apply_card_effect(
-        paid_player, globals_, effects, effect_amount, effect_choice, target_card_id=target_card_id
+        paid_player, globals_, effects, effect_amount, effect_choice,
+        target_card_id=target_card_id, target_card_id_2=target_card_id_2,
     )
 
     # El efecto resuelto (incluso detras de choice/tag_count_choice) puede
@@ -530,7 +538,7 @@ def play_card(
          "ocean_hex_ids": ocean_hex_ids, "city_hex_ids": city_hex_ids,
          "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id,
          "duplicate_production_target_card_id": duplicate_production_target_card_id,
-         "target_card_id": target_card_id},
+         "target_card_id": target_card_id, "target_card_id_2": target_card_id_2},
     )
 
     return {
