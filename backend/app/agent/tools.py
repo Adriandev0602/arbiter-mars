@@ -124,6 +124,7 @@ def _place_greenery_and_apply_bonus(
     new_board, hex_bonus, ocean_bonus_mc = boardlib.place_greenery_tile(board, hex_id, owner_id)
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
+    new_player = engine.apply_greenery_placed_bonuses(new_player)
     return new_board, new_player  # type: ignore[return-value]
 
 
@@ -468,7 +469,9 @@ def play_card(
         new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
 
     if effects.get("becomes_active"):
-        new_player = engine.register_active_card(new_player, card_id)
+        new_player = engine.register_active_card(
+            new_player, card_id, initial_resources=effects.get("active_card_starting_resources", 0)
+        )
     if effects.get("passive"):
         new_player = engine.register_passive_effect(new_player, card_id, effects["passive"])
 

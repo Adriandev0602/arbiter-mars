@@ -388,3 +388,20 @@ def test_place_special_tile_ecological_zone_requires_player_has_greenery():
     assert new_board_state["08"]["card"] == "ecological_zone"
     assert new_board_state["08"]["owner"] == "player-1"
 
+
+
+def test_mohole_area_special_tile_requires_ocean_hex():
+    board = new_board()
+    spec = {"hex_type": "ocean"}
+    ocean_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "ocean")
+    land_hex = next(h["id"] for h in HEX_DEFS.values() if h["hex_type"] == "land" and h["reserved_city"] is None)
+
+    assert can_place_special_tile(board, ocean_hex, spec, "player-1") is True
+    assert can_place_special_tile(board, land_hex, spec, "player-1") is False
+
+    new_board_state, _, _ = place_special_tile(board, ocean_hex, spec, "player-1", "mohole_area")
+    assert new_board_state[ocean_hex]["tile_type"] == "special"
+    assert new_board_state[ocean_hex]["card"] == "mohole_area"
+    # No cuenta como uno de los 9 oceanos del parametro global -- eso lo
+    # decide tools.play_card (solo detecta oceans_placed via place_oceans,
+    # que Mohole Area no usa).

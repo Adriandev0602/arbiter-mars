@@ -765,16 +765,23 @@ def apply_card_effect(
 # microbios guardados en la carta)
 # ---------------------------------------------------------------------------
 
-def register_active_card(player: PlayerState, card_id: str) -> PlayerState:
+def register_active_card(player: PlayerState, card_id: str, initial_resources: int = 0) -> PlayerState:
     """
     Marca una carta recien jugada como "activa" -- queda en juego frente al
     jugador porque tiene una accion repetible y/o guarda recursos propios.
     Se llama despues de pagar la carta, solo si `effects.becomes_active` es
     true en su fila de `cards`. Si la carta ya estaba activa (no deberia
     pasar, cada carta se juega una vez), reinicia sus contadores.
+
+    initial_resources: N > 0 si la carta arranca con recursos propios ya
+    puestos, sin depender de un trigger (ej. Herbivores: "Add 1 animal to
+    this card" al jugarse -- a diferencia de Ecological Zone/Decomposers,
+    que arrancan con recursos via su propio pasivo "on_tag_played_add_resource"
+    autodisparado por su propio tag). Viene de `effects.active_card_starting_resources`
+    en la fila de `cards`, leido por tools.play_card.
     """
     new_active_cards = dict(player["active_cards"])
-    new_active_cards[card_id] = {"resources": 0, "action_used": False}
+    new_active_cards[card_id] = {"resources": initial_resources, "action_used": False}
     return {**player, "active_cards": new_active_cards}
 
 
@@ -956,6 +963,12 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         -- suma N recurso(s) a la propia carta activa cada vez que el jugador juega
         una carta con alguno de esos tags (ej. Ecological Zone: tags animal/plant;
         Decomposers: tags animal/plant/microbe).
+      - "on_greenery_placed_add_resource": {"resource_delta": N (default 1)}
+        -- suma N recurso(s) a la propia carta activa cada vez que el jugador
+        coloca un tile de greenery, sea por proyecto estandar o por
+        conversion de 8 plantas (ej. Herbivores: +1 animal). Ver
+        apply_greenery_placed_bonuses, llamado desde
+        tools._place_greenery_and_apply_bonus.
       - "on_tag_played_may_swap_card": {"tag": "<tag>"} -- cada vez que el
         jugador juega CUALQUIER carta con ese tag (incluida la que registra
         el pasivo), puede opcionalmente descartar 1 carta de la mano para
@@ -1053,6 +1066,36 @@ def apply_tag_played_resource_bonuses(
                 "resources": current_res + matches * spec.get("resource_delta", 1),
             }
             changed = True
+    if not changed:
+        return player
+    return {**player, "active_cards": new_active_cards}
+
+
+def apply_greenery_placed_bonuses(player: PlayerState) -> PlayerState:
+    """
+    Aplica el pasivo "on_greenery_placed_add_resource": {"resource_delta": N}
+    -- suma N recursos a la propia carta activa cada vez que el jugador
+    coloca un tile de greenery, sin importar la fuente (proyecto estandar o
+    conversion de 8 plantas) (ej. Herbivores: +1 animal). Analogo a
+    apply_tag_played_resource_bonuses pero disparado por "colocar greenery"
+    en vez de "jugar un tag" -- llamado desde tools._place_greenery_and_apply_bonus,
+    el unico punto donde confluyen ambos caminos que colocan greenery.
+    """
+    new_active_cards = dict(player["active_cards"])
+    changed = False
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_greenery_placed_add_resource")
+        if spec is None:
+            continue
+        target_card_id = effect["card_id"]
+        if target_card_id not in new_active_cards:
+            continue
+        current_res = new_active_cards[target_card_id]["resources"]
+        new_active_cards[target_card_id] = {
+            **new_active_cards[target_card_id],
+            "resources": current_res + spec.get("resource_delta", 1),
+        }
+        changed = True
     if not changed:
         return player
     return {**player, "active_cards": new_active_cards}

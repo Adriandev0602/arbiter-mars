@@ -152,6 +152,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `predators` | Predators | 024 | 14 MC | Requiere oxígeno ≥11%. Acción repetible: mueve 1 animal desde OTRA carta activa hacia esta (`move_from_target_card_resource_delta`) |
 | `eos_chasma_national_park` | Eos Chasma National Park | 026 | 16 MC | Requiere temperatura ≥-12°C. Agrega 1 animal a OTRA carta activa (`target_card_resource_delta`), +3 plantas, +2 producción MC |
 | `ants` | Ants | 035 | 9 MC | Requiere oxígeno ≥4%. Acción repetible: mueve 1 microbio desde OTRA carta activa hacia esta (`move_from_target_card_resource_delta`) |
+| `cartel` | Cartel | 137 | 8 MC | +1 producción MC por cada tag Earth jugado, incluido este (`production_delta_per_tag` con `include_this: true`) |
+| `strip_mine` | Strip Mine | 138 | 25 MC | -2 producción energía, +2 producción acero, +1 producción titanio, sube oxígeno 2 pasos |
+| `wave_power` | Wave Power | 139 | 8 MC | Requiere 3 océanos colocados. +1 producción energía |
+| `power_plant_card` | Power Plant | 141 | 4 MC | +1 producción energía (distinta del proyecto estándar homónimo) |
+| `mohole_area` | Mohole Area | 142 | 20 MC | +4 producción calor. Coloca special tile en un hex reservado a océano (`place_special_tile` con nuevo `requirement.hex_type: "ocean"`, no cuenta como uno de los 9 océanos del parámetro global) |
+| `large_convoy` | Large Convoy | 143 | 36 MC | Evento, tags Earth/Space. Coloca 1 océano, roba 2 cartas, y elección: +5 plantas O agregar 4 recursos a OTRA carta activa (`target_card_resource_delta`) |
+| `tectonic_stress_power` | Tectonic Stress Power | 145 | 18 MC | Tags science×2/power/building. Requiere 2 tags de ciencia ya jugados (`min_tag_count`). +3 producción energía |
+| `herbivores` | Herbivores | 147 | 12 MC | Requiere oxígeno ≥8%. Arranca con 1 animal en la propia carta (`active_card_starting_resources`, nuevo campo de `register_active_card`), -1 producción plantas. Pasivo: +1 animal cada vez que se coloca un tile de greenery (`on_greenery_placed_add_resource`, nuevo pasivo disparado desde `tools._place_greenery_and_apply_bonus`) |
+| `insects` | Insects | 148 | 9 MC | Requiere oxígeno ≥6%. +1 producción plantas por cada tag plant ya jugado (`production_delta_per_tag`, sin `include_this` porque Insects no tiene tag plant) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -161,6 +170,7 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | # scan | Nombre | Qué falta |
 |---|---|---|
 | 074 | Viral Enhancers | Pasivo que dispara con CUALQUIER carta de tag plant/microbe/animal jugada (no solo eventos, no automático como `on_event_played`) y le da al jugador una elección EN ESE MOMENTO: +1 planta O agregar 1 recurso a una carta específica ya en juego. Es distinto de `target_card_resource_delta`/`move_from_target_card_resource_delta` (resuelto abajo) porque esos dos son para un efecto inmediato al jugar la carta o una acción repetible — acá el trigger es el evento "se jugó una carta con tag X" y todavía falta la pieza de pasivo-con-elección-del-jugador-al-dispararse (los pasivos actuales, `on_tag_played_add_resource`, son automáticos sin elección). |
+| 140 | Lava Flows | Sube temperatura 2 pasos (trivial) pero además coloca su tile en UNO de 4 hexágonos volcánicos nombrados específicamente (Tharsis Tholus, Ascraeus Mons, Pavonis Mons, Arsia Mons) — el mapa (`board.py`) todavía no asigna nombre individual a esos 4 hexágonos ni tiene un requirement tipo "uno de esta lista de hex_ids" en `can_place_special_tile` (hoy solo filtra por `hex_type`/bonus/adyacencia genérica, ver nota "Nombrar los 4 hexágonos volcánicos" en `HEX_MAP_RESEARCH.md`). Implementar esa pieza requeriría verificar contra la fuente qué hex_id corresponde a cada volcán — no reverificado todavía, no arriesgar la precisión cargando algo mal identificado. |
 
 **Resuelto (2026-09-01):** la pieza "mover/agregar un recurso a una carta específica elegida
 por el jugador, distinta de la que se está jugando/usando" (identificada primero en Local Heat

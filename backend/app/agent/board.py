@@ -385,11 +385,17 @@ def can_place_special_tile(board: Board, hex_id: str, requirement: dict, player_
         elegido sea adyacente a un tile de ciudad, de CUALQUIER dueno (ej.
         Industrial Center) -- distinto de require_adjacency_to_own_tile,
         que exige un tile propio de cualquier tipo.
+      - "hex_type": "land" (default) o "ocean" -- tipo de hexagono requerido.
+        "ocean" es para cartas que colocan su tile especial sobre un area
+        reservada para oceano SIN colocar oceano ahi (ej. Mohole Area: +4
+        produccion de calor, bloquea ese hex para siempre en vez de contar
+        como uno de los 9 oceanos del parametro global).
     """
     hex_def = HEX_DEFS.get(hex_id)
     if hex_def is None:
         raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
-    if hex_def["hex_type"] != "land" or not is_hex_empty(board, hex_id):
+    required_hex_type = requirement.get("hex_type", "land")
+    if hex_def["hex_type"] != required_hex_type or not is_hex_empty(board, hex_id):
         return False
     if hex_def["reserved_city"] is not None:
         return False
