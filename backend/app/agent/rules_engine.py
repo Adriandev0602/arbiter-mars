@@ -484,16 +484,19 @@ def check_card_requirements(
         return
 
     if "min_tag_count" in requirements:
-        spec = requirements["min_tag_count"]
+        specs = requirements["min_tag_count"]
+        if isinstance(specs, dict):
+            specs = [specs]
         if player is None:
             raise CardRequirementNotMetError(
                 "Este requisito necesita el estado del jugador (tags_played)"
             )
-        have = player["tags_played"].get(spec["tag"], 0)
-        if have < spec["count"]:
-            raise CardRequirementNotMetError(
-                f"Requiere {spec['count']} tags de '{spec['tag']}' jugados, hay {have}"
-            )
+        for spec in specs:
+            have = player["tags_played"].get(spec["tag"], 0)
+            if have < spec["count"]:
+                raise CardRequirementNotMetError(
+                    f"Requiere {spec['count']} tags de '{spec['tag']}' jugados, hay {have}"
+                )
 
     if "min_production" in requirements:
         spec = requirements["min_production"]
@@ -649,7 +652,18 @@ def apply_card_effect(
         spec = effects["production_delta_per_tag"]
         key = spec["production"]
         count = player["tags_played"].get(spec["tag"], 0)
-        delta = count * spec.get("per_tag", 1)
+        if spec.get("include_this"):
+            count += 1
+        tags_per_step = spec.get("tags_per_step", 1)
+        per_step = spec.get("per_step", spec.get("per_tag", 1))
+        delta = (count // tags_per_step) * per_step
+        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+
+    if "production_delta_per_counter" in effects:
+        spec = effects["production_delta_per_counter"]
+        key = spec["production"]
+        count = globals_[spec["counter"]]
+        delta = count * spec.get("per_counter", 1)
         new_player[key] = _apply_production_floor(key, new_player[key] + delta)
 
     if "resource_delta_per_counter" in effects:
@@ -740,6 +754,7 @@ def use_card_action(
     card_id: str,
     action_spec: dict,
     effect_choice: int | None = None,
+    target_card_id: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
@@ -751,22 +766,23 @@ def use_card_action(
         Regolith Eaters: remover 2 microbios).
       - "gains": {"resource_deltas": {...}, "production_deltas": {...},
         "raise_oxygen_steps": N, "raise_temperature_steps": N,
-        "card_resource_delta": N, "tr_delta": N, "mc_per_counter":
-        "<nombre del contador en GlobalParameters>"} -- N > 0 en
+        "card_resource_delta": N, "target_card_resource_delta": N, "tr_delta": N,
+        "mc_per_counter": "<nombre del contador en GlobalParameters>"} -- N > 0 en
         card_resource_delta agrega recursos a la propia carta (ej. Regolith
-        Eaters: agregar 1 microbio); tr_delta sube el TR directo sin pasar
-        por un parametro global (ej. Equatorial Magnetizer); mc_per_counter
-        da tanto MC como valga ese contador global (ej. Martian Rails: MC
-        por cada ciudad en Marte via "city_tiles_placed"); place_oceans: N
-        coloca N tiles de oceano (+N TR cada uno) (ej. Water Import from
-        Europa); draw_cards: N roba N cartas del mazo directo a la mano,
-        sin fase de investigacion (ej. Development Center); start_research:
-        {"n": N} roba N cartas a pending_research -- el jugador todavia
-        tiene que resolver la compra por separado con resolve_research_phase
-        (tipicamente a costo 0, ej. Inventors' Guild: n=1).
+        Eaters: agregar 1 microbio); target_card_resource_delta agrega N recursos
+        a OTRA carta activa (ej. Symbiotic Fungus: 1 microbio; Extreme-Cold Fungus: 2);
+        tr_delta sube el TR directo sin pasar por un parametro global (ej.
+        Equatorial Magnetizer); mc_per_counter da tanto MC como valga ese
+        contador global (ej. Martian Rails: MC por cada ciudad en Marte via
+        "city_tiles_placed"); place_oceans: N coloca N tiles de oceano (+N TR
+        cada uno) (ej. Water Import from Europa); draw_cards: N roba N cartas
+        del mazo directo a la mano, sin fase de investigacion (ej. Development
+        Center); start_research: {"n": N} roba N cartas a pending_research -- el
+        jugador todavia tiene que resolver la compra por separado con
+        resolve_research_phase (tipicamente a costo 0, ej. Inventors' Guild: n=1).
       - "choice": lista de action_spec alternativos; se elige uno con
         `effect_choice` (ej. Regolith Eaters: agregar microbio O gastar 2
-        para subir oxigeno).
+        para subir oxigeno; Extreme-Cold Fungus: ganar 1 planta O 2 microbios a otra carta).
 
     Lanza CardEffectError si la carta no esta activa para este jugador o si
     su accion ya se uso esta generacion. Lanza InsufficientResourcesError si
@@ -810,6 +826,18 @@ def use_card_action(
         new_player[key] = _apply_production_floor(key, new_player[key] + delta)
     if "card_resource_delta" in gains:
         card_resources = max(0, card_resources + gains["card_resource_delta"])
+    if "target_card_resource_delta" in gains:
+        amount = gains["target_card_resource_delta"]
+        if target_card_id is None:
+            raise CardEffectError(f"La accion de '{card_id}' requiere target_card_id")
+        if target_card_id == card_id:
+            raise CardEffectError(f"La accion de '{card_id}' debe agregar recursos a OTRA carta, no a si misma")
+        if target_card_id not in new_active_cards:
+            raise CardEffectError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+        new_active_cards[target_card_id] = {
+            **new_active_cards[target_card_id],
+            "resources": max(0, new_active_cards[target_card_id]["resources"] + amount),
+        }
     if "raise_oxygen_steps" in gains:
         p2, g2 = raise_oxygen(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_oxygen_steps"])  # type: ignore[typeddict-item]
         new_player, new_globals = dict(p2), dict(g2)
@@ -871,6 +899,10 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         una carta, una accion) (ej. Arctic Algae: +2 plantas). Aplicado
         directo dentro de place_ocean, no hace falta llamarlo aparte.
       - "card_cost_discount_mc": N -- ver compute_card_cost_discount.
+      - "on_tag_played_add_resource": {"matching_tags": ["<tag>", ...], "resource_delta": N (default 1)}
+        -- suma N recurso(s) a la propia carta activa cada vez que el jugador juega
+        una carta con alguno de esos tags (ej. Ecological Zone: tags animal/plant;
+        Decomposers: tags animal/plant/microbe).
       - "on_tag_played_may_swap_card": {"tag": "<tag>"} -- cada vez que el
         jugador juega CUALQUIER carta con ese tag (incluida la que registra
         el pasivo), puede opcionalmente descartar 1 carta de la mano para
@@ -939,6 +971,38 @@ def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str,
         new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
         new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0)
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
+def apply_tag_played_resource_bonuses(
+    player: PlayerState, played_card_tags: tuple[str, ...] = ()
+) -> PlayerState:
+    """
+    Aplica los bonus pasivos "on_tag_played_add_resource" (ej. Ecological Zone:
+    +1 animal por cada tag animal/plant jugado; Decomposers: +1 microbio por
+    cada tag animal/plant/microbe jugado).
+    Suma resource_delta a la carta activa del jugador por cada tag coincidente.
+    """
+    new_active_cards = dict(player["active_cards"])
+    changed = False
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_tag_played_add_resource")
+        if spec is None:
+            continue
+        target_card_id = effect["card_id"]
+        if target_card_id not in new_active_cards:
+            continue
+        matching_tags = set(spec.get("matching_tags", []))
+        matches = sum(1 for t in played_card_tags if t in matching_tags)
+        if matches > 0:
+            current_res = new_active_cards[target_card_id]["resources"]
+            new_active_cards[target_card_id] = {
+                **new_active_cards[target_card_id],
+                "resources": current_res + matches * spec.get("resource_delta", 1),
+            }
+            changed = True
+    if not changed:
+        return player
+    return {**player, "active_cards": new_active_cards}
 
 
 def player_has_tag_swap_passive(player: PlayerState, played_card_tags: tuple[str, ...]) -> bool:

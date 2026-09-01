@@ -398,11 +398,17 @@ def can_place_special_tile(board: Board, hex_id: str, requirement: dict, player_
         hex_resources = {resource for resource, _ in hex_def["bonus"]}
         if not hex_resources.intersection(allowed_resources):
             return False
+    if requirement.get("require_player_has_greenery"):
+        if count_tiles_of_type(board, "greenery", owner=player_id) == 0:
+            return False
     if requirement.get("require_adjacency_to_own_tile"):
         if count_adjacent_owned_by(board, hex_id, player_id) == 0:
             return False
     if requirement.get("require_adjacency_to_city"):
         if not any(tile["tile_type"] == "city" for tile in get_adjacent_tiles(board, hex_id)):
+            return False
+    if requirement.get("require_adjacency_to_greenery"):
+        if not any(tile["tile_type"] == "greenery" for tile in get_adjacent_tiles(board, hex_id)):
             return False
     return True
 

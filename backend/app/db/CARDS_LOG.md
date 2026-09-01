@@ -137,6 +137,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `hired_raiders` | Hired Raiders | 124 | 1 MC | Evento. Sin efecto modelado — cláusula "steal up to" omitida |
 | `hackers` | Hackers | 125 | 3 MC | -1 producción energía (swap de producción MC a "cualquiera" se cancela en single-player) |
 | `ghg_factories` | GHG Factories | 126 | 11 MC | -1 producción energía, +4 producción calor |
+| `subterranean_reservoir` | Subterranean Reservoir | 127 | 11 MC | Evento. Coloca 1 océano |
+| `ecological_zone` | Ecological Zone | 128 | 12 MC | Requiere tener 1 greenery (`require_player_has_greenery`). Special tile adyacente a greenery (`require_adjacency_to_greenery`). Pasivo: +1 animal en esta carta al jugar tag animal o plant (incluidos los 2 de esta carta, arranca con 2 animales) (`on_tag_played_add_resource`) |
+| `zeppelins` | Zeppelins | 129 | 13 MC | Requiere oxígeno ≥5%. +1 producción MC por cada ciudad colocada en Marte (`production_delta_per_counter`) |
+| `worms` | Worms | 130 | 8 MC | Requiere oxígeno ≥4%. +1 producción plantas por cada 2 tags de microbio jugados, incluido este (`production_delta_per_tag` con `tags_per_step: 2, include_this: true`) |
+| `decomposers` | Decomposers | 131 | 5 MC | Requiere oxígeno ≥3%. Pasivo: +1 microbio en esta carta al jugar tag animal, plant o microbe (arranca con 1 microbio por su propio tag) (`on_tag_played_add_resource`) |
+| `fusion_power` | Fusion Power | 132 | 14 MC | Requiere 2 tags de power jugados (`min_tag_count`). +3 producción energía |
+| `symbiotic_fungus` | Symbiotic Fungus | 133 | 4 MC | Requiere temperatura ≥-14°C. Acción repetible: agrega 1 microbio a OTRA carta activa (`target_card_resource_delta`) |
+| `extreme_cold_fungus` | Extreme-Cold Fungus | 134 | 13 MC | Requiere temperatura ≤-10°C. Acción repetible con elección: +1 planta (stock) O agrega 2 microbios a OTRA carta activa (`target_card_resource_delta`) |
+| `advanced_ecosystems` | Advanced Ecosystems | 135 | 11 MC | Requiere 1 tag plant, 1 tag microbe y 1 tag animal jugados (`min_tag_count` múltiple). Sin efecto directo (solo puntos) |
+| `great_dam` | Great Dam | 136 | 12 MC | Requiere 4 océanos colocados. +2 producción energía |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -215,17 +225,19 @@ revisar si la cláusula es de este tipo opcional — si lo es, no bloquea nada.
   `city_tiles_placed`; Media Archives: +1 MC por cada evento en `events_played`). Análogo a
   `mc_per_counter` de `use_card_action.gains`, pero como efecto inmediato y para cualquier
   recurso, no solo MC.
+- `production_delta_per_counter`: `{"production": "<recurso>_production", "counter": "<contador>",
+  "per_counter": N (default 1)}` — suma a la producción del recurso tanto como valga ese
+  contador global (ej. Zeppelins: +1 producción de MC por cada ciudad en `city_tiles_placed`).
 - `start_research`: `{"n": N}` — roba N cartas a `pending_research` como efecto inmediato al
   jugar la carta (ej. Business Contacts: n=4, después se resuelve con
   `resolve_research_phase(cost_per_card=0, max_take=2)` porque el texto exige tomar
   EXACTAMENTE 2 de las 4 — `max_take` es un tope nuevo en `resolve_research_phase`, lanza
   error si se pide más). Mismo mecanismo que `use_card_action.gains.start_research`
   (Inventors' Guild), pero disparado al jugar la carta en vez de por una acción repetible.
-- "Incluyendo esta" (tags): cuando una carta cuenta su propio tag además de los ya jugados
-  (ej. Power Grid: "+1 producción de energía por cada tag power, incluida esta"), se combina
-  `production_delta_per_tag` (cuenta tags previos) + `production_deltas` fijo (+1 por la
-  propia carta) en el mismo `effects` — no hace falta una pieza nueva, `apply_card_effect`
-  procesa ambas claves en la misma pasada.
+- `production_delta_per_tag`: `{"tag": "<tag>", "production": "<recurso>_production",
+  "per_step": N, "tags_per_step": M, "include_this": bool}` — soporta escalado por cada M tags
+  (ej. Worms: +1 producción de plantas por cada 2 tags de microbe, incluido este -> `tags_per_step: 2, include_this: true`)
+  o N por cada tag previo (Miranda Resort).
 - `duplicate_production`: `{"requires_tag": "<tag>"}` — a diferencia de todos los efectos de
   arriba (que solo miran el estado del jugador/tablero), este targetea OTRA carta que el
   jugador ya jugó, por catálogo, no por recursos guardados en ella (ej. Robotic Workforce:
@@ -254,6 +266,9 @@ generalizar prematuramente, se agregó una función pareja por cada caso encontr
 - `place_special_tile.require_adjacency_to_city: true` — variante de `place_special_tile` que
   exige adyacencia a un tile de ciudad de CUALQUIER dueño (ej. Industrial Center), distinta de
   `require_adjacency_to_own_tile` (que exige un tile propio de cualquier tipo).
+- `place_special_tile.require_adjacency_to_greenery: true` y `place_special_tile.require_player_has_greenery: true`
+  — variante que exige poseer al menos 1 greenery en el tablero y colocar la special tile adyacente a
+  una greenery de cualquier dueño (ej. Ecological Zone).
 
 ## Historial de cartas jugadas (`PlayerState.played_cards`)
 
@@ -313,14 +328,16 @@ vive en `effects.action`:
   `"card_resource"` gasta N recursos guardados en la propia carta.
 - `gains`: `resource_deltas`, `production_deltas` (igual que en `apply_card_effect`),
   `raise_oxygen_steps` / `raise_temperature_steps` / `place_oceans` (suben el parámetro
-  global y dan TR), `card_resource_delta` (agrega recursos a la propia carta), `tr_delta`
-  (sube el TR directo, sin pasar por un parámetro global — ej. Equatorial Magnetizer), y
+  global y dan TR), `card_resource_delta` (agrega recursos a la propia carta),
+  `target_card_resource_delta`: N (agrega N recursos a OTRA carta activa elegida por el
+  jugador vía `target_card_id` — ej. Symbiotic Fungus: +1 microbio; Extreme-Cold Fungus: +2 microbios),
+  `tr_delta` (sube el TR directo, sin pasar por un parámetro global — ej. Equatorial Magnetizer), y
   `mc_per_counter`: `"<contador>"` (da tanto MC como valga ese contador global — ej. Martian
   Rails: MC por cada ciudad en `city_tiles_placed`).
 - `choice`: lista de sub-specs alternativos, elegidos con `effect_choice` (igual patrón que
-  en `apply_card_effect`).
+  en `apply_card_effect` — ej. Extreme-Cold Fungus: +1 planta O +2 microbios a otra carta).
 
-El tool `use_card_action(player_id, card_id, effect_choice)` la ejecuta. `action_used` se
+El tool `use_card_action(player_id, card_id, effect_choice, target_card_id)` la ejecuta. `action_used` se
 resetea a `False` en cada `run_production_phase` (una acción por carta por generación, regla
 oficial). `player.active_cards` (jsonb en Supabase) guarda `{card_id: {resources, action_used}}`.
 
@@ -329,7 +346,8 @@ oficial). `player.active_cards` (jsonb en Supabase) guarda `{card_id: {resources
 - `min_temperature` / `max_temperature`: en grados C (ej. Farming: min 4; Arctic Algae: max -12).
 - `min_oxygen` / `max_oxygen`: en % (ej. Methane from Titan: min 2; Domed Crater: max 7).
 - `min_oceans`: cantidad mínima de tiles de océano colocados (ej. Nitrophilic Moss: 3).
-- `min_tag_count`: ver sección "Tags jugados" más abajo.
+- `min_tag_count`: `{"tag": "<tag>", "count": N}` o lista de dicts `[{"tag": "plant", "count": 1}, ...]`
+  (ej. Mass Converter: 5 tags science; Advanced Ecosystems: 1 plant, 1 microbe y 1 animal).
 - `min_production`: `{"key": "<recurso>_production", "count": N}` — requiere que el jugador ya
   tenga esa producción propia en al menos N (ej. Great Escarpment Consortium: requiere
   producción de steel ≥1). Requiere pasar `player`.
@@ -352,7 +370,7 @@ completo con adyacencia.
 Contador `{"<tag>": int}` que suma 1 por cada tag de cada carta pagada exitosamente (via
 `tools.play_card` → `rules_engine.increment_tags_played`), nunca se resetea entre
 generaciones. Alimenta el requisito `min_tag_count` en `check_card_requirements` (ej. Mass
-Converter: 5 tags de ciencia). `check_card_requirements` ahora acepta un tercer argumento
+Converter: 5 tags de ciencia; Advanced Ecosystems: 1 plant, 1 microbe, 1 animal). `check_card_requirements` acepta un tercer argumento
 opcional `player` -- requerido solo si la carta usa `min_tag_count`.
 
 ## Efectos pasivos permanentes (`PlayerState.passive_effects`, `rules_engine.register_passive_effect`)
@@ -375,6 +393,9 @@ como `active_cards` -- no hay "usarla", simplemente están activas). Se registra
 - `tag_filter`: `"<tag>"` opcional en `on_event_played` o junto a `card_cost_discount_mc` --
   limita el bonus/descuento a cartas que tengan ese tag (ej. Optimal Aerobraking: solo
   eventos con tag `space`; Mass Converter: solo cartas con tag `space`).
+- `on_tag_played_add_resource`: `{"matching_tags": ["<tag>", ...], "resource_delta": N}` --
+  suma N recurso(s) a la propia carta activa cada vez que el jugador juega una carta con alguno de esos tags
+  (ej. Ecological Zone: tags `animal`/`plant`; Decomposers: tags `animal`/`plant`/`microbe`).
 - `on_tag_played_may_swap_card`: `{"tag": "<tag>"}` -- a diferencia de `on_event_played`
   (automático, dispara solo con cartas `is_event`), este dispara con CUALQUIER carta que
   tenga ese tag (incluida la que registra el pasivo), y es una ELECCIÓN del jugador, no

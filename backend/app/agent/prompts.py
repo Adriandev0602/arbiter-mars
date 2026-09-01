@@ -73,7 +73,10 @@ Herramientas disponibles y cuando usarlas:
 - use_card_action: cuando el usuario quiere usar la accion repetible de una carta que ya tiene
   jugada (ej. "usa la accion de Ironworks"). Solo funciona si la carta ya fue jugada con
   play_card y su accion no se uso todavia esta generacion. Algunas acciones piden un
-  `effect_choice` (ej. Regolith Eaters: agregar 1 microbio O gastar 2 para subir oxigeno).
+  `effect_choice` (ej. Regolith Eaters: agregar 1 microbio O gastar 2 para subir oxigeno;
+  Extreme-Cold Fungus: ganar 1 planta O 2 microbios a otra carta).
+  Si la accion agrega recursos a otra carta (ej. Symbiotic Fungus, Extreme-Cold Fungus), requiere
+  `target_card_id` con el id de la otra carta activa elegida.
   Algunas roban cartas directo a la mano (ej. Development Center), y la de Inventors' Guild
   roba 1 carta a pending_research -- despues hay que llamar a resolve_research_phase (con
   cost_per_card=0, es gratis para esta carta) para que el usuario decida si la compra.

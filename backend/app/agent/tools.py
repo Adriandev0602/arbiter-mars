@@ -465,6 +465,9 @@ def play_card(
     if effects.get("passive"):
         new_player = engine.register_passive_effect(new_player, card_id, effects["passive"])
 
+    # Dispara bonus pasivos por tags jugados (ej. Ecological Zone, Decomposers)
+    new_player = engine.apply_tag_played_resource_bonuses(new_player, card_tags)
+
     duplicate_spec = effects.get("duplicate_production")
     if duplicate_spec is not None:
         if duplicate_production_target_card_id is None:
@@ -527,7 +530,11 @@ def play_card(
 
 @tool
 def use_card_action(
-    player_id: str, card_id: str, effect_choice: int | None = None, ocean_hex_ids: list[str] | None = None
+    player_id: str,
+    card_id: str,
+    effect_choice: int | None = None,
+    ocean_hex_ids: list[str] | None = None,
+    target_card_id: str | None = None,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -545,6 +552,9 @@ def use_card_action(
         ocean_hex_ids: OBLIGATORIO (con esa cantidad exacta) si la accion
             coloca oceano(s) (ej. Water Import from Europa: 1). None si la
             accion no coloca oceanos.
+        target_card_id: OBLIGATORIO si la accion agrega recursos a otra carta
+            activa (ej. Symbiotic Fungus: 1 microbio; Extreme-Cold Fungus: 2).
+            None si la accion no afecta otra carta.
 
     Returns:
         dict con el estado actualizado del jugador y, si la accion afecto
@@ -565,7 +575,9 @@ def use_card_action(
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
 
-    new_player, new_globals = engine.use_card_action(player, globals_, card_id, action_spec, effect_choice)
+    new_player, new_globals = engine.use_card_action(
+        player, globals_, card_id, action_spec, effect_choice, target_card_id=target_card_id
+    )
 
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
     board = None
@@ -588,7 +600,8 @@ def use_card_action(
         _save_board(board)
     _log_transaction(
         player_id, "use_card_action",
-        {"card_id": card_id, "effect_choice": effect_choice, "ocean_hex_ids": ocean_hex_ids},
+        {"card_id": card_id, "effect_choice": effect_choice, "ocean_hex_ids": ocean_hex_ids,
+         "target_card_id": target_card_id},
     )
 
     return {"player": dict(new_player), "global_parameters": dict(new_globals)}
