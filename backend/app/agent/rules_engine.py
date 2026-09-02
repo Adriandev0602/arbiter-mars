@@ -134,6 +134,14 @@ class PlayerState(TypedDict):
     # ("next_card_discount_mc") y tools.play_card.
     pending_mc_discount: int
 
+    # Igual que pending_mc_discount pero para relajar/endurecer (puede ser
+    # negativo) los requisitos de temperatura/oxigeno/oceanos de la
+    # PROXIMA carta jugada esta generacion, en pasos (ej. Special Design:
+    # +/-2, a eleccion del jugador). Se consume al chequear esa carta. Ver
+    # check_card_requirements ("next_card_requirement_tolerance_steps") y
+    # tools.play_card.
+    pending_requirement_tolerance_steps: int
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -163,7 +171,7 @@ def new_player_state() -> PlayerState:
         plant_production=1, energy_production=1, heat_production=1,
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
-        pending_mc_discount=0,
+        pending_mc_discount=0, pending_requirement_tolerance_steps=0,
     )
 
 
@@ -402,6 +410,7 @@ def run_production_phase(player: PlayerState) -> PlayerState:
         "heat": heat_after_energy_conversion + player["heat_production"],
         "active_cards": reset_active_cards,
         "pending_mc_discount": 0,
+        "pending_requirement_tolerance_steps": 0,
     }
 
 
@@ -497,11 +506,16 @@ def check_card_requirements(
 
     Si `player` tiene el pasivo "global_requirements_tolerance_steps": N
     (ej. Adaptation Technology: N=2 -- "your global requirements are +2 or
-    -2 steps, your choice in each case"), los umbrales de temperatura/
-    oxigeno/oceanos se relajan N pasos EN LA DIRECCION QUE FAVOREZCA al
-    jugador (el juego real deja elegir +2 o -2 por requisito; como siempre
-    conviene elegir la direccion favorable, el motor la aplica directo sin
-    pedir la eleccion): baja los pisos "min_*" y sube los techos "max_*".
+    -2 steps, your choice in each case") y/o `pending_requirement_tolerance_steps`
+    > 0 (version de un solo uso, ej. Special Design: +/-2 solo para la
+    PROXIMA carta jugada -- ver apply_card_effect
+    "next_card_requirement_tolerance_steps" y tools.play_card, que la
+    consume despues de este chequeo), los umbrales de temperatura/oxigeno/
+    oceanos se relajan esos pasos EN LA DIRECCION QUE FAVOREZCA al jugador
+    (el juego real deja elegir +N o -N por requisito; como siempre conviene
+    elegir la direccion favorable, el motor la aplica directo sin pedir la
+    eleccion): baja los pisos "min_*" y sube los techos "max_*". Ambas
+    fuentes se suman si el jugador tiene las dos activas a la vez.
     """
     if not requirements:
         return
@@ -510,6 +524,7 @@ def check_card_requirements(
     if player is not None:
         for effect in player["passive_effects"]:
             tolerance_steps = max(tolerance_steps, effect.get("global_requirements_tolerance_steps", 0))
+        tolerance_steps += abs(player.get("pending_requirement_tolerance_steps", 0))
     temperature_tolerance = tolerance_steps * TEMPERATURE_STEP
     oxygen_tolerance = tolerance_steps * OXYGEN_STEP
     oceans_tolerance = tolerance_steps
@@ -642,6 +657,13 @@ def apply_card_effect(
         MC). Se consume al jugar esa siguiente carta, la cubra entera o
         no, y tambien se pierde si termina la generacion sin usarse
         (run_production_phase lo resetea a 0).
+      - "next_card_requirement_tolerance_steps": N -- analogo, pero suma N
+        (en valor absoluto) a `player.pending_requirement_tolerance_steps`,
+        que relaja los requisitos de temperatura/oxigeno/oceanos de la
+        PROXIMA carta jugada esta generacion (ej. Special Design: N=2,
+        "+2 or -2, your choice" -- el motor siempre aplica la direccion
+        favorable, ver check_card_requirements). tools.play_card lo
+        consume despues de chequear los requisitos de esa carta.
       - "choice": lista de sub-effects (cualquiera de los de arriba); el
         jugador elige uno via `effect_choice` (indice 0-based) (ej.
         Artificial Photosynthesis: +1 produccion de plantas O +2 de energia).
@@ -819,6 +841,12 @@ def apply_card_effect(
 
     if "next_card_discount_mc" in effects:
         new_player["pending_mc_discount"] = new_player["pending_mc_discount"] + effects["next_card_discount_mc"]
+
+    if "next_card_requirement_tolerance_steps" in effects:
+        new_player["pending_requirement_tolerance_steps"] = (
+            new_player["pending_requirement_tolerance_steps"]
+            + abs(effects["next_card_requirement_tolerance_steps"])
+        )
 
     if "target_card_resource_delta" in effects:
         amount = effects["target_card_resource_delta"]

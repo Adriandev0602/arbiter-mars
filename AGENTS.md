@@ -58,9 +58,20 @@ Supabase y orquesta llamadas a estos módulos.
 - Sistema de mazo/mano/investigación (`deck`/`hand`/`pending_research`), tags jugados, efectos
   pasivos permanentes, historial de cartas jugadas (`played_cards`).
 - Vocabulario extensible de `effects` en `apply_card_effect` (production_deltas, resource_deltas,
-  choice, tag_count_choice, production_delta_per_tag, resource_delta_per_counter, draw_cards,
-  start_research, duplicate_production, etc.) y de `requirements` en `check_card_requirements`
-  (min/max_temperature, min/max_oxygen, min/max_oceans, min_tag_count, min_production). Ver el
+  choice, tag_count_choice, production_delta_per_tag, tr_delta_per_tag, resource_delta_per_counter,
+  draw_cards, start_research, duplicate_production, target_card_resource_delta/`_2` + `target_min_resources`
+  (agregar recursos a otra(s) carta(s) activa(s) elegida(s) por el jugador), place_greenery
+  (con `ignore_restrictions` opcional), next_card_discount_mc, next_card_requirement_tolerance_steps,
+  etc.) y de `requirements` en `check_card_requirements` (min/max_temperature, min/max_oxygen,
+  min/max_oceans, min_city_tiles, min_tag_count, min_production). `use_card_action` suma
+  `move_from_target_card_resource_delta` (mueve recurso desde otra carta activa) y
+  `convert_resource_amount` + `effect_amount` (convierte una cantidad variable elegida por el
+  jugador). Pasivos nuevos en `register_passive_effect`: `on_greenery_placed_add_resource`,
+  `on_city_tile_placed_add_resource`/`_production_delta`, `on_tag_played_choice` (elección
+  opcional del jugador al dispararse, no automática como `on_tag_played_add_resource`),
+  `global_requirements_tolerance_steps`, `on_standard_project_used`. `players` tiene dos campos
+  de un solo uso que se consumen al jugar/chequear la próxima carta y se pierden si no se usan
+  en la generación: `pending_mc_discount` y `pending_requirement_tolerance_steps`. Ver el
   detalle completo y ejemplos reales en `backend/app/db/CARDS_LOG.md`.
 
 ### `backend/app/agent/board.py` — el mapa hexagonal (Tharsis)
@@ -124,6 +135,44 @@ qué cartas ya están cargadas, cuáles están "Pendientes" (con la pieza de mec
 y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_REVIEW.md` quedó
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
+
+### 📍 Punto de retoma (última sesión: 2026-09-01, bloques 12→19)
+
+**Progreso:** catálogo en **202 cartas** cargadas en `cards` (iban 44 al empezar esta racha de
+sesiones). `card_review_queue` tiene 91 filas `reviewed = true` y **211 sin revisar** — el
+próximo bloque (20) son las filas #1-10 de `select * from card_review_queue where reviewed =
+false order by id limit 10`.
+
+**Flujo de ramas (nuevo desde el bloque 13):** cada bloque de revisión vive en su propia rama
+`feat/review-block-N`, creada a partir de la rama del bloque anterior (no de `main` — así cada
+una hereda las piezas de motor que agregó la anterior), commiteada y pusheada a `origin`
+individualmente. `main` **todavía no tiene mergeado nada de esto** — sigue en el commit de
+antes del bloque 12 (`ad316ec`, "Agregar AGENTS.md..."). Falta decidir cuándo/cómo mergear
+(¿un PR por bloque, o squash de toda la racha?) — no asumir, preguntar al usuario antes de
+mergear a `main`.
+
+**Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su pieza
+de mecánica ya diagnosticada pero no implementada:**
+- **Viral Enhancers** (074): pasivo con elección del jugador que dispara con CUALQUIER carta de
+  tag plant/microbe/animal jugada (no solo la propia) y targetea la carta RECIÉN JUGADA, no la
+  que tiene el pasivo — distinto de `on_tag_played_choice` (que sí se implementó, targetea
+  siempre la carta que tiene el pasivo, ver Olympus Conference).
+- **Lava Flows** (140): coloca tile en uno de 4 hexágonos volcánicos nombrados
+  (Tharsis Tholus/Ascraeus/Pavonis/Arsia Mons) que `board.py` todavía no identifica
+  individualmente — ver nota en `HEX_MAP_RESEARCH.md`.
+- **Self-Replicating Robots** (210): necesita un "slot de reserva" por carta (guardar una carta
+  de la mano sin jugarla, con recursos acumulables que después descuentan su costo) — mecánica
+  grande y distinta a todo lo que existe hoy, no una extensión chica.
+
+**Para retomar:** mismo flujo que los bloques 13-19 (ver commits `31a73d7`..`43865ae` como
+referencia): `git checkout feat/review-block-19 && git checkout -b feat/review-block-20`,
+consultar la cola en Supabase (usar la conexión directa con `psycopg2` y parámetros individuales
+de host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
+rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans
+espaciados 4s, leer cada uno, decidir vocabulario (extender el motor si hace falta), cargar en
+`seed_cards.sql` + tests en `test_rules_engine.py`/`test_board.py`, probar contra Supabase real,
+marcar `card_review_queue` con `card_id` (o `null` si queda pendiente/fuera de alcance),
+actualizar `CARDS_LOG.md`, commitear, pushear la rama.
 
 ## 5. Stack tecnológico
 
@@ -241,7 +290,12 @@ npm run dev
 Ver `backend/app/db/schema.sql`. Tablas:
 - `players`: recursos + producción + TR por jugador, `deck`/`hand`/`pending_research`
   (sistema de mazo), `active_cards` (acciones repetibles), `tags_played`, `passive_effects`,
-  `played_cards` (historial permanente, ver sección 3).
+  `played_cards` (historial permanente), `pending_mc_discount`/`pending_requirement_tolerance_steps`
+  (descuentos/tolerancias de un solo uso para la PRÓXIMA carta jugada, ver sección 3).
+  Migraciones de columnas nuevas van al bloque `do $$ begin alter table if exists players add
+  column if not exists ... exception when undefined_table then null; end $$;` al principio de
+  `schema.sql` (idempotente, no rompe si la tabla no existe todavía) — correr `schema.sql`
+  contra Supabase real de nuevo después de agregar una columna.
 - `global_parameters`: temperatura/oxígeno/océanos/ciudades colocadas/`events_played` (contador
   histórico de eventos jugados), `board` (jsonb con el estado mutable del mapa hexagonal —
   compartido, fila única `game_id='default'` para el MVP).
@@ -262,3 +316,9 @@ Ver `backend/app/db/schema.sql`. Tablas:
   solo que "no explote". Cada extensión nueva del vocabulario de `effects`/`requirements` se
   documenta en `CARDS_LOG.md` con un ejemplo real de qué carta la necesitó.
 - Antes de descargar scans nuevos: espaciar los pedidos (2.5s), nunca en paralelo ni en ráfaga.
+- Cada bloque de revisión de cartas va en su propia rama `feat/review-block-N`, ramificada desde
+  el bloque anterior (no desde `main`) y pusheada a `origin` al terminar — ver "Punto de retoma"
+  en la sección 4.
+- La password de `SUPABASE_DB_URL` (en `.env`) contiene un `@` — `psycopg2.connect(url)` con el
+  string completo falla el parseo. Conectar con parámetros individuales
+  (`host`/`port`/`dbname`/`user`/`password`) en vez de pasar la URL entera.

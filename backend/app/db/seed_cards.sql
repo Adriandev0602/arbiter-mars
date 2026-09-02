@@ -802,6 +802,42 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'energy_tapping', 'Energy Tapping', 3, '{power}', null,
         '{"production_deltas": {"energy_production": 0}}'::jsonb
+    ),
+    (
+        'underground_detonations', 'Underground Detonations', 6, '{building}', null,
+        '{"becomes_active": true, "action": {"cost": {"mc": 10}, "gains": {"production_deltas": {"heat_production": 2}}}}'::jsonb
+    ),
+    (
+        'soletta', 'Soletta', 35, '{power}', null,
+        '{"production_deltas": {"heat_production": 7}}'::jsonb
+    ),
+    (
+        'technology_demonstration', 'Technology Demonstration', 5, '{science,space}', null,
+        '{"draw_cards": 2}'::jsonb
+    ),
+    (
+        'rad_chem_factory', 'Rad-Chem Factory', 8, '{building,earth,earth}', null,
+        '{"production_deltas": {"energy_production": -1}, "tr_delta": 2}'::jsonb
+    ),
+    (
+        'special_design', 'Special Design', 4, '{science}', null,
+        '{"next_card_requirement_tolerance_steps": 2}'::jsonb
+    ),
+    (
+        'medical_lab', 'Medical Lab', 13, '{science,building}', null,
+        '{"production_delta_per_tag": {"tag": "building", "production": "mc_production", "tags_per_step": 2, "include_this": true}}'::jsonb
+    ),
+    (
+        'ai_central', 'AI Central', 21, '{science,building}', '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
+        '{"production_deltas": {"energy_production": -1}, "becomes_active": true, "action": {"cost": {}, "gains": {"draw_cards": 2}}}'::jsonb
+    ),
+    (
+        'small_asteroid', 'Small Asteroid', 10, '{space}', null,
+        '{"raise_temperature_steps": 1}'::jsonb
+    ),
+    (
+        'snow_algae', 'Snow Algae', 12, '{plant}', '{"min_oceans": 2}'::jsonb,
+        '{"production_deltas": {"plant_production": 1, "heat_production": 1}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -818,4 +854,4 @@ where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'relea
              'local_heat_trapping', 'imported_hydrogen', 'large_convoy', 'ceos_favorite_project',
              'convoy_from_europa', 'imported_ghg', 'imported_nitrogen', 'import_of_advanced_ghg',
              'aerobraked_ammonia_asteroid', 'ice_cap_melting', 'flooding', 'permafrost_extraction',
-             'indentured_workers');
+             'indentured_workers', 'technology_demonstration', 'special_design', 'small_asteroid');

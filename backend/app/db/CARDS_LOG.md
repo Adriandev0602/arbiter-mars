@@ -211,6 +211,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `restricted_area` | Restricted Area | 199 | 11 MC | Coloca una special tile genérica sin requisito (`place_special_tile: {}`). Acción repetible: gasta 2 MC, roba 1 carta |
 | `immigrant_city` | Immigrant City | 200 | 13 MC | -1 producción energía, -2 producción MC, coloca un tile de ciudad. Pasivo: +1 producción MC cada vez que se coloca CUALQUIER ciudad, incluida la propia (nuevo `on_city_tile_placed_production_delta`; se autodispara porque `tools.play_card` ahora registra la carta como activa/pasiva ANTES de colocar su tile) |
 | `energy_tapping` | Energy Tapping | 201 | 3 MC | "-1 producción energía de cualquier jugador, +1 propia" — neto 0 en el MVP de un solo jugador (mismo criterio que Power Supply Consortium) |
+| `underground_detonations` | Underground Detonations | 202 | 6 MC | Acción repetible: gasta 10 MC, +2 producción calor |
+| `soletta` | Soletta | 203 | 35 MC | +7 producción calor |
+| `technology_demonstration` | Technology Demonstration | 204 | 5 MC | Evento, tags science/space. Roba 2 cartas |
+| `rad_chem_factory` | Rad-Chem Factory | 205 | 8 MC | -1 producción energía, +2 TR |
+| `special_design` | Special Design | 206 | 4 MC | Evento, tag science. Relaja +/-2 pasos los requisitos globales de la PRÓXIMA carta jugada esta generación (nuevo campo `pending_requirement_tolerance_steps` en `players` + `effects.next_card_requirement_tolerance_steps`, análogo a `pending_mc_discount` del bloque 18) |
+| `medical_lab` | Medical Lab | 207 | 13 MC | +1 producción MC por cada 2 tags building jugados, incluido este (`production_delta_per_tag` con `tags_per_step: 2`) |
+| `ai_central` | AI Central | 208 | 21 MC | Requiere 3 tags de ciencia ya jugados. -1 producción energía. Acción repetible gratis: roba 2 cartas |
+| `small_asteroid` | Small Asteroid | 209 | 10 MC | Evento, tag space. Sube temperatura 1 paso (cláusula opcional de robar plantas a otro jugador omitida, MVP de un solo jugador) |
+| `snow_algae` | Snow Algae | 211 | 12 MC | Requiere 2 océanos colocados. +1 producción plantas, +1 producción calor |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -221,6 +230,7 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 |---|---|---|
 | 074 | Viral Enhancers | Pasivo que dispara con CUALQUIER carta de tag plant/microbe/animal jugada (no solo eventos, no automático como `on_event_played`) y le da al jugador una elección EN ESE MOMENTO: +1 planta O agregar 1 recurso a una carta específica ya en juego. Es distinto de `target_card_resource_delta`/`move_from_target_card_resource_delta` (resuelto abajo) porque esos dos son para un efecto inmediato al jugar la carta o una acción repetible — acá el trigger es el evento "se jugó una carta con tag X" y todavía falta la pieza de pasivo-con-elección-del-jugador-al-dispararse (los pasivos actuales, `on_tag_played_add_resource`, son automáticos sin elección). |
 | 140 | Lava Flows | Sube temperatura 2 pasos (trivial) pero además coloca su tile en UNO de 4 hexágonos volcánicos nombrados específicamente (Tharsis Tholus, Ascraeus Mons, Pavonis Mons, Arsia Mons) — el mapa (`board.py`) todavía no asigna nombre individual a esos 4 hexágonos ni tiene un requirement tipo "uno de esta lista de hex_ids" en `can_place_special_tile` (hoy solo filtra por `hex_type`/bonus/adyacencia genérica, ver nota "Nombrar los 4 hexágonos volcánicos" en `HEX_MAP_RESEARCH.md`). Implementar esa pieza requeriría verificar contra la fuente qué hex_id corresponde a cada volcán — no reverificado todavía, no arriesgar la precisión cargando algo mal identificado. |
+| 210 | Self-Replicating Robots | Requiere 2 tags de ciencia. Su acción "reserva" una carta de tag space o building de la MANO sobre esta carta (sin jugarla ni pagarla todavía) con 2 recursos encima, O duplica los recursos de una carta ya reservada ahí; luego esas cartas reservadas se pueden jugar "como si estuvieran en la mano" con el costo reducido en la cantidad de recursos acumulados. Es una mecánica nueva y grande: un "slot de reserva" por carta (no un simple contador de recursos como `active_cards`), con su propio flujo de pago con descuento variable acumulado con el tiempo — no encaja en `target_card_resource_delta`/`card_resource_delta` existentes porque esos asumen que la carta objetivo ya está jugada/activa, no reservada sin jugar. Justifica una pieza aparte cuando se aborde, no una carta más al pasar. |
 
 **Resuelto (2026-09-01):** la pieza "mover/agregar un recurso a una carta específica elegida
 por el jugador, distinta de la que se está jugando/usando" (identificada primero en Local Heat
