@@ -30,6 +30,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         played_cards=row.get("played_cards") or [],
         pending_mc_discount=row.get("pending_mc_discount") or 0,
         pending_requirement_tolerance_steps=row.get("pending_requirement_tolerance_steps") or 0,
+        reserved_cards=row.get("reserved_cards") or {},
     )
 
 
@@ -315,6 +316,12 @@ def play_card(
     mano") -- lanza CardNotInHandError si no la tiene; para tenerla, primero
     hay que robarla via start_research_phase/resolve_research_phase, una
     accion con `draw_cards`, o deal_starting_hand al arrancar la partida.
+    Tambien acepta jugar una carta que este RESERVADA (ver
+    `player.reserved_cards`, rules_engine.reserve_card_in_slot -- ej. Self-
+    Replicating Robots) en vez de en la mano: en ese caso el costo se
+    descuenta ademas en la cantidad de recursos acumulados sobre ella (ver
+    rules_engine.compute_reserved_card_discount), y la reserva se libera al
+    jugarla en vez de sacarla de la mano.
     Despues del pago, aplica el efecto inmediato de la carta segun su
     columna `effects` (ver rules_engine.apply_card_effect) -- solo esta
     implementado para las cartas cargadas en seed_cards.sql; una carta con
@@ -409,8 +416,9 @@ def play_card(
 
     globals_ = _load_global_parameters()
     player = _load_player(player_id)
-    if card_id not in player["hand"]:
-        raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano")
+    played_from_reserve = card_id in player["reserved_cards"]
+    if not played_from_reserve and card_id not in player["hand"]:
+        raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano ni reservada")
     engine.check_card_requirements(card.get("requirements"), globals_, player)
 
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:
@@ -418,7 +426,11 @@ def play_card(
 
     card_tags = tuple(card.get("tags", []))
     steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
-    discount = engine.compute_card_cost_discount(player, card_tags) + player["pending_mc_discount"]
+    discount = (
+        engine.compute_card_cost_discount(player, card_tags)
+        + player["pending_mc_discount"]
+        + engine.compute_reserved_card_discount(player, card_id)
+    )
     effective_cost = max(0, card["cost"] - discount)
     change = engine.calculate_card_payment(
         card_cost=effective_cost,
@@ -566,7 +578,10 @@ def play_card(
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
         new_globals = engine.increment_events_played(new_globals)
-    new_player = engine.remove_card_from_hand(new_player, card_id)
+    if played_from_reserve:
+        new_player = engine.release_reserved_card(new_player, card_id)
+    else:
+        new_player = engine.remove_card_from_hand(new_player, card_id)
     new_player = engine.register_played_card(new_player, card_id)
 
     if discard_for_draw_card_id is not None:
@@ -611,6 +626,7 @@ def use_card_action(
     ocean_hex_ids: list[str] | None = None,
     target_card_id: str | None = None,
     effect_amount: int | None = None,
+    reserved_card_id: str | None = None,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -636,6 +652,13 @@ def use_card_action(
         effect_amount: OBLIGATORIO si `effects.action.convert_resource_amount`
             esta definido (ej. Power Infrastructure: cuanta energia
             convertir a MC, 1 a 1). None si la accion no lo pide.
+        reserved_card_id: OBLIGATORIO si `effects.action.reserve_card_from_hand`
+            o `effects.action.duplicate_reserved_card` esta definido (ej.
+            Self-Replicating Robots) -- para "reserve_card_from_hand", el id
+            de una carta en la MANO del jugador con el tag que exija la
+            accion (`requires_tag_any`, ej. space o building); para
+            "duplicate_reserved_card", el id de una carta ya reservada por
+            esta misma carta. None si la accion no tiene esta mecanica.
 
     Returns:
         dict con el estado actualizado del jugador y, si la accion afecto
@@ -656,9 +679,30 @@ def use_card_action(
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
 
+    reserve_spec = None
+    if effect_choice is not None and "choice" in (action_spec or {}):
+        options = action_spec["choice"]
+        if 0 <= effect_choice < len(options):
+            reserve_spec = options[effect_choice].get("gains", {}).get("reserve_card_from_hand")
+    else:
+        reserve_spec = (action_spec.get("gains", {})).get("reserve_card_from_hand")
+    if reserve_spec is not None:
+        if reserved_card_id is None:
+            raise ValueError(f"La accion de '{card_id}' requiere reserved_card_id")
+        required_tags = reserve_spec.get("requires_tag_any")
+        if required_tags:
+            reserved_res = supabase.table("cards").select("*").eq("id", reserved_card_id).single().execute()
+            reserved_card = reserved_res.data
+            if reserved_card is None:
+                raise ValueError(f"Carta '{reserved_card_id}' no encontrada en el catalogo")
+            if not set(reserved_card.get("tags") or []).intersection(required_tags):
+                raise ValueError(
+                    f"'{reserved_card_id}' no tiene ninguno de los tags requeridos {required_tags}"
+                )
+
     new_player, new_globals = engine.use_card_action(
         player, globals_, card_id, action_spec, effect_choice, target_card_id=target_card_id,
-        effect_amount=effect_amount,
+        effect_amount=effect_amount, reserved_card_id=reserved_card_id,
     )
 
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]

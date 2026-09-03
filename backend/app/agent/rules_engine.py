@@ -142,6 +142,19 @@ class PlayerState(TypedDict):
     # tools.play_card.
     pending_requirement_tolerance_steps: int
 
+    # reserved_cards: {reserved_card_id: {"resources": int, "holder_card_id":
+    # str}} -- cartas de la mano "reservadas" sobre otra carta activa (ej.
+    # Self-Replicating Robots) sin jugarlas ni pagarlas todavia, con
+    # recursos acumulables encima que despues descuentan su costo al
+    # jugarlas. Distinto de active_cards (cartas YA jugadas con accion
+    # repetible) y de hand (cartas sin tocar) -- una carta reservada salio
+    # de hand pero no cuenta como jugada (no tags_played, no played_cards,
+    # no dispara pasivos) hasta que tools.play_card la juegue "como si
+    # estuviera en mano". Ver reserve_card_in_slot,
+    # duplicate_reserved_card_resources, compute_reserved_card_discount,
+    # release_reserved_card.
+    reserved_cards: dict
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -172,6 +185,7 @@ def new_player_state() -> PlayerState:
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0,
+        reserved_cards={},
     )
 
 
@@ -919,6 +933,7 @@ def use_card_action(
     effect_choice: int | None = None,
     target_card_id: str | None = None,
     effect_amount: int | None = None,
+    reserved_card_id: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
@@ -958,6 +973,13 @@ def use_card_action(
         Center); start_research: {"n": N} roba N cartas a pending_research -- el
         jugador todavia tiene que resolver la compra por separado con
         resolve_research_phase (tipicamente a costo 0, ej. Inventors' Guild: n=1).
+        "reserve_card_from_hand": {"initial_resources": N (default 2)} --
+        reserva `reserved_card_id` (obligatorio, debe estar en la mano)
+        sobre la propia carta, ver reserve_card_in_slot (ej. Self-
+        Replicating Robots). "duplicate_reserved_card": true -- duplica los
+        recursos de `reserved_card_id` (obligatorio, ya reservada), ver
+        duplicate_reserved_card_resources (ej. Self-Replicating Robots,
+        opcion alternativa de la misma accion).
       - "choice": lista de action_spec alternativos; se elige uno con
         `effect_choice` (ej. Regolith Eaters: agregar microbio O gastar 2
         para subir oxigeno; Extreme-Cold Fungus: ganar 1 planta O 2 microbios a otra carta).
@@ -1067,6 +1089,17 @@ def use_card_action(
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), gains["draw_cards"]))  # type: ignore[typeddict-item]
     if "start_research" in gains:
         new_player = dict(start_research_phase(PlayerState(**new_player), gains["start_research"]["n"]))  # type: ignore[typeddict-item]
+    if "reserve_card_from_hand" in gains:
+        if reserved_card_id is None:
+            raise CardEffectError(f"La accion de '{card_id}' requiere reserved_card_id")
+        initial = gains["reserve_card_from_hand"].get("initial_resources", 2)
+        new_player["active_cards"] = new_active_cards
+        new_player = dict(reserve_card_in_slot(PlayerState(**new_player), card_id, reserved_card_id, initial))  # type: ignore[typeddict-item]
+        new_active_cards = dict(new_player["active_cards"])
+    if "duplicate_reserved_card" in gains:
+        if reserved_card_id is None:
+            raise CardEffectError(f"La accion de '{card_id}' requiere reserved_card_id")
+        new_player = dict(duplicate_reserved_card_resources(PlayerState(**new_player), reserved_card_id))  # type: ignore[typeddict-item]
 
     new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
     new_player["active_cards"] = new_active_cards
@@ -1077,6 +1110,77 @@ def use_card_action(
 # ---------------------------------------------------------------------------
 # Tags jugados y efectos pasivos permanentes
 # ---------------------------------------------------------------------------
+
+def reserve_card_in_slot(
+    player: PlayerState, holder_card_id: str, reserved_card_id: str, initial_resources: int = 2
+) -> PlayerState:
+    """
+    Reserva `reserved_card_id` (debe estar en la mano) sobre la carta activa
+    `holder_card_id` (ej. Self-Replicating Robots): la saca de la mano SIN
+    jugarla ni pagarla, y le pone `initial_resources` recursos encima. Se
+    diferencia de active_cards en que la carta reservada todavia no esta
+    jugada -- no cuenta tags_played, no entra a played_cards, no dispara
+    sus propios pasivos ni accion hasta que tools.play_card la juegue "como
+    si estuviera en mano", con el costo reducido en la cantidad de recursos
+    acumulados (ver compute_reserved_card_discount). El chequeo de que
+    `reserved_card_id` tenga el tag que exige la carta contenedora (ej.
+    space o building) es responsabilidad del caller (tools.py), que es
+    quien tiene acceso al catalogo de cartas -- este motor no lo conoce.
+
+    Lanza CardNotInHandError si no esta en la mano, CardEffectError si esa
+    carta ya esta reservada.
+    """
+    if reserved_card_id not in player["hand"]:
+        raise CardNotInHandError(f"'{reserved_card_id}' no esta en la mano, no se puede reservar")
+    if reserved_card_id in player["reserved_cards"]:
+        raise CardEffectError(f"'{reserved_card_id}' ya esta reservada")
+    new_hand = [c for c in player["hand"] if c != reserved_card_id]
+    new_reserved = {
+        **player["reserved_cards"],
+        reserved_card_id: {"resources": initial_resources, "holder_card_id": holder_card_id},
+    }
+    return {**player, "hand": new_hand, "reserved_cards": new_reserved}
+
+
+def duplicate_reserved_card_resources(player: PlayerState, reserved_card_id: str) -> PlayerState:
+    """
+    Duplica los recursos acumulados sobre una carta ya reservada (ej. Self-
+    Replicating Robots: en vez de reservar una carta nueva con la accion,
+    duplica los recursos de una que ya tiene reservada). Lanza
+    CardEffectError si `reserved_card_id` no esta reservada.
+    """
+    if reserved_card_id not in player["reserved_cards"]:
+        raise CardEffectError(f"'{reserved_card_id}' no esta reservada")
+    current = player["reserved_cards"][reserved_card_id]
+    new_reserved = {
+        **player["reserved_cards"],
+        reserved_card_id: {**current, "resources": current["resources"] * 2},
+    }
+    return {**player, "reserved_cards": new_reserved}
+
+
+def compute_reserved_card_discount(player: PlayerState, card_id: str) -> int:
+    """
+    MC de descuento por jugar `card_id` desde reserved_cards en vez de desde
+    la mano -- igual a los recursos acumulados sobre ella (0 si no esta
+    reservada). Ver tools.play_card: se suma al resto de descuentos antes
+    de calcular el costo efectivo.
+    """
+    reserved = player["reserved_cards"].get(card_id)
+    return reserved["resources"] if reserved is not None else 0
+
+
+def release_reserved_card(player: PlayerState, card_id: str) -> PlayerState:
+    """
+    Saca `card_id` de reserved_cards una vez que tools.play_card la jugo
+    (ya gasto su descuento, no queda mas rastro de la reserva). No-op si la
+    carta no estaba reservada.
+    """
+    if card_id not in player["reserved_cards"]:
+        return player
+    new_reserved = {k: v for k, v in player["reserved_cards"].items() if k != card_id}
+    return {**player, "reserved_cards": new_reserved}
+
 
 def increment_tags_played(player: PlayerState, card_tags: tuple[str, ...]) -> PlayerState:
     """

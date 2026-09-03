@@ -48,6 +48,10 @@ from app.agent.rules_engine import (
     resolve_research_phase,
     draw_cards_to_hand,
     remove_card_from_hand,
+    reserve_card_in_slot,
+    duplicate_reserved_card_resources,
+    compute_reserved_card_discount,
+    release_reserved_card,
     player_has_tag_swap_passive,
     swap_card_for_draw,
     register_played_card,
@@ -2773,6 +2777,97 @@ def test_viral_enhancers_any_tag_played_choice_add_or_gain():
     # Dispara incluso cuando la carta recien jugada ES viral_enhancers (self-trigger)
     p3 = apply_any_tag_played_choice(player, "viral_enhancers", ("microbe",), "add")
     assert p3["active_cards"]["viral_enhancers"]["resources"] == 1
+
+
+def test_reserve_card_in_slot_moves_from_hand_and_stacks_resources():
+    player = register_active_card(new_player_state(), "self_replicating_robots")
+    player = {**player, "hand": ["asteroid_mining_consortium", "other_card"]}
+
+    reserved = reserve_card_in_slot(player, "self_replicating_robots", "asteroid_mining_consortium")
+    assert reserved["hand"] == ["other_card"]
+    assert reserved["reserved_cards"]["asteroid_mining_consortium"] == {
+        "resources": 2, "holder_card_id": "self_replicating_robots",
+    }
+    assert compute_reserved_card_discount(reserved, "asteroid_mining_consortium") == 2
+    assert compute_reserved_card_discount(reserved, "other_card") == 0
+
+    # No se puede reservar una carta que no esta en la mano
+    with pytest.raises(CardNotInHandError):
+        reserve_card_in_slot(reserved, "self_replicating_robots", "nonexistent_card")
+
+    # No se puede reservar la misma carta dos veces
+    hand_again = {**reserved, "hand": [*reserved["hand"], "asteroid_mining_consortium"]}
+    with pytest.raises(CardEffectError):
+        reserve_card_in_slot(hand_again, "self_replicating_robots", "asteroid_mining_consortium")
+
+
+def test_duplicate_reserved_card_resources():
+    player = reserve_card_in_slot(
+        {**new_player_state(), "hand": ["asteroid_mining_consortium"]},
+        "self_replicating_robots", "asteroid_mining_consortium",
+    )
+    doubled = duplicate_reserved_card_resources(player, "asteroid_mining_consortium")
+    assert doubled["reserved_cards"]["asteroid_mining_consortium"]["resources"] == 4
+    doubled_again = duplicate_reserved_card_resources(doubled, "asteroid_mining_consortium")
+    assert doubled_again["reserved_cards"]["asteroid_mining_consortium"]["resources"] == 8
+
+    with pytest.raises(CardEffectError):
+        duplicate_reserved_card_resources(player, "not_reserved")
+
+
+def test_release_reserved_card():
+    player = reserve_card_in_slot(
+        {**new_player_state(), "hand": ["asteroid_mining_consortium"]},
+        "self_replicating_robots", "asteroid_mining_consortium",
+    )
+    released = release_reserved_card(player, "asteroid_mining_consortium")
+    assert "asteroid_mining_consortium" not in released["reserved_cards"]
+    assert compute_reserved_card_discount(released, "asteroid_mining_consortium") == 0
+    # no-op si la carta no estaba reservada
+    assert release_reserved_card(released, "asteroid_mining_consortium") == released
+
+
+def test_self_replicating_robots_action_reserve_or_duplicate_via_use_card_action():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "self_replicating_robots")
+    player = {**player, "hand": ["asteroid_mining_consortium"]}
+    action_spec = {
+        "choice": [
+            {"gains": {"reserve_card_from_hand": {"requires_tag_any": ["space", "building"], "initial_resources": 2}}},
+            {"gains": {"duplicate_reserved_card": True}},
+        ]
+    }
+
+    # effect_choice=0: reserva la carta de la mano
+    new_player, _ = use_card_action(
+        player, globals_, "self_replicating_robots", action_spec, effect_choice=0,
+        reserved_card_id="asteroid_mining_consortium",
+    )
+    assert new_player["hand"] == []
+    assert new_player["reserved_cards"]["asteroid_mining_consortium"]["resources"] == 2
+    assert new_player["active_cards"]["self_replicating_robots"]["action_used"] is True
+
+    # La accion ya se uso esta generacion
+    with pytest.raises(CardEffectError):
+        use_card_action(
+            new_player, globals_, "self_replicating_robots", action_spec, effect_choice=1,
+            reserved_card_id="asteroid_mining_consortium",
+        )
+
+    # Reseteando action_used (nueva generacion), effect_choice=1: duplica
+    reset_player = {
+        **new_player,
+        "active_cards": {"self_replicating_robots": {"resources": 0, "action_used": False}},
+    }
+    duplicated, _ = use_card_action(
+        reset_player, globals_, "self_replicating_robots", action_spec, effect_choice=1,
+        reserved_card_id="asteroid_mining_consortium",
+    )
+    assert duplicated["reserved_cards"]["asteroid_mining_consortium"]["resources"] == 4
+
+    # Sin reserved_card_id, falla
+    with pytest.raises(CardEffectError):
+        use_card_action(reset_player, globals_, "self_replicating_robots", action_spec, effect_choice=0)
 
 
 def test_rad_suits_requires_2_city_tiles():
