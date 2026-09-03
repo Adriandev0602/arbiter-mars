@@ -57,6 +57,7 @@ from app.agent.rules_engine import (
     apply_standard_project_used_bonuses,
     apply_city_placed_bonuses,
     apply_tag_played_choice,
+    apply_any_tag_played_choice,
 )
 
 
@@ -2733,6 +2734,45 @@ def test_olympus_conference_tag_played_choice_add_or_spend():
     p2 = apply_tag_played_choice(p1, ("science",), "spend")
     assert p2["active_cards"]["olympus_conference"]["resources"] == 0
     assert p2["hand"] == ["card_a"]
+
+
+def test_viral_enhancers_any_tag_played_choice_add_or_gain():
+    player = register_active_card(new_player_state(), "viral_enhancers")
+    player = register_passive_effect(
+        player, "viral_enhancers",
+        {"on_any_tag_played_choice": {
+            "matching_tags": ["plant", "microbe", "animal"],
+            "add_resource_choice": {"resource_delta": 1},
+            "gain_resource_choice": {"resource": "plants", "amount": 1},
+        }},
+    )
+    player = register_active_card(player, "ecological_zone")
+
+    # None (no elegir) no hace nada
+    unchanged = apply_any_tag_played_choice(player, "ecological_zone", ("animal",), None)
+    assert unchanged == player
+
+    # No dispara con un tag que no matchea
+    not_triggered = apply_any_tag_played_choice(player, "ecological_zone", ("earth",), "add")
+    assert not_triggered == player
+
+    # "add" suma 1 recurso a la carta RECIEN JUGADA (no a viral_enhancers)
+    p1 = apply_any_tag_played_choice(player, "ecological_zone", ("animal",), "add")
+    assert p1["active_cards"]["ecological_zone"]["resources"] == 1
+    assert p1["active_cards"]["viral_enhancers"]["resources"] == 0
+
+    # "add" sobre una carta sin caja de recursos (no en active_cards) falla
+    with pytest.raises(CardEffectError):
+        apply_any_tag_played_choice(player, "some_event_card", ("plant",), "add")
+
+    # "gain" suma 1 planta al jugador, no toca ninguna carta
+    p2 = apply_any_tag_played_choice(player, "ecological_zone", ("microbe",), "gain")
+    assert p2["plants"] == player["plants"] + 1
+    assert p2["active_cards"]["ecological_zone"]["resources"] == 0
+
+    # Dispara incluso cuando la carta recien jugada ES viral_enhancers (self-trigger)
+    p3 = apply_any_tag_played_choice(player, "viral_enhancers", ("microbe",), "add")
+    assert p3["active_cards"]["viral_enhancers"]["resources"] == 1
 
 
 def test_rad_suits_requires_2_city_tiles():

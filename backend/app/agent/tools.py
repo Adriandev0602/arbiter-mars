@@ -305,6 +305,7 @@ def play_card(
     target_card_id: str | None = None,
     target_card_id_2: str | None = None,
     tag_played_choice: str | None = None,
+    any_tag_played_choice: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -376,6 +377,14 @@ def play_card(
             -- una SEGUNDA carta activa distinta a la de target_card_id (ej.
             Imported Nitrogen: 3 microbios a una carta, 2 animales a otra).
             None si la carta no tiene esta mecanica.
+        any_tag_played_choice: OPCIONAL -- "add" o "gain", si el jugador
+            tiene un pasivo "on_any_tag_played_choice" activo que matchea
+            alguno de los tags de la carta que se esta jugando (ej. Viral
+            Enhancers: tags plant/microbe/animal, dispara incluso si la
+            carta que dispara es esta misma). "add" suma un recurso a la
+            carta RECIEN JUGADA (`card_id`, debe tener caja de recursos);
+            "gain" suma el recurso propio que indique el pasivo (ej. +1
+            planta). None si no quiere ejercer la opcion.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -568,6 +577,7 @@ def play_card(
         new_player = engine.swap_card_for_draw(new_player, discard_for_draw_card_id)
 
     new_player = engine.apply_tag_played_choice(new_player, card_tags, tag_played_choice)
+    new_player = engine.apply_any_tag_played_choice(new_player, card_id, card_tags, any_tag_played_choice)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -584,7 +594,7 @@ def play_card(
          "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id,
          "duplicate_production_target_card_id": duplicate_production_target_card_id,
          "target_card_id": target_card_id, "target_card_id_2": target_card_id_2,
-         "tag_played_choice": tag_played_choice},
+         "tag_played_choice": tag_played_choice, "any_tag_played_choice": any_tag_played_choice},
     )
 
     return {

@@ -228,9 +228,26 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| 074 | Viral Enhancers | Pasivo que dispara con CUALQUIER carta de tag plant/microbe/animal jugada (no solo eventos, no automático como `on_event_played`) y le da al jugador una elección EN ESE MOMENTO: +1 planta O agregar 1 recurso a una carta específica ya en juego. Es distinto de `target_card_resource_delta`/`move_from_target_card_resource_delta` (resuelto abajo) porque esos dos son para un efecto inmediato al jugar la carta o una acción repetible — acá el trigger es el evento "se jugó una carta con tag X" y todavía falta la pieza de pasivo-con-elección-del-jugador-al-dispararse (los pasivos actuales, `on_tag_played_add_resource`, son automáticos sin elección). |
 | 140 | Lava Flows | Sube temperatura 2 pasos (trivial) pero además coloca su tile en UNO de 4 hexágonos volcánicos nombrados específicamente (Tharsis Tholus, Ascraeus Mons, Pavonis Mons, Arsia Mons) — el mapa (`board.py`) todavía no asigna nombre individual a esos 4 hexágonos ni tiene un requirement tipo "uno de esta lista de hex_ids" en `can_place_special_tile` (hoy solo filtra por `hex_type`/bonus/adyacencia genérica, ver nota "Nombrar los 4 hexágonos volcánicos" en `HEX_MAP_RESEARCH.md`). Implementar esa pieza requeriría verificar contra la fuente qué hex_id corresponde a cada volcán — no reverificado todavía, no arriesgar la precisión cargando algo mal identificado. |
 | 210 | Self-Replicating Robots | Requiere 2 tags de ciencia. Su acción "reserva" una carta de tag space o building de la MANO sobre esta carta (sin jugarla ni pagarla todavía) con 2 recursos encima, O duplica los recursos de una carta ya reservada ahí; luego esas cartas reservadas se pueden jugar "como si estuvieran en la mano" con el costo reducido en la cantidad de recursos acumulados. Es una mecánica nueva y grande: un "slot de reserva" por carta (no un simple contador de recursos como `active_cards`), con su propio flujo de pago con descuento variable acumulado con el tiempo — no encaja en `target_card_resource_delta`/`card_resource_delta` existentes porque esos asumen que la carta objetivo ya está jugada/activa, no reservada sin jugar. Justifica una pieza aparte cuando se aborde, no una carta más al pasar. |
+
+**Resuelto (2026-09-02):** la pieza que faltaba para Viral Enhancers (074) —
+pasivo con elección del jugador que dispara con CUALQUIER carta de tag
+plant/microbe/animal jugada y targetea la carta RECIÉN JUGADA, no la que
+tiene el pasivo — quedó implementada en `rules_engine.py` como
+`on_any_tag_played_choice` (registrado vía `register_passive_effect`,
+aplicado vía `apply_any_tag_played_choice`, cableado en
+`tools.play_card` con el parámetro `any_tag_played_choice`). Distinto de
+`on_tag_played_choice` (targetea siempre la carta portadora del pasivo, ej.
+Olympus Conference): acá el target es `card_id`, la carta que se está
+jugando en esa misma llamada — funciona tanto para el auto-disparo (Viral
+Enhancers jugándose a sí misma) como para cualquier otra carta con tag
+coincidente jugada después. Test:
+`test_viral_enhancers_any_tag_played_choice_add_or_gain` en
+`test_rules_engine.py`. La carta todavía no está cargada en
+`seed_cards.sql` (falta releer el scan real y confirmar costo/tags exactos)
+— queda disponible para el próximo bloque de revisión de cartas, ya sin
+bloqueo de mecánica.
 
 **Resuelto (2026-09-01):** la pieza "mover/agregar un recurso a una carta específica elegida
 por el jugador, distinta de la que se está jugando/usando" (identificada primero en Local Heat

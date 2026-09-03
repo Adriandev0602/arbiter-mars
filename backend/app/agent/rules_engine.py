@@ -1150,6 +1150,18 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         Conference: tag "science", +1 recurso O gastar 1 para robar 1
         carta). Ver tools.play_card (parametro tag_played_choice) y
         rules_engine.apply_tag_played_choice.
+      - "on_any_tag_played_choice": {"matching_tags": ["<tag>", ...],
+        "add_resource_choice": {"resource_delta": N (default 1)},
+        "gain_resource_choice": {"resource": "<recurso>", "amount": N
+        (default 1)}} -- distinto de on_tag_played_choice: el target del
+        "add" no es la carta que tiene el pasivo, sino la CARTA RECIEN
+        JUGADA que disparo el match (debe estar en active_cards, es decir
+        tener caja de recursos). Dispara con cualquier carta jugada que
+        tenga alguno de esos tags, incluida la que registra el pasivo (ej.
+        Viral Enhancers: tags plant/microbe/animal, +1 recurso a la carta
+        recien jugada O +1 planta para el jugador). Ver tools.play_card
+        (parametro any_tag_played_choice) y
+        rules_engine.apply_any_tag_played_choice.
 
     No revisa duplicados: cada carta se juega una sola vez en este motor.
     """
@@ -1413,6 +1425,55 @@ def apply_tag_played_choice(
             new_player = {**player, "active_cards": new_active_cards}
             return draw_cards_to_hand(new_player, spend_spec.get("draw_cards", 1))
         raise CardEffectError(f"choice invalido '{choice}', debe ser 'add' o 'spend'")
+    return player
+
+
+def apply_any_tag_played_choice(
+    player: PlayerState, played_card_id: str, played_card_tags: tuple[str, ...], choice: str | None
+) -> PlayerState:
+    """
+    Aplica el pasivo "on_any_tag_played_choice": {"matching_tags": ["<tag>",
+    ...], "add_resource_choice": {"resource_delta": N (default 1)},
+    "gain_resource_choice": {"resource": "<recurso>", "amount": N (default
+    1)}} -- a diferencia de apply_tag_played_choice, el target de "add" es
+    la CARTA RECIEN JUGADA (`played_card_id`), no la carta que registra el
+    pasivo (ej. Viral Enhancers: +1 recurso a la carta que se acaba de
+    jugar, O +1 planta para el jugador). None (no elegir) no hace nada --
+    ver tools.play_card, parametro any_tag_played_choice.
+
+    Si mas de un pasivo de este tipo matchea, se aplica el de la PRIMERA
+    carta activa encontrada con este pasivo.
+    """
+    if choice is None:
+        return player
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_any_tag_played_choice")
+        if spec is None:
+            continue
+        matching_tags = set(spec.get("matching_tags", []))
+        if not matching_tags.intersection(played_card_tags):
+            continue
+        if choice == "add":
+            if played_card_id not in player["active_cards"]:
+                raise CardEffectError(
+                    f"'{played_card_id}' no tiene caja de recursos, no se le puede agregar recurso"
+                )
+            amount = spec.get("add_resource_choice", {}).get("resource_delta", 1)
+            current_res = player["active_cards"][played_card_id]["resources"]
+            new_active_cards = {
+                **player["active_cards"],
+                played_card_id: {
+                    **player["active_cards"][played_card_id],
+                    "resources": current_res + amount,
+                },
+            }
+            return {**player, "active_cards": new_active_cards}
+        if choice == "gain":
+            gain_spec = spec.get("gain_resource_choice", {})
+            resource = gain_spec["resource"]
+            amount = gain_spec.get("amount", 1)
+            return {**player, resource: player[resource] + amount}  # type: ignore[typeddict-item]
+        raise CardEffectError(f"choice invalido '{choice}', debe ser 'add' o 'gain'")
     return player
 
 
