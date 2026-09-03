@@ -59,6 +59,11 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists reserved_cards jsonb not null default '{}'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -130,6 +135,14 @@ create table if not exists players (
     -- rules_engine.check_card_requirements ("next_card_requirement_tolerance_steps")
     -- y tools.play_card.
     pending_requirement_tolerance_steps integer not null default 0,
+
+    -- reserved_cards: {reserved_card_id: {"resources": int,
+    -- "holder_card_id": str}} -- cartas de la mano reservadas sobre otra
+    -- carta activa (ej. Self-Replicating Robots) sin jugarlas ni pagarlas
+    -- todavia, con recursos acumulables que despues descuentan su costo.
+    -- Ver rules_engine.reserve_card_in_slot / compute_reserved_card_discount
+    -- y tools.play_card / tools.use_card_action.
+    reserved_cards jsonb not null default '{}'::jsonb,
 
     created_at timestamptz not null default now()
 );
