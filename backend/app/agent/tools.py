@@ -382,8 +382,11 @@ def play_card(
             elegida via effect_choice) tiene `target_card_resource_delta` --
             el id de OTRA carta ya activa del jugador (en `active_cards`) a
             la que se le agregan recursos (ej. Local Heat Trapping, Imported
-            Hydrogen, Eos Chasma National Park). None si la carta no tiene
-            esta mecanica.
+            Hydrogen, Eos Chasma National Park). Tambien obligatorio si tiene
+            `target_card_resource_delta_per_tag` Y el conteo de tags da mas
+            de 0 (ej. Hydrogen to Venus: floaters por cada tag jovian -- si
+            el jugador no tiene tags jovian, no hace falta pasar nada). None
+            si la carta no tiene esta mecanica.
         target_card_id_2: OBLIGATORIO si `effects` tiene `target_card_resource_delta_2`
             -- una SEGUNDA carta activa distinta a la de target_card_id (ej.
             Imported Nitrogen: 3 microbios a una carta, 2 animales a otra).

@@ -138,44 +138,57 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-02, bloques 12→20 + Venus Next + Lava Flows)
+### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→21 + Venus Next + Lava Flows)
 
-**Progreso:** catálogo en **212 cartas** cargadas en `cards`. `main` ya tiene mergeados los
-bloques 13-20 (incluye el bloque 20 completo de Venus Next, mergeado por el usuario vía PR),
-más las piezas de mecánica de Viral Enhancers, Self-Replicating Robots y el soporte a Venus
-Next. `card_review_queue` tiene 102 filas `reviewed = true` y **200 sin revisar** — el próximo
-bloque (21) son las filas #1-10 de `select * from card_review_queue where reviewed = false
-order by id limit 10`.
+**Progreso:** catálogo en **221 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-20 y Lava Flows (140). `card_review_queue` tiene 111 filas `reviewed = true` y
+**191 sin revisar** — el próximo bloque (22) son las filas #1-10 de `select * from
+card_review_queue where reviewed = false order by id limit 10`.
 
 **Decisión de alcance (2026-09-02):** la expansión **Venus Next** entró al alcance del proyecto
 porque el bloque 20 completo resultó ser de esa expansión (ver sección 7). Motor extendido con
-4to parámetro global `venus` + proyecto estándar `air_scrapping` — ver sección 3. Si los
-próximos bloques siguen trayendo cartas de otras expansiones nuevas (Colonies, Prelude, Ares),
-la misma pregunta aplica: confirmar con el usuario antes de asumir que entran al alcance.
+4to parámetro global `venus` + proyecto estándar `air_scrapping` — ver sección 3. El bloque 21
+también resultó ser íntegramente Venus Next (191 filas sin revisar todavía, mayoría probable de
+la misma expansión) -- si los próximos bloques siguen trayendo cartas de OTRAS expansiones
+nuevas (Colonies, Prelude, Ares), la misma pregunta aplica: confirmar con el usuario antes de
+asumir que entran al alcance.
 
-**Lava Flows (140) resuelta (2026-09-02):** los 4 hexágonos volcánicos ya tienen nombre
-(`VOLCANO_NAMES` en `board.py`, ver "Los 4 volcanes con nombre" en `HEX_MAP_RESEARCH.md` para
-las dos fuentes usadas -- coordenadas areográficas oficiales + verificación cruzada con Noctis
-City), con requirement genérico nuevo `hex_id_in` en `can_place_special_tile`. Carta cargada y
-verificada contra su scan real (18 MC, evento, sin tag).
+**Verificación contra el rulebook oficial (2026-09-02):** se releyó el reglamento completo
+(fryxgames/Stronghold Games, 16 páginas) y se cruzó contra el motor -- sin discrepancias
+encontradas (proyectos estándar, colocación de tiles, bonus de adyacencia oceánica, fase de
+investigación, todo coincide). Se documentó una decisión ya implícita: el modo "un jugador" de
+este proyecto es una partida ESTÁNDAR (TR 20), no la variante solitario oficial del reglamento
+(TR 14, 14 generaciones fijas, ciudades neutrales) -- ver sección 7 más abajo.
+
+**Bloque 21 (Venus Next):** 9 de 10 cargadas -- Extractor Balloons, Extremophiles, Floating
+Habs, Forced Precipitation, Freyja Biodomes, GHG Import from Venus, Giant Solar Shade,
+Gyropolis, Hydrogen to Venus. Dos piezas de motor nuevas (ambas extensiones chicas de
+vocabulario existente, no mecánica nueva): `production_delta_per_tag` ahora acepta una LISTA de
+specs (antes solo un dict, ver Gyropolis) y `target_card_resource_delta_per_tag` (combina
+target_card_resource_delta con production_delta_per_tag, ver Hydrogen to Venus).
 
 **Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
-creada a partir de la rama del bloque anterior (o de `main` una vez que un bloque ya se
-mergeó), commiteada y pusheada a `origin` individualmente. Lava Flows (no es un bloque de 10
-cartas nuevo, sino resolver una carta ya identificada como pendiente) vive en su propia rama
-`feat/lava-flows-mechanic`, ramificada desde `main` -- pusheada, no mergeada todavía.
+creada a partir de `main` una vez que el bloque anterior ya se mergeó, commiteada y pusheada a
+`origin` individualmente. El bloque 21 vive en `feat/review-block-21` -- pusheada, no mergeada
+todavía.
 
-**Carta pendiente identificada (`CARDS_LOG.md`, sección "Pendientes"), con su pieza de
-mecánica ya diagnosticada pero no implementada:**
+**Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su
+pieza de mecánica ya diagnosticada pero no implementada:**
 - **Aerosport Tournament** (214, Venus Next): requisito "tener 5 floaters" — suma de un recurso
   de un tipo específico a través de TODAS las cartas activas del jugador, no solo una carta
   puntual. `active_cards[card_id]["resources"]` no distingue tipo de recurso hoy (microbio,
   animal o floater son el mismo contador sin etiqueta) — necesita esa etiqueta por carta más un
-  requirement nuevo (`min_total_card_resources`) que sume sobre las que matcheen. Prevista para
-  cuando aparezcan más cartas Venus Next de este tipo (varias piden "N floaters" acumulados).
+  requirement nuevo (`min_total_card_resources`) que sume sobre las que matcheen.
+- **Dirigibles** (222, Venus Next): pasivo "floaters guardados en ESTA carta valen 3 M€ cada
+  uno al pagar cartas con tag Venus" -- una TERCERA moneda de pago (como acero/titanio) cuyo
+  stock vive en una carta activa, no en el jugador. Necesita parámetro nuevo en `tools.play_card`
+  (`floater_card_id` + cantidad) y extender el cálculo de pago. Misma categoría que
+  Self-Replicating Robots (mecánica de pago no trivial) -- pospuesta para abordarla con foco
+  dedicado, no forzada en un bloque de revisión normal. Es probable que se repita en más cartas
+  Venus Next -- verificar cuando aparezcan antes de diseñar la pieza definitiva.
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-21`, consultar
+checkout -b feat/review-block-22`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans

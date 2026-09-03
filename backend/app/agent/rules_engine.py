@@ -767,7 +767,10 @@ def apply_card_effect(
         tag "<tag>" ya jugado (no es un umbral binario como tag_count_choice,
         escala linealmente) (ej. Miranda Resort: +1 produccion de MC por cada
         tag earth jugado). Tambien lee `tags_played` antes de sumar los tags
-        de la carta actual.
+        de la carta actual. Acepta tambien una LISTA de specs (igual que
+        min_tag_count en check_card_requirements) para sumar por mas de un
+        tag a la vez (ej. Gyropolis: +1 produccion de MC por cada tag venus
+        Y +1 por cada tag earth, en la misma carta).
       - "tr_delta_per_tag": {"tag": "<tag>", "per_tag": N (default 1),
         "include_this": bool} -- igual que production_delta_per_tag pero
         sube el TR directo en vez de una produccion (ej. Terraforming
@@ -798,6 +801,13 @@ def apply_card_effect(
         carta y 2 animales a OTRA carta distinta, en la misma jugada). Sin
         target_min_resources propio -- si algun dia una carta lo necesita,
         agregar target_min_resources_2 en vez de generalizar de mas.
+      - "target_card_resource_delta_per_tag": {"tag": "<tag>", "per_tag": N
+        (default 1), "include_this": bool} -- combina target_card_resource_delta
+        con production_delta_per_tag: agrega a OTRA carta activa (via
+        `target_card_id`) tantos recursos como N por cada tag "<tag>" ya
+        jugado (ej. Hydrogen to Venus: +1 floater a una carta Venus por cada
+        tag jovian). Si el conteo da 0, no hace nada y NO exige
+        target_card_id (jugar la carta sigue siendo legal sin tags jovian).
 
     NOTA sobre "remove up to N <recurso> from any player": varias cartas del
     catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
@@ -843,15 +853,18 @@ def apply_card_effect(
             new_player[key] = _apply_production_floor(key, new_player[key] + delta)
 
     if "production_delta_per_tag" in effects:
-        spec = effects["production_delta_per_tag"]
-        key = spec["production"]
-        count = player["tags_played"].get(spec["tag"], 0)
-        if spec.get("include_this"):
-            count += 1
-        tags_per_step = spec.get("tags_per_step", 1)
-        per_step = spec.get("per_step", spec.get("per_tag", 1))
-        delta = (count // tags_per_step) * per_step
-        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+        specs = effects["production_delta_per_tag"]
+        if isinstance(specs, dict):
+            specs = [specs]
+        for spec in specs:
+            key = spec["production"]
+            count = player["tags_played"].get(spec["tag"], 0)
+            if spec.get("include_this"):
+                count += 1
+            tags_per_step = spec.get("tags_per_step", 1)
+            per_step = spec.get("per_step", spec.get("per_tag", 1))
+            delta = (count // tags_per_step) * per_step
+            new_player[key] = _apply_production_floor(key, new_player[key] + delta)
 
     if "tr_delta_per_tag" in effects:
         spec = effects["tr_delta_per_tag"]
@@ -976,6 +989,25 @@ def apply_card_effect(
             "resources": max(0, new_active_cards[target_card_id_2]["resources"] + amount),
         }
         new_player["active_cards"] = new_active_cards
+
+    if "target_card_resource_delta_per_tag" in effects:
+        spec = effects["target_card_resource_delta_per_tag"]
+        count = player["tags_played"].get(spec["tag"], 0)
+        if spec.get("include_this"):
+            count += 1
+        amount = count * spec.get("per_tag", 1)
+        if amount > 0:
+            if target_card_id is None:
+                raise CardEffectError("Esta carta requiere target_card_id")
+            active_cards = new_player["active_cards"]
+            if target_card_id not in active_cards:
+                raise CardEffectError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+            new_active_cards = dict(active_cards)
+            new_active_cards[target_card_id] = {
+                **new_active_cards[target_card_id],
+                "resources": max(0, new_active_cards[target_card_id]["resources"] + amount),
+            }
+            new_player["active_cards"] = new_active_cards
 
     return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
 
