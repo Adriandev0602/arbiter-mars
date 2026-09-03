@@ -1017,6 +1017,73 @@ on conflict (id) do update set
     requirements = excluded.requirements,
     effects = excluded.effects;
 
+-- Bloque de revision 23 (Venus Next). Las 10 resueltas. Dos piezas nuevas
+-- chicas de motor: "mc_or_titanium" en el cost de use_card_action (Rotator
+-- Impacts: el titanio puede cubrir parte/todo un costo en MC de una accion,
+-- igual que al pagar cartas) y "discard_card_then_draw" en apply_card_effect
+-- (Sponsored Academies: descartar 1 carta elegida, robar N).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'orbital_reflectors', 'Orbital Reflectors', 26, '{venus,power}', null,
+        '{"raise_venus_steps": 2, "production_deltas": {"heat_production": 2}}'::jsonb
+    ),
+    (
+        'rotator_impacts', 'Rotator Impacts', 6, '{power}', '{"max_venus": 14}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"cost": {"mc_or_titanium": 6}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"raise_venus_steps": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'sister_planet_support', 'Sister Planet Support', 7, '{venus,earth}',
+        '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}]}'::jsonb,
+        '{"production_deltas": {"mc_production": 3}}'::jsonb
+    ),
+    (
+        'solarnet', 'Solarnet', 7, '{venus,earth,jovian}',
+        '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
+        '{"draw_cards": 2}'::jsonb
+    ),
+    (
+        'spin_inducing_asteroid', 'Spin-Inducing Asteroid', 16, '{power}', '{"max_venus": 10}'::jsonb,
+        '{"raise_venus_steps": 2}'::jsonb
+    ),
+    (
+        -- "each opponent draws 1" omitida (no afecta al jugador en single-player).
+        'sponsored_academies', 'Sponsored Academies', 9, '{}',
+        '{"min_tag_count": [{"tag": "science", "count": 1}, {"tag": "earth", "count": 1}]}'::jsonb,
+        '{"discard_card_then_draw": {"draw": 3}}'::jsonb
+    ),
+    (
+        'stratopolis', 'Stratopolis', 22, '{venus,city}',
+        '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}, "place_city_tiles": 1, "becomes_active": true,
+          "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"target_card_resource_delta": 2}}}'::jsonb
+    ),
+    (
+        'stratospheric_birds', 'Stratospheric Birds', 12, '{venus,animal}', '{"min_venus": 12}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"move_from_target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'sulphur_exports', 'Sulphur Exports', 21, '{venus}', null,
+        '{"raise_venus_steps": 1, "production_delta_per_tag": {"tag": "venus", "production": "mc_production", "per_tag": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'sulphur_eating_bacteria', 'Sulphur-Eating Bacteria', 6, '{venus,microbe}', '{"min_venus": 6}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"convert_card_resource_amount": {"to": "mc", "ratio": 3}}
+        ]}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
+
+update cards set is_event = true where id in ('spin_inducing_asteroid');
+
 -- Marca como "Event" (dispara bonus pasivos "on_event_played" de otras
 -- cartas al jugarse) las cartas que corresponden en el juego real.
 update cards set is_event = true

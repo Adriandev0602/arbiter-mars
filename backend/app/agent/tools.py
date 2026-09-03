@@ -311,6 +311,7 @@ def play_card(
     target_card_id_2: str | None = None,
     tag_played_choice: str | None = None,
     any_tag_played_choice: str | None = None,
+    discard_card_id: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -399,6 +400,12 @@ def play_card(
             carta RECIEN JUGADA (`card_id`, debe tener caja de recursos);
             "gain" suma el recurso propio que indique el pasivo (ej. +1
             planta). None si no quiere ejercer la opcion.
+        discard_card_id: OBLIGATORIO si `effects.discard_card_then_draw` esta
+            definido (ej. Sponsored Academies: descartar 1 carta de la mano
+            y robar 3) -- el id de la carta a descartar (debe estar en la
+            mano). None si la carta no tiene esta mecanica. Distinto de
+            `discard_for_draw_card_id` (ese es para el pasivo opcional
+            "on_tag_played_may_swap_card").
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -479,6 +486,7 @@ def play_card(
     new_player, new_globals = engine.apply_card_effect(
         paid_player, globals_, effects, effect_amount, effect_choice,
         target_card_id=target_card_id, target_card_id_2=target_card_id_2,
+        discard_card_id=discard_card_id,
     )
 
     # El efecto resuelto (incluso detras de choice/tag_count_choice) puede
@@ -616,7 +624,8 @@ def play_card(
          "special_tile_hex_id": special_tile_hex_id, "discard_for_draw_card_id": discard_for_draw_card_id,
          "duplicate_production_target_card_id": duplicate_production_target_card_id,
          "target_card_id": target_card_id, "target_card_id_2": target_card_id_2,
-         "tag_played_choice": tag_played_choice, "any_tag_played_choice": any_tag_played_choice},
+         "tag_played_choice": tag_played_choice, "any_tag_played_choice": any_tag_played_choice,
+         "discard_card_id": discard_card_id},
     )
 
     return {
@@ -634,6 +643,7 @@ def use_card_action(
     target_card_id: str | None = None,
     effect_amount: int | None = None,
     reserved_card_id: str | None = None,
+    titanium_to_pay: int = 0,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -666,6 +676,10 @@ def use_card_action(
             accion (`requires_tag_any`, ej. space o building); para
             "duplicate_reserved_card", el id de una carta ya reservada por
             esta misma carta. None si la accion no tiene esta mecanica.
+        titanium_to_pay: OPCIONAL, solo si `effects.action.cost.mc_or_titanium`
+            esta definido -- cuanto titanio declara pagar el jugador hacia
+            ese costo (el resto se cubre con MC del stock). 0 (default) paga
+            todo en MC.
 
     Returns:
         dict con el estado actualizado del jugador y, si la accion afecto
@@ -709,7 +723,7 @@ def use_card_action(
 
     new_player, new_globals = engine.use_card_action(
         player, globals_, card_id, action_spec, effect_choice, target_card_id=target_card_id,
-        effect_amount=effect_amount, reserved_card_id=reserved_card_id,
+        effect_amount=effect_amount, reserved_card_id=reserved_card_id, titanium_to_pay=titanium_to_pay,
     )
 
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
