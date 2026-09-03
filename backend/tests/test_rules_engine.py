@@ -3509,3 +3509,129 @@ def test_hydrogen_to_venus_raises_venus_and_floaters_per_jovian_tag():
     new_player2, new_globals2 = apply_card_effect(player_no_jovian, new_global_parameters(), effects)
     assert new_globals2["venus"] == 2
     assert new_player2["active_cards"] == player_no_jovian["active_cards"]
+
+
+# --- Bloque de revision 22 (Venus Next) --------------------------------------
+
+def test_io_sulphur_research_draws_3_with_3_venus_tags_else_1():
+    effects = {"tag_count_choice": {"tag": "venus", "count": 3, "if_met": {"draw_cards": 3}, "else": {"draw_cards": 1}}}
+
+    player_no_venus = {**new_player_state(), "deck": ["a"]}
+    new_player, _ = apply_card_effect(player_no_venus, new_global_parameters(), effects)
+    assert new_player["hand"] == ["a"]
+
+    player_3_venus = {**new_player_state(), "tags_played": {"venus": 3}, "deck": ["a", "b", "c"]}
+    new_player2, _ = apply_card_effect(player_3_venus, new_global_parameters(), effects)
+    assert new_player2["hand"] == ["a", "b", "c"]
+
+
+def test_ishtar_mining_requires_venus_8_percent_titanium_production():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 8}, {**new_global_parameters(), "venus": 6})
+    check_card_requirements({"min_venus": 8}, {**new_global_parameters(), "venus": 8})
+
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"production_deltas": {"titanium_production": 1}}
+    )
+    assert new_player["titanium_production"] == 2
+
+
+def test_jet_stream_microscrappers_action_choice_titanium_or_venus():
+    globals_ = new_global_parameters()
+    player = {**register_active_card(new_player_state(), "jet_stream_microscrappers"), "titanium": 1}
+    action_spec = {
+        "choice": [
+            {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 2}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}},
+        ]
+    }
+    p1, _ = use_card_action(player, globals_, "jet_stream_microscrappers", action_spec, effect_choice=0)
+    assert p1["active_cards"]["jet_stream_microscrappers"]["resources"] == 2
+    assert p1["titanium"] == 0
+
+    player_with_floaters = {
+        **player,
+        "active_cards": {"jet_stream_microscrappers": {"resources": 2, "action_used": False}},
+    }
+    p2, g2 = use_card_action(player_with_floaters, globals_, "jet_stream_microscrappers", action_spec, effect_choice=1)
+    assert p2["active_cards"]["jet_stream_microscrappers"]["resources"] == 0
+    assert g2["venus"] == 2
+
+
+def test_local_shading_action_choice_add_or_spend_for_mc_production():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "local_shading")
+    action_spec = {
+        "choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"production_deltas": {"mc_production": 1}}},
+        ]
+    }
+    p1, _ = use_card_action(player, globals_, "local_shading", action_spec, effect_choice=0)
+    assert p1["active_cards"]["local_shading"]["resources"] == 1
+
+    player_with_floater = {**player, "active_cards": {"local_shading": {"resources": 1, "action_used": False}}}
+    p2, _ = use_card_action(player_with_floater, globals_, "local_shading", action_spec, effect_choice=1)
+    assert p2["mc_production"] == 2
+
+
+def test_luna_metropolis_mc_production_per_earth_tag_including_this_places_city():
+    player = {**new_player_state(), "tags_played": {"earth": 2}}
+    effects = {
+        "production_delta_per_tag": {"tag": "earth", "production": "mc_production", "per_tag": 1, "include_this": True},
+        "place_city_tiles": 1,
+    }
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 3  # base 1 + (2 previos + esta misma = 3)
+    assert new_globals["city_tiles_placed"] == 1
+
+
+def test_luxury_foods_requires_venus_earth_jovian_no_state_change():
+    req = {"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"venus": 1, "earth": 1}})
+    check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"venus": 1, "earth": 1, "jovian": 1}})
+
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {})
+    assert new_player == new_player_state()
+    assert new_globals == new_global_parameters()
+
+
+def test_maxwell_base_requires_venus_12_energy_down_city_placed_action_targets_other_card():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 12}, {**new_global_parameters(), "venus": 10})
+    check_card_requirements({"min_venus": 12}, {**new_global_parameters(), "venus": 12})
+
+    player = register_active_card(new_player_state(), "maxwell_base")
+    effects = {"production_deltas": {"energy_production": -1}, "place_city_tiles": 1}
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["energy_production"] == 0
+    assert new_globals["city_tiles_placed"] == 1
+
+    player2 = register_active_card(player, "aerial_mappers")
+    action_spec = {"cost": {}, "gains": {"target_card_resource_delta": 1}}
+    new_player2, _ = use_card_action(player2, new_global_parameters(), "maxwell_base", action_spec, target_card_id="aerial_mappers")
+    assert new_player2["active_cards"]["aerial_mappers"]["resources"] == 1
+
+
+def test_mining_quota_requires_3_tags_steel_production():
+    req = {"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"jovian": 1}})
+
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"steel_production": 2}})
+    assert new_player["steel_production"] == 3
+
+
+def test_neutralizer_factory_requires_venus_10_raises_venus():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 10}, {**new_global_parameters(), "venus": 8})
+    _, new_globals = apply_card_effect(new_player_state(), {**new_global_parameters(), "venus": 10}, {"raise_venus_steps": 1})
+    assert new_globals["venus"] == 12
+
+
+def test_omnicourt_requires_3_tags_grants_2_tr():
+    req = {"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}
+    check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"venus": 1, "earth": 1, "jovian": 1}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"tr_delta": 2})
+    assert new_player["tr"] == 22

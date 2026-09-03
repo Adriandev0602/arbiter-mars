@@ -955,6 +955,60 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'hydrogen_to_venus', 'Hydrogen to Venus', 11, '{power}', null,
         '{"raise_venus_steps": 1, "target_card_resource_delta_per_tag": {"tag": "jovian", "per_tag": 1}}'::jsonb
+    ),
+
+    -- Bloque de revision 22 (Venus Next). Las 10 resueltas con vocabulario existente.
+    (
+        'io_sulphur_research', 'IO Sulphur Research', 17, '{science,jovian}', null,
+        '{"tag_count_choice": {"tag": "venus", "count": 3, "if_met": {"draw_cards": 3}, "else": {"draw_cards": 1}}}'::jsonb
+    ),
+    (
+        'ishtar_mining', 'Ishtar Mining', 5, '{venus}', '{"min_venus": 8}'::jsonb,
+        '{"production_deltas": {"titanium_production": 1}}'::jsonb
+    ),
+    (
+        'jet_stream_microscrappers', 'Jet Stream Microscrappers', 12, '{venus}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 2}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'local_shading', 'Local Shading', 4, '{venus}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"production_deltas": {"mc_production": 1}}}
+        ]}}'::jsonb
+    ),
+    (
+        'luna_metropolis', 'Luna Metropolis', 21, '{power,earth,city}', null,
+        '{"production_delta_per_tag": {"tag": "earth", "production": "mc_production", "per_tag": 1, "include_this": true}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        -- Sin efecto numerico modelado -- el texto real solo exige los 3 tags,
+        -- sin ningun cambio de estado (VP no trackeado, ver CLAUDE.md seccion 4).
+        'luxury_foods', 'Luxury Foods', 8, '{venus,earth,jovian}',
+        '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
+        '{}'::jsonb
+    ),
+    (
+        'maxwell_base', 'Maxwell Base', 18, '{venus,city}', '{"min_venus": 12}'::jsonb,
+        '{"production_deltas": {"energy_production": -1}, "place_city_tiles": 1, "becomes_active": true,
+          "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'mining_quota', 'Mining Quota', 5, '{venus,earth,jovian,building}',
+        '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
+        '{"production_deltas": {"steel_production": 2}}'::jsonb
+    ),
+    (
+        'neutralizer_factory', 'Neutralizer Factory', 7, '{venus}', '{"min_venus": 10}'::jsonb,
+        '{"raise_venus_steps": 1}'::jsonb
+    ),
+    (
+        'omnicourt', 'Omnicourt', 11, '{venus,earth,jovian,building}',
+        '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
+        '{"tr_delta": 2}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
