@@ -3635,3 +3635,156 @@ def test_omnicourt_requires_3_tags_grants_2_tr():
     check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"venus": 1, "earth": 1, "jovian": 1}})
     new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"tr_delta": 2})
     assert new_player["tr"] == 22
+
+
+# --- Piezas nuevas de motor (bloque 23) --------------------------------------
+
+def test_use_card_action_mc_or_titanium_cost_accepts_titanium_substitution():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "rotator_impacts")
+    action_spec = {"cost": {"mc_or_titanium": 6}, "gains": {"card_resource_delta": 1}}
+
+    # Todo en MC
+    p1, _ = use_card_action({**player, "mc": 6}, globals_, "rotator_impacts", action_spec)
+    assert p1["mc"] == 0
+    assert p1["active_cards"]["rotator_impacts"]["resources"] == 1
+
+    # Todo en titanio (2 titanio * 3 MC = 6)
+    p2, _ = use_card_action({**player, "titanium": 2}, globals_, "rotator_impacts", action_spec, titanium_to_pay=2)
+    assert p2["titanium"] == 0
+    assert p2["mc"] == 0
+
+    # Mixto: 1 titanio (3 MC) + 3 MC
+    p3, _ = use_card_action({**player, "mc": 3, "titanium": 1}, globals_, "rotator_impacts", action_spec, titanium_to_pay=1)
+    assert p3["titanium"] == 0
+    assert p3["mc"] == 0
+
+    # Titanio declarado insuficiente en stock
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action({**player, "titanium": 0}, globals_, "rotator_impacts", action_spec, titanium_to_pay=1)
+
+    # Cubre con titanio pero falta MC para el resto
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action({**player, "mc": 0, "titanium": 1}, globals_, "rotator_impacts", action_spec, titanium_to_pay=1)
+
+
+def test_convert_card_resource_amount_uses_own_card_resources():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "sulphur_eating_bacteria", initial_resources=2)
+    action_spec = {"convert_card_resource_amount": {"to": "mc", "ratio": 3}}
+
+    new_player, _ = use_card_action(player, globals_, "sulphur_eating_bacteria", action_spec, effect_amount=2)
+    assert new_player["active_cards"]["sulphur_eating_bacteria"]["resources"] == 0
+    assert new_player["mc"] == 6
+
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(player, globals_, "sulphur_eating_bacteria", action_spec, effect_amount=3)
+
+
+def test_discard_card_then_draw_requires_discard_card_id_and_draws_n():
+    player = {**new_player_state(), "hand": ["old_card"], "deck": ["a", "b", "c"]}
+    effects = {"discard_card_then_draw": {"draw": 3}}
+
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, new_global_parameters(), effects)
+
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, discard_card_id="old_card")
+    assert new_player["hand"] == ["a", "b", "c"]
+
+    with pytest.raises(CardNotInHandError):
+        apply_card_effect(player, new_global_parameters(), effects, discard_card_id="not_in_hand")
+
+
+# --- Bloque de revision 23 (Venus Next) --------------------------------------
+
+def test_orbital_reflectors_raises_venus_2_heat_production_2():
+    new_player, new_globals = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"raise_venus_steps": 2, "production_deltas": {"heat_production": 2}},
+    )
+    assert new_globals["venus"] == 4
+    assert new_player["heat_production"] == 3
+
+
+def test_rotator_impacts_requires_max_venus_14():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_venus": 14}, {**new_global_parameters(), "venus": 16})
+    check_card_requirements({"max_venus": 14}, {**new_global_parameters(), "venus": 14})
+
+
+def test_sister_planet_support_requires_venus_and_earth_tags_mc_production():
+    req = {"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}]}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"venus": 1}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 3}})
+    assert new_player["mc_production"] == 4
+
+
+def test_solarnet_requires_3_tags_draws_2():
+    req = {"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}
+    check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"venus": 1, "earth": 1, "jovian": 1}})
+    player = {**new_player_state(), "deck": ["a", "b"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
+    assert new_player["hand"] == ["a", "b"]
+
+
+def test_spin_inducing_asteroid_requires_max_venus_10_raises_2():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_venus": 10}, {**new_global_parameters(), "venus": 12})
+    _, new_globals = apply_card_effect(new_player_state(), {**new_global_parameters(), "venus": 10}, {"raise_venus_steps": 2})
+    assert new_globals["venus"] == 14
+
+
+def test_sponsored_academies_requires_science_and_earth_discards_and_draws_3():
+    req = {"min_tag_count": [{"tag": "science", "count": 1}, {"tag": "earth", "count": 1}]}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 1}})
+
+    player = {**new_player_state(), "hand": ["junk"], "deck": ["a", "b", "c"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"discard_card_then_draw": {"draw": 3}}, discard_card_id="junk")
+    assert new_player["hand"] == ["a", "b", "c"]
+
+
+def test_stratopolis_requires_2_science_boosts_mc_places_city_action_targets_venus_card():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "science", "count": 2}}, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 1}})
+
+    effects = {"production_deltas": {"mc_production": 2}, "place_city_tiles": 1}
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), effects)
+    assert new_player["mc_production"] == 3
+    assert new_globals["city_tiles_placed"] == 1
+
+    player = register_active_card(new_player_state(), "stratopolis")
+    player = register_active_card(player, "aerial_mappers")
+    action_spec = {"cost": {}, "gains": {"target_card_resource_delta": 2}}
+    new_player2, _ = use_card_action(player, new_global_parameters(), "stratopolis", action_spec, target_card_id="aerial_mappers")
+    assert new_player2["active_cards"]["aerial_mappers"]["resources"] == 2
+
+
+def test_stratospheric_birds_requires_venus_12_action_moves_floater_to_animal():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 12}, {**new_global_parameters(), "venus": 10})
+
+    player = register_active_card(new_player_state(), "stratospheric_birds")
+    player = register_active_card(player, "aerial_mappers", initial_resources=1)
+    action_spec = {"cost": {}, "gains": {"move_from_target_card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "stratospheric_birds", action_spec, target_card_id="aerial_mappers")
+    assert new_player["active_cards"]["stratospheric_birds"]["resources"] == 1
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 0
+
+
+def test_sulphur_exports_raises_venus_mc_production_per_venus_tag_including_this():
+    player = {**new_player_state(), "tags_played": {"venus": 2}}
+    effects = {
+        "raise_venus_steps": 1,
+        "production_delta_per_tag": {"tag": "venus", "production": "mc_production", "per_tag": 1, "include_this": True},
+    }
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_globals["venus"] == 2
+    assert new_player["mc_production"] == 1 + 3  # base 1 + (2 previos + esta misma)
+
+
+def test_sulphur_eating_bacteria_requires_venus_6():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 6}, {**new_global_parameters(), "venus": 4})
+    check_card_requirements({"min_venus": 6}, {**new_global_parameters(), "venus": 6})

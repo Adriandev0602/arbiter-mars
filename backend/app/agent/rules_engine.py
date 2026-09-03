@@ -689,6 +689,7 @@ def apply_card_effect(
     effect_choice: int | None = None,
     target_card_id: str | None = None,
     target_card_id_2: str | None = None,
+    discard_card_id: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
@@ -718,6 +719,11 @@ def apply_card_effect(
       - "raise_oxygen_steps": N -- sube el oxigeno N pasos (+N TR).
       - "raise_venus_steps": N -- sube el Venus scale N pasos (+N TR, mas los
         bonus de umbral, ver raise_venus). Expansion Venus Next.
+      - "discard_card_then_draw": {"draw": N} -- descarta `discard_card_id`
+        (OBLIGATORIO, debe estar en la mano) y roba N cartas del mazo (ej.
+        Sponsored Academies: descartar 1, robar 3). La clausula "each
+        opponent draws 1" del texto real se omite -- no afecta el estado del
+        propio jugador en single-player, no hace falta modelarla.
       - "place_oceans": N -- coloca N tiles de oceano (+N TR) (ej. Comet: 1).
       - "place_city_tiles": N -- suma N al contador global de ciudades, sin
         TR (ej. Capital: 1).
@@ -944,6 +950,13 @@ def apply_card_effect(
     if "draw_cards" in effects:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), effects["draw_cards"]))  # type: ignore[typeddict-item]
 
+    if "discard_card_then_draw" in effects:
+        spec = effects["discard_card_then_draw"]
+        if discard_card_id is None:
+            raise CardEffectError("Esta carta requiere discard_card_id")
+        new_player = dict(remove_card_from_hand(PlayerState(**new_player), discard_card_id))  # type: ignore[typeddict-item]
+        new_player = dict(draw_cards_to_hand(PlayerState(**new_player), spec["draw"]))  # type: ignore[typeddict-item]
+
     if "start_research" in effects:
         new_player = dict(start_research_phase(PlayerState(**new_player), effects["start_research"]["n"]))  # type: ignore[typeddict-item]
 
@@ -1047,6 +1060,7 @@ def use_card_action(
     target_card_id: str | None = None,
     effect_amount: int | None = None,
     reserved_card_id: str | None = None,
+    titanium_to_pay: int = 0,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
@@ -1061,8 +1075,19 @@ def use_card_action(
         PRODUCCION), esta convierte STOCK. Lanza CardEffectError si falta
         effect_amount o es negativo, InsufficientResourcesError si no hay
         suficiente stock del recurso origen.
+      - "convert_card_resource_amount": {"to": "<recurso>", "ratio": N
+        (default 1)} -- igual que convert_resource_amount, pero el origen es
+        SIEMPRE el recurso guardado en la propia carta (no stock del
+        jugador): gasta `effect_amount` (X) recursos de la carta y gana X*ratio
+        del recurso `to` (ej. Sulphur-Eating Bacteria: gastar X microbios
+        guardados para ganar 3X MC). Mismos errores que convert_resource_amount.
       - "cost": {"<recurso>": N, ...} -- recursos de stock del jugador que se
         gastan (ej. Ironworks: {"energy": 4}). La clave especial
+        "mc_or_titanium": N -- cuesta N MC, pero el jugador puede cubrir
+        parte o todo con titanio (parametro `titanium_to_pay`, valorizado
+        igual que al pagar cartas -- ver compute_conversion_rates, asi
+        Advanced Alloys tambien lo beneficia) (ej. Rotator Impacts: 6 MC,
+        "titanium may be used"). Otra clave especial
         "card_resource" gasta N recursos guardados en la propia carta (ej.
         Regolith Eaters: remover 2 microbios).
       - "gains": {"resource_deltas": {...}, "production_deltas": {...},
@@ -1118,6 +1143,21 @@ def use_card_action(
     new_active_cards = dict(player["active_cards"])
     card_resources = new_active_cards[card_id]["resources"]
 
+    if "convert_card_resource_amount" in action_spec:
+        spec = action_spec["convert_card_resource_amount"]
+        to_key = spec["to"]
+        if effect_amount is None or effect_amount < 0:
+            raise CardEffectError("Esta accion requiere effect_amount (X) >= 0")
+        if card_resources < effect_amount:
+            raise InsufficientResourcesError(
+                f"'{card_id}' tiene {card_resources} recursos guardados, se necesitan {effect_amount}"
+            )
+        card_resources -= effect_amount
+        new_player[to_key] = new_player[to_key] + effect_amount * spec.get("ratio", 1)
+        new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
+        new_player["active_cards"] = new_active_cards
+        return PlayerState(**new_player), globals_  # type: ignore[typeddict-item]
+
     if "convert_resource_amount" in action_spec:
         spec = action_spec["convert_resource_amount"]
         from_key, to_key = spec["from"], spec["to"]
@@ -1140,6 +1180,19 @@ def use_card_action(
                     f"'{card_id}' tiene {card_resources} recursos guardados, se necesitan {amount}"
                 )
             card_resources -= amount
+        elif key == "mc_or_titanium":
+            if titanium_to_pay < 0:
+                raise CardEffectError("titanium_to_pay no puede ser negativo")
+            if new_player["titanium"] < titanium_to_pay:
+                raise InsufficientResourcesError(
+                    f"Se necesita {titanium_to_pay} de titanio, hay {new_player['titanium']}"
+                )
+            _, titanium_value_mc = compute_conversion_rates(PlayerState(**new_player))  # type: ignore[typeddict-item]
+            mc_needed = max(0, amount - titanium_to_pay * titanium_value_mc)
+            if new_player["mc"] < mc_needed:
+                raise InsufficientResourcesError(f"Se necesita {mc_needed} de MC, hay {new_player['mc']}")
+            new_player["titanium"] -= titanium_to_pay
+            new_player["mc"] -= mc_needed
         else:
             if new_player[key] < amount:
                 raise InsufficientResourcesError(f"Se necesita {amount} de {key}, hay {new_player[key]}")

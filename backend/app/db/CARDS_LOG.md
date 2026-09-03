@@ -249,6 +249,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `mining_quota` | Mining Quota | 239 | 5 MC | Tags venus+earth+jovian+building. Requiere los 3 tags jugados. +2 producción steel |
 | `neutralizer_factory` | Neutralizer Factory | 240 | 7 MC | Tag venus. Requiere Venus ≥10%. +1 paso Venus |
 | `omnicourt` | Omnicourt | 241 | 11 MC | Tags venus+earth+jovian+building. Requiere los 3 tags jugados. +2 TR directo |
+| `orbital_reflectors` | Orbital Reflectors | 242 | 26 MC | Tags venus+power. +2 pasos Venus, +2 producción calor |
+| `rotator_impacts` | Rotator Impacts | 243 | 6 MC | Tag power. Requiere Venus ≤14%. Acción con elección: -6 MC (titanio puede cubrir, pieza nueva `mc_or_titanium`) → +1 recurso a sí misma, O gastar 1 recurso propio → +1 paso Venus |
+| `sister_planet_support` | Sister Planet Support | 244 | 7 MC | Tags venus+earth. Requiere ambos tags jugados. +3 producción MC |
+| `solarnet` | Solarnet | 245 | 7 MC | Tags venus+earth+jovian. Requiere los 3 tags jugados. Roba 2 cartas |
+| `spin_inducing_asteroid` | Spin-Inducing Asteroid | 246 | 16 MC | Tag power, evento. Requiere Venus ≤10%. +2 pasos Venus |
+| `sponsored_academies` | Sponsored Academies | 247 | 9 MC | Sin tags propios. Requiere science+earth jugados. Descarta 1 carta elegida, roba 3 (pieza nueva `discard_card_then_draw`; cláusula "opponents draw 1" omitida, sin efecto en single-player) |
+| `stratopolis` | Stratopolis | 248 | 22 MC | Tags venus+city. Requiere 2 tags de ciencia. +2 producción MC, +1 ciudad; acción repetible sin costo: +2 recursos a OTRA carta Venus activa elegida |
+| `stratospheric_birds` | Stratospheric Birds | 249 | 12 MC | Tags venus+animal. Requiere Venus ≥12%. Acción repetible sin costo propio: mueve 1 floater desde OTRA carta activa elegida → +1 animal en esta |
+| `sulphur_exports` | Sulphur Exports | 250 | 21 MC | Tag venus. +1 paso Venus, +1 producción MC por cada tag venus (incluida esta) |
+| `sulphur_eating_bacteria` | Sulphur-Eating Bacteria | 251 | 6 MC | Tags venus+microbe. Requiere Venus ≥6%. Acción con elección: +1 microbio a sí misma, O gastar X microbios propios (pieza nueva `convert_card_resource_amount`) → +3X MC |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
