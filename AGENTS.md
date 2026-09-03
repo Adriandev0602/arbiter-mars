@@ -49,8 +49,10 @@ Supabase y orquesta llamadas a estos módulos.
 
 - Terraform Rating: arranca en 20, +1 por cada paso de parámetro global subido.
 - Parámetros globales: temperatura (-30 a +8, pasos de 2°C), oxígeno (0 a 14%, pasos de 1%),
-  océanos (0 a 9 tiles, con 12 hexágonos reservados donde colocarlos — ver sección 4), con
-  clamping correcto al tope y sin otorgar TR por pasos no aplicados.
+  océanos (0 a 9 tiles, con 12 hexágonos reservados donde colocarlos — ver sección 4), Venus
+  scale (expansión Venus Next, 0% a 30%, pasos de 2%, con bonus de umbral: +1 carta gratis al
+  cruzar 8%, +1 TR extra al cruzar 16% — no es condición de fin de partida), con clamping
+  correcto al tope y sin otorgar TR por pasos no aplicados.
 - Los 6 proyectos estándar con sus costos reales (sell_patents, power_plant, asteroid, aquifer,
   greenery, city).
 - Conversiones del tablero de jugador (8 plantas → greenery, 8 calor → +1 paso de temperatura).
@@ -136,38 +138,43 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-01, bloques 12→19)
+### 📍 Punto de retoma (última sesión: 2026-09-02, bloques 12→20 + Venus Next)
 
-**Progreso:** catálogo en **202 cartas** cargadas en `cards` (iban 44 al empezar esta racha de
-sesiones). `card_review_queue` tiene 91 filas `reviewed = true` y **211 sin revisar** — el
-próximo bloque (20) son las filas #1-10 de `select * from card_review_queue where reviewed =
-false order by id limit 10`.
+**Progreso:** catálogo en **211 cartas** cargadas en `cards`. `main` ya tiene mergeados los
+bloques 13-19 (merge normal, `Merge rama feat/self-replicating-robots-mechanic a main`) más las
+piezas de mecánica de Viral Enhancers y Self-Replicating Robots. `card_review_queue` tiene 101
+filas `reviewed = true` y **201 sin revisar** — el próximo bloque (21) son las filas #1-10 de
+`select * from card_review_queue where reviewed = false order by id limit 10`.
 
-**Flujo de ramas (nuevo desde el bloque 13):** cada bloque de revisión vive en su propia rama
-`feat/review-block-N`, creada a partir de la rama del bloque anterior (no de `main` — así cada
-una hereda las piezas de motor que agregó la anterior), commiteada y pusheada a `origin`
-individualmente. `main` **todavía no tiene mergeado nada de esto** — sigue en el commit de
-antes del bloque 12 (`ad316ec`, "Agregar AGENTS.md..."). Falta decidir cuándo/cómo mergear
-(¿un PR por bloque, o squash de toda la racha?) — no asumir, preguntar al usuario antes de
-mergear a `main`.
+**Decisión de alcance (2026-09-02):** la expansión **Venus Next** entró al alcance del proyecto
+porque el bloque 20 completo resultó ser de esa expansión (ver sección 7). Motor extendido con
+4to parámetro global `venus` + proyecto estándar `air_scrapping` — ver sección 3. Si los
+próximos bloques siguen trayendo cartas de otras expansiones nuevas (Colonies, Prelude, Ares),
+la misma pregunta aplica: confirmar con el usuario antes de asumir que entran al alcance.
+
+**Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
+creada a partir de la rama del bloque anterior (o de `main` una vez que un bloque ya se
+mergeó — como ahora, con `main` al día hasta el bloque 19), commiteada y pusheada a `origin`
+individualmente. Falta decidir cuándo mergear el bloque 20 (rama `feat/review-block-20`,
+incluye el commit de soporte a Venus Next) — no asumir, preguntar al usuario antes de mergear.
 
 **Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su pieza
 de mecánica ya diagnosticada pero no implementada:**
-- **Viral Enhancers** (074): pasivo con elección del jugador que dispara con CUALQUIER carta de
-  tag plant/microbe/animal jugada (no solo la propia) y targetea la carta RECIÉN JUGADA, no la
-  que tiene el pasivo — distinto de `on_tag_played_choice` (que sí se implementó, targetea
-  siempre la carta que tiene el pasivo, ver Olympus Conference).
 - **Lava Flows** (140): coloca tile en uno de 4 hexágonos volcánicos nombrados
   (Tharsis Tholus/Ascraeus/Pavonis/Arsia Mons) que `board.py` todavía no identifica
-  individualmente — ver nota en `HEX_MAP_RESEARCH.md`.
-- **Self-Replicating Robots** (210): necesita un "slot de reserva" por carta (guardar una carta
-  de la mano sin jugarla, con recursos acumulables que después descuentan su costo) — mecánica
-  grande y distinta a todo lo que existe hoy, no una extensión chica.
+  individualmente — ver nota en `HEX_MAP_RESEARCH.md`. Necesita investigación de fuente antes
+  de tocar código (no solo extender el motor).
+- **Aerosport Tournament** (214, Venus Next): requisito "tener 5 floaters" — suma de un recurso
+  de un tipo específico a través de TODAS las cartas activas del jugador, no solo una carta
+  puntual. `active_cards[card_id]["resources"]` no distingue tipo de recurso hoy (microbio,
+  animal o floater son el mismo contador sin etiqueta) — necesita esa etiqueta por carta más un
+  requirement nuevo (`min_total_card_resources`) que sume sobre las que matcheen. Prevista para
+  cuando aparezcan más cartas Venus Next de este tipo (varias piden "N floaters" acumulados).
 
-**Para retomar:** mismo flujo que los bloques 13-19 (ver commits `31a73d7`..`43865ae` como
-referencia): `git checkout feat/review-block-19 && git checkout -b feat/review-block-20`,
-consultar la cola en Supabase (usar la conexión directa con `psycopg2` y parámetros individuales
-de host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
+**Para retomar:** mismo flujo que bloques anteriores: `git checkout feat/review-block-20 &&
+git checkout -b feat/review-block-21` (o desde `main` si el bloque 20 ya se mergeó), consultar
+la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
+host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans
 espaciados 4s, leer cada uno, decidir vocabulario (extender el motor si hace falta), cargar en
 `seed_cards.sql` + tests en `test_rules_engine.py`/`test_board.py`, probar contra Supabase real,
@@ -240,12 +247,26 @@ arbiter-mars/
 
 **Dentro de alcance:** interfaz conversacional en sidebar, dashboard de estado del jugador,
 enrutamiento a herramientas para cálculos de redención, memoria persistente del estado de la
-sesión actual, el mapa hexagonal Tharsis completo (ver sección 3).
+sesión actual, el mapa hexagonal Tharsis completo (ver sección 3), la expansión **Venus Next**
+(decisión explícita del usuario, 2026-09-02): 4to parámetro global Venus scale (0% a 30%, pasos
+de 2%, bonus de umbral verificados contra el rulebook oficial de FryxGames -- ver
+`raise_venus`/`VENUS_BONUS_STEP_*` en `rules_engine.py`), proyecto estándar nuevo `air_scrapping`
+(15 MC, +1 paso de Venus), requirements `min_venus`/`max_venus`, efecto `raise_venus_steps`. El
+recurso "floater" de la expansión NO necesita campo nuevo -- se guarda en `active_cards` igual
+que microbios/animales (mismo mecanismo, solo cambia el nombre del recurso en el efecto de la
+carta). El tag "venus" tampoco necesita nada nuevo -- los tags ya son genéricos. Las 4 áreas de
+ciudad fuera de tablero de Venus Next (Maxwell Base, Stratopolis, Luna Metropolis, Dawn City)
+reusan el mecanismo genérico existente de `place_city_tiles` (contador global, sin mapa -- mismo
+patrón que Phobos Space Haven/Research Outpost).
 
 **Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, soporte para
-múltiples juegos simultáneos, milestones y awards, mapas alternativos (Hellas/Elysium), la
-mecánica de pago cruzado de la expansión Ares, y el catálogo completo hardcodeado de special
-tiles de cartas (`place_special_tile` es genérica a propósito).
+múltiples juegos simultáneos, milestones y awards (incluidos los nuevos de Venus Next: Hoverlord
+milestone, Venuphile award), mapas alternativos (Hellas/Elysium), la mecánica de pago cruzado de
+la expansión Ares, el catálogo completo hardcodeado de special tiles de cartas
+(`place_special_tile` es genérica a propósito), y la **Solar Phase** de Venus Next (fase
+automática post-producción donde el "World Government" sube un parámetro global elegido por el
+jugador que actúa como primer jugador) -- automatización de fin de generación, no una mecánica
+de carta; se evalúa aparte si hace falta.
 
 ## 8. Comandos de desarrollo
 
