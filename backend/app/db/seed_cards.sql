@@ -1206,3 +1206,69 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Bloque de revision 26 (Colonies). Las 10 resueltas con vocabulario
+-- existente, salvo dos piezas nuevas chicas: "build_colony" (efecto de
+-- carta que construye una colonia, manejado en tools.play_card igual que
+-- place_special_tile) y "mc_per_card_resource" en use_card_action (da MC
+-- por recurso guardado en la carta SIN gastarlo, con tope opcional).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'floater_prototypes', 'Floater Prototypes', 2, '{science}', null,
+        '{"target_card_resource_delta": 2}'::jsonb
+    ),
+    (
+        'floater_technology', 'Floater Technology', 7, '{science}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'galilean_waystation', 'Galilean Waystation', 15, '{power}', null,
+        '{"production_delta_per_tag": {"tag": "jovian", "production": "mc_production", "per_tag": 1}}'::jsonb
+    ),
+    (
+        'heavy_taxation', 'Heavy Taxation', 3, '{earth,earth}',
+        '{"min_tag_count": {"tag": "earth", "count": 2}}'::jsonb,
+        '{"resource_deltas": {"mc": 4}, "production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'ice_moon_colony', 'Ice Moon Colony', 23, '{power}', null,
+        '{"build_colony": true, "place_oceans": 1}'::jsonb
+    ),
+    (
+        -- "remove up to 2 plants from any player" omitida (regla de oro single-player).
+        'impactor_swarm', 'Impactor Swarm', 11, '{jovian,jovian}',
+        '{"min_tag_count": {"tag": "jovian", "count": 2}}'::jsonb,
+        '{"resource_deltas": {"heat": 12}}'::jsonb
+    ),
+    (
+        'interplanetary_colony_ship', 'Interplanetary Colony Ship', 12, '{earth,power}', null,
+        '{"build_colony": true}'::jsonb
+    ),
+    (
+        'jovian_lanterns', 'Jovian Lanterns', 20, '{jovian}',
+        '{"min_tag_count": {"tag": "jovian", "count": 1}}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "tr_delta": 1, "target_card_resource_delta": 2,
+          "action": {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 2}}}'::jsonb
+    ),
+    (
+        'jupiter_floating_station', 'Jupiter Floating Station', 9, '{jovian}',
+        '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"target_card_resource_delta": 1}},
+            {"gains": {"mc_per_card_resource": {"cap": 4}}}
+        ]}}'::jsonb
+    ),
+    (
+        'luna_governor', 'Luna Governor', 4, '{earth,earth}',
+        '{"min_tag_count": {"tag": "earth", "count": 3}}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
+
+update cards set is_event = true where id in
+    ('floater_prototypes', 'impactor_swarm', 'interplanetary_colony_ship');

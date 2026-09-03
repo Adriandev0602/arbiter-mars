@@ -276,6 +276,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `earth_elevator` | Earth Elevator | C08 | 43 MC | Tags earth+power. +3 producción titanio |
 | `cryo_sleep` | Cryo-Sleep | C07 | 10 MC | Tag science. Pasivo: comerciar cuesta 1 recurso menos (mecánica de colonias/comercio, ver sección dedicada abajo) |
 | `ecology_research` | Ecology Research | C09 | 21 MC | Tags science+animal+microbe+plant. +1 producción plantas por cada colonia propia, +1 recurso a una carta activa elegida y +2 a otra distinta |
+| `floater_prototypes` | Floater Prototypes | C11 | 2 MC | Tag science, evento. +2 floaters a OTRA carta activa elegida |
+| `floater_technology` | Floater Technology | C12 | 7 MC | Tag science. Acción repetible sin costo: +1 floater a OTRA carta activa elegida |
+| `galilean_waystation` | Galilean Waystation | C13 | 15 MC | Tag power. +1 producción MC por cada tag jovian jugado |
+| `heavy_taxation` | Heavy Taxation | C14 | 3 MC | Doble tag earth. Requiere 2 tags earth jugados. +4 MC, +2 producción MC |
+| `ice_moon_colony` | Ice Moon Colony | C15 | 23 MC | Tag power. Construye 1 colonia (pieza nueva `build_colony`) y coloca 1 océano |
+| `impactor_swarm` | Impactor Swarm | C16 | 11 MC | Doble tag jovian, evento. Requiere 2 tags jovian jugados. +12 calor (cláusula "remove up to 2 plants from any player" omitida) |
+| `interplanetary_colony_ship` | Interplanetary Colony Ship | C17 | 12 MC | Tags earth+power, evento. Construye 1 colonia |
+| `jovian_lanterns` | Jovian Lanterns | C18 | 20 MC | Tag jovian. Requiere 1 tag jovian jugado. +1 TR, +2 floaters a una carta activa elegida; acción repetible: -1 titanio → +2 floaters a sí misma |
+| `jupiter_floating_station` | Jupiter Floating Station | C19 | 9 MC | Tag jovian. Requiere 3 tags de ciencia. Acción con elección: +1 floater a OTRA carta activa elegida, O +1 MC por cada floater guardado (sin gastarlos, pieza nueva `mc_per_card_resource`, tope 4) |
+| `luna_governor` | Luna Governor | C20 | 4 MC | Doble tag earth. Requiere 3 tags earth jugados. +2 producción MC |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -317,6 +327,14 @@ Esto desbloqueó **Cryo-Sleep** (pasivo `trade_cost_discount`) y **Ecology Resea
 nuevo `production_delta_per_colony`, que cuenta `player["colonies_owned"]` sin importar cuál).
 Tests: `test_colonies.py` (mecanismo completo) y los tests de `cryo_sleep`/`ecology_research` en
 `test_rules_engine.py`.
+
+**Actualización bloque 26:** agregada la pieza `build_colony` en `apply_card_effect`/`tools.play_card`
+(manejada igual que `place_special_tile`: un flag en `effects`, el `colony_id` lo pasa el caller
+via el parámetro nuevo `build_colony_id`) -- construye una colonia como parte del efecto de la
+carta SIN cobrar los 17 MC del proyecto estándar (ya incluidos en el costo de la carta). Cargó
+Ice Moon Colony e Interplanetary Colony Ship. También `mc_per_card_resource` en `use_card_action`
+(da MC por recurso guardado en la carta SIN gastarlo, con tope opcional -- distinto de
+`convert_card_resource_amount`, que sí gasta) para Jupiter Floating Station.
 
 **Resuelto (2026-09-02):** la pieza que faltaba para Lava Flows (140) — colocar
 tile en uno de 4 hexágonos volcánicos nombrados individualmente — quedó

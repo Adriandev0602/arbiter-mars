@@ -333,6 +333,7 @@ def play_card(
     tag_played_choice: str | None = None,
     any_tag_played_choice: str | None = None,
     discard_card_id: str | None = None,
+    build_colony_id: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -427,6 +428,13 @@ def play_card(
             mano). None si la carta no tiene esta mecanica. Distinto de
             `discard_for_draw_card_id` (ese es para el pasivo opcional
             "on_tag_played_may_swap_card").
+        build_colony_id: OBLIGATORIO si `effects.build_colony` esta definido
+            (expansion Colonies, ej. Interplanetary Colony Ship, Ice Moon
+            Colony -- "place a colony" como parte del efecto de la carta,
+            SIN cobrar los 17 MC del proyecto estandar, ya incluidos en el
+            costo de la carta) -- el id de `colonies.COLONY_DEFS`, debe
+            estar en juego (ver tools.setup_colonies). None si la carta no
+            tiene esta mecanica.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -572,6 +580,16 @@ def play_card(
             )
         new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
 
+    if effects.get("build_colony"):
+        if build_colony_id is None:
+            raise ValueError(f"La carta '{card_id}' requiere build_colony_id")
+        colonies = _load_colonies()
+        new_colonies, placement_bonus = colonieslib.build_colony(colonies, build_colony_id, player_id)
+        new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], build_colony_id]}
+        for key, delta in placement_bonus.items():
+            new_player[key] = new_player[key] + delta
+        _save_colonies(new_colonies)
+
     greenery_spec = effects.get("place_greenery")
     if greenery_spec is not None:
         if greenery_hex_id is None:
@@ -647,7 +665,7 @@ def play_card(
          "duplicate_production_target_card_id": duplicate_production_target_card_id,
          "target_card_id": target_card_id, "target_card_id_2": target_card_id_2,
          "tag_played_choice": tag_played_choice, "any_tag_played_choice": any_tag_played_choice,
-         "discard_card_id": discard_card_id},
+         "discard_card_id": discard_card_id, "build_colony_id": build_colony_id},
     )
 
     return {

@@ -4020,3 +4020,115 @@ def test_ecology_research_plant_production_per_colony_and_targets_two_cards():
     assert new_player["plant_production"] == 2  # base 1 + 1 colonia
     assert new_player["active_cards"]["aerial_mappers"]["resources"] == 1
     assert new_player["active_cards"]["decomposers"]["resources"] == 2
+
+
+# --- Pieza nueva de motor (bloque 26): mc_per_card_resource ------------------
+
+def test_mc_per_card_resource_gains_without_spending():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "jupiter_floating_station", initial_resources=3)
+    action_spec = {"gains": {"mc_per_card_resource": {"cap": 4}}}
+    new_player, _ = use_card_action(player, globals_, "jupiter_floating_station", action_spec)
+    assert new_player["mc"] == 3
+    assert new_player["active_cards"]["jupiter_floating_station"]["resources"] == 3  # no se gasta
+
+
+def test_mc_per_card_resource_respects_cap():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "jupiter_floating_station", initial_resources=6)
+    action_spec = {"gains": {"mc_per_card_resource": {"cap": 4}}}
+    new_player, _ = use_card_action(player, globals_, "jupiter_floating_station", action_spec)
+    assert new_player["mc"] == 4  # tope de 4, no 6
+
+
+# --- Bloque de revision 26 (Colonies) ----------------------------------------
+
+def test_floater_prototypes_targets_another_card():
+    player = register_active_card(new_player_state(), "floater_prototypes")
+    player = register_active_card(player, "aerial_mappers")
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"target_card_resource_delta": 2}, target_card_id="aerial_mappers",
+    )
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+
+
+def test_floater_technology_action_targets_another_card():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "floater_technology")
+    player = register_active_card(player, "aerial_mappers")
+    action_spec = {"cost": {}, "gains": {"target_card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "floater_technology", action_spec, target_card_id="aerial_mappers")
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 1
+
+
+def test_galilean_waystation_mc_production_per_jovian_tag():
+    player = {**new_player_state(), "tags_played": {"jovian": 3}}
+    effects = {"production_delta_per_tag": {"tag": "jovian", "production": "mc_production", "per_tag": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 3
+
+
+def test_heavy_taxation_requires_2_earth_tags_gives_mc_and_production():
+    req = {"min_tag_count": {"tag": "earth", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"earth": 1}})
+    effects = {"resource_deltas": {"mc": 4}, "production_deltas": {"mc_production": 2}}
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects)
+    assert new_player["mc"] == 4
+    assert new_player["mc_production"] == 3
+
+
+def test_impactor_swarm_requires_2_jovian_tags_gives_heat():
+    req = {"min_tag_count": {"tag": "jovian", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"jovian": 1}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"resource_deltas": {"heat": 12}})
+    assert new_player["heat"] == 12
+
+
+def test_jovian_lanterns_requires_1_jovian_tag_tr_and_action():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"min_tag_count": {"tag": "jovian", "count": 1}}, new_global_parameters(), player=new_player_state(),
+        )
+    player = register_active_card(new_player_state(), "jovian_lanterns")
+    player = register_active_card(player, "aerial_mappers")
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"tr_delta": 1, "target_card_resource_delta": 2}, target_card_id="aerial_mappers",
+    )
+    assert new_player["tr"] == 21
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+
+    globals_ = new_global_parameters()
+    player_with_titanium = {**player, "titanium": 1}
+    action_spec = {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 2}}
+    new_player2, _ = use_card_action(player_with_titanium, globals_, "jovian_lanterns", action_spec)
+    assert new_player2["titanium"] == 0
+    assert new_player2["active_cards"]["jovian_lanterns"]["resources"] == 2
+
+
+def test_jupiter_floating_station_requires_3_science_action_choice():
+    req = {"min_tag_count": {"tag": "science", "count": 3}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 2}})
+
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "jupiter_floating_station", initial_resources=2)
+    player = register_active_card(player, "aerial_mappers")
+    action_spec = {"choice": [
+        {"gains": {"target_card_resource_delta": 1}},
+        {"gains": {"mc_per_card_resource": {"cap": 4}}},
+    ]}
+    p1, _ = use_card_action(player, globals_, "jupiter_floating_station", action_spec, effect_choice=0, target_card_id="aerial_mappers")
+    assert p1["active_cards"]["aerial_mappers"]["resources"] == 1
+
+    p2, _ = use_card_action(player, globals_, "jupiter_floating_station", action_spec, effect_choice=1)
+    assert p2["mc"] == 2
+
+
+def test_luna_governor_requires_3_earth_tags_mc_production():
+    req = {"min_tag_count": {"tag": "earth", "count": 3}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"earth": 2}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 2}})
+    assert new_player["mc_production"] == 3
