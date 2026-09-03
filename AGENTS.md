@@ -271,6 +271,14 @@ automática post-producción donde el "World Government" sube un parámetro glob
 jugador que actúa como primer jugador) -- automatización de fin de generación, no una mecánica
 de carta; se evalúa aparte si hace falta.
 
+**Nota sobre el modo "un jugador" (verificado 2026-09-02 contra el rulebook oficial):** el
+reglamento define una **variante en solitario** distinta a como juega este proyecto -- esa
+variante arranca con TR 14 (no 20), juega exactamente 14 generaciones fijas, y usa 2 ciudades
+neutrales que el jugador puede robar/reducir. Este proyecto NO implementa esa variante --
+`TR_START = 20` (`rules_engine.py`) trata el modo de un jugador como una partida ESTÁNDAR
+normal, sin oponente neutral ni límite fijo de generaciones. Decisión ya implícita en el motor
+existente, dejada explícita acá para que quede claro que es intencional, no un olvido.
+
 ## 8. Comandos de desarrollo
 
 ```bash
