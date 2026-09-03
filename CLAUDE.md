@@ -138,18 +138,18 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→21 + Venus Next + Lava Flows)
+### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→22 + Venus Next + Lava Flows)
 
-**Progreso:** catálogo en **221 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-20 y Lava Flows (140). `card_review_queue` tiene 111 filas `reviewed = true` y
-**191 sin revisar** — el próximo bloque (22) son las filas #1-10 de `select * from
+**Progreso:** catálogo en **231 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-20 y Lava Flows (140). `card_review_queue` tiene 121 filas `reviewed = true` y
+**181 sin revisar** — el próximo bloque (23) son las filas #1-10 de `select * from
 card_review_queue where reviewed = false order by id limit 10`.
 
 **Decisión de alcance (2026-09-02):** la expansión **Venus Next** entró al alcance del proyecto
 porque el bloque 20 completo resultó ser de esa expansión (ver sección 7). Motor extendido con
-4to parámetro global `venus` + proyecto estándar `air_scrapping` — ver sección 3. El bloque 21
-también resultó ser íntegramente Venus Next (191 filas sin revisar todavía, mayoría probable de
-la misma expansión) -- si los próximos bloques siguen trayendo cartas de OTRAS expansiones
+4to parámetro global `venus` + proyecto estándar `air_scrapping` — ver sección 3. Los bloques 21
+y 22 también resultaron íntegramente Venus Next (181 filas sin revisar todavía, mayoría probable
+de la misma expansión) -- si los próximos bloques siguen trayendo cartas de OTRAS expansiones
 nuevas (Colonies, Prelude, Ares), la misma pregunta aplica: confirmar con el usuario antes de
 asumir que entran al alcance.
 
@@ -167,10 +167,16 @@ vocabulario existente, no mecánica nueva): `production_delta_per_tag` ahora ace
 specs (antes solo un dict, ver Gyropolis) y `target_card_resource_delta_per_tag` (combina
 target_card_resource_delta con production_delta_per_tag, ver Hydrogen to Venus).
 
+**Bloque 22 (Venus Next): las 10 cargadas**, sin pieza de motor nueva -- IO Sulphur Research
+(`tag_count_choice`), Ishtar Mining, Jet Stream Microscrappers, Local Shading, Luna Metropolis
+(`production_delta_per_tag` con `include_this`), Luxury Foods (solo requirement, sin efecto
+numérico), Maxwell Base, Mining Quota, Neutralizer Factory, Omnicourt (todas con
+`min_tag_count` en lista de 3 tags, patrón ya usado en Advanced Ecosystems).
+
 **Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
-creada a partir de `main` una vez que el bloque anterior ya se mergeó, commiteada y pusheada a
-`origin` individualmente. El bloque 21 vive en `feat/review-block-21` -- pusheada, no mergeada
-todavía.
+creada a partir de `main` una vez que el bloque anterior ya se mergeó, o de la rama del bloque
+anterior si todavía no se mergeó (bloque 22 ramificado de `feat/review-block-21`, que sigue sin
+mergear). Commiteada y pusheada a `origin` individualmente.
 
 **Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su
 pieza de mecánica ya diagnosticada pero no implementada:**

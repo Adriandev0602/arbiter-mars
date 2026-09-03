@@ -239,6 +239,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `giant_solar_shade` | Giant Solar Shade | 229 | 27 MC | Tags venus+power. +3 pasos Venus |
 | `gyropolis` | Gyropolis | 230 | 20 MC | Tags city+building. -2 producción energía, +1 producción MC por cada tag venus Y +1 por cada tag earth (pieza nueva: `production_delta_per_tag` ahora acepta lista de specs), +1 ciudad |
 | `hydrogen_to_venus` | Hydrogen to Venus | 231 | 11 MC | Tag power, evento. +1 paso Venus, +1 floater a una carta Venus activa elegida por cada tag jovian (pieza nueva: `target_card_resource_delta_per_tag`, no exige target si el conteo da 0) |
+| `io_sulphur_research` | IO Sulphur Research | 232 | 17 MC | Tags science+jovian. Roba 1 carta, o 3 si ya tiene 3 tags venus (`tag_count_choice`) |
+| `ishtar_mining` | Ishtar Mining | 233 | 5 MC | Tag venus. Requiere Venus ≥8%. +1 producción titanio |
+| `jet_stream_microscrappers` | Jet Stream Microscrappers | 234 | 12 MC | Tag venus. Acción con elección: -1 titanio → +2 floaters a sí misma, O gastar 2 floaters propios → +1 paso Venus |
+| `local_shading` | Local Shading | 235 | 4 MC | Tag venus. Acción con elección: +1 floater a sí misma, O gastar 1 floater propio → +1 producción MC |
+| `luna_metropolis` | Luna Metropolis | 236 | 21 MC | Tags power+earth+city. +1 producción MC por cada tag earth (incluida esta), +1 ciudad (mismo mecanismo genérico de Phobos Space Haven/Dawn City) |
+| `luxury_foods` | Luxury Foods | 237 | 8 MC | Tags venus+earth+jovian. Requiere los 3 tags jugados. Sin efecto numérico (solo VP no trackeado) |
+| `maxwell_base` | Maxwell Base | 238 | 18 MC | Tags venus+city. Requiere Venus ≥12%. -1 producción energía, +1 ciudad; acción repetible sin costo: +1 recurso a OTRA carta Venus activa elegida |
+| `mining_quota` | Mining Quota | 239 | 5 MC | Tags venus+earth+jovian+building. Requiere los 3 tags jugados. +2 producción steel |
+| `neutralizer_factory` | Neutralizer Factory | 240 | 7 MC | Tag venus. Requiere Venus ≥10%. +1 paso Venus |
+| `omnicourt` | Omnicourt | 241 | 11 MC | Tags venus+earth+jovian+building. Requiere los 3 tags jugados. +2 TR directo |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
