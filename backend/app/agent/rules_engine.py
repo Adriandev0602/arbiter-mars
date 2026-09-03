@@ -1166,6 +1166,11 @@ def use_card_action(
         Center); start_research: {"n": N} roba N cartas a pending_research -- el
         jugador todavia tiene que resolver la compra por separado con
         resolve_research_phase (tipicamente a costo 0, ej. Inventors' Guild: n=1).
+        "mc_per_card_resource": {"per_resource": N (default 1), "cap": M
+        (opcional)} -- da tanto MC como recursos guardados en la propia
+        carta, SIN gastarlos (a diferencia de convert_card_resource_amount,
+        que si los gasta), limitado a `cap` si esta presente (ej. Jupiter
+        Floating Station: 1 MC por floater guardado, maximo 4).
         "reserve_card_from_hand": {"initial_resources": N (default 2)} --
         reserva `reserved_card_id` (obligatorio, debe estar en la mano)
         sobre la propia carta, ver reserve_card_in_slot (ej. Self-
@@ -1305,6 +1310,10 @@ def use_card_action(
         new_player["tr"] = new_player["tr"] + gains["tr_delta"]
     if "mc_per_counter" in gains:
         new_player["mc"] = new_player["mc"] + new_globals[gains["mc_per_counter"]]
+    if "mc_per_card_resource" in gains:
+        spec = gains["mc_per_card_resource"]
+        counted = min(card_resources, spec["cap"]) if "cap" in spec else card_resources
+        new_player["mc"] = new_player["mc"] + counted * spec.get("per_resource", 1)
     if "place_oceans" in gains:
         for _ in range(gains["place_oceans"]):
             p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]

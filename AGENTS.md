@@ -138,13 +138,12 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→25 + Venus Next + Lava Flows + Colonies)
+### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→26 + Venus Next + Lava Flows + Colonies)
 
-**Progreso:** catálogo en **258 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-24 y Lava Flows (140); el bloque 25 (rama `feat/review-block-25`) y la mecánica de
-colonias/comercio (commit aparte sobre esa misma rama) todavía no están mergeados. `card_review_queue`
-tiene 153 filas `reviewed = true` y **151 sin revisar** — el próximo bloque (26) son las filas
-#1-10 de `select * from card_review_queue where reviewed = false order by id limit 10`.
+**Progreso:** catálogo en **268 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-25 y la mecánica de colonias/comercio, Lava Flows (140). `card_review_queue` tiene
+163 filas `reviewed = true` y **141 sin revisar** — el próximo bloque (27) son las filas #1-10
+de `select * from card_review_queue where reviewed = false order by id limit 10`.
 
 **Decisión de alcance (2026-09-02/03):** primero entró **Venus Next** (bloque 20 completo era
 de esa expansión, ver sección 7). El bloque 25 trajo la primera tanda de **Colonies** -- el
@@ -165,19 +164,21 @@ generaciones fijas, ciudades neutrales) -- ver sección 7 más abajo.
 oficial de la expansión (TM_COLONIES_ENG_RULES, leído completo): proyecto estándar
 `build_colony` (17 MC), acción `use_trade_fleet` (9 MC/3 energía/3 titanio a elección), trade
 income + colony bonus, reset de track, paso de producción de colonias en la fase solar. Tools
-nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`. Solo **Callisto** cargada en
+nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`. Bloque 26 sumó `build_colony` como
+EFECTO de carta (parámetro `build_colony_id` en `play_card`, igual patrón que
+`place_special_tile`) para cartas que construyen colonia como parte de su costo, sin proyecto
+estándar aparte (Ice Moon Colony, Interplanetary Colony Ship). Solo **Callisto** cargada en
 `COLONY_DEFS` (verificada con dos fuentes independientes) -- las otras 10 colonias reales del
 juego quedan sin cargar hasta verificarlas igual que el catálogo de cartas; el mecanismo ya es
-genérico, agregar una colonia nueva es solo datos, no código. Desbloqueó Cryo-Sleep (pasivo
-`trade_cost_discount`) y Ecology Research (`production_delta_per_colony`). Ver detalle completo
-en `CARDS_LOG.md`, sección "Colonies: mecánica de colonias/comercio". Tests: `test_colonies.py`.
+genérico, agregar una colonia nueva es solo datos, no código. Ver detalle completo en
+`CARDS_LOG.md`, sección "Colonies: mecánica de colonias/comercio". Tests: `test_colonies.py`.
 
-**Bloques 21-25, 46 de 50 cargadas** (4 pendientes, ver abajo). Piezas de motor nuevas
-agregadas a lo largo de los cinco bloques, todas extensiones chicas de vocabulario existente:
+**Bloques 21-26, 56 de 60 cargadas** (4 pendientes, ver abajo). Piezas de motor nuevas
+agregadas a lo largo de los seis bloques, todas extensiones chicas de vocabulario existente:
 - `production_delta_per_tag` acepta una LISTA de specs (Gyropolis, bloque 21).
 - `target_card_resource_delta_per_tag` (Hydrogen to Venus, bloque 21).
 - `min_tag_count` en lista de 3+ tags distintos, patrón reusado sin cambios en motor (bloques
-  22-25).
+  22-26).
 - `mc_or_titanium` en el `cost` de `use_card_action` -- el titanio puede cubrir parte/todo un
   costo de acción en MC, igual que al pagar cartas (Rotator Impacts, bloque 23; nuevo parámetro
   `titanium_to_pay`).
@@ -192,13 +193,13 @@ agregadas a lo largo de los cinco bloques, todas extensiones chicas de vocabular
   -- cuenta cartas jugadas sin ningún tag, para producción escalada por esa cuenta (Community
   Services, bloque 25, primera carta Colonies cargada).
 - `colonies_owned`/`trade_fleets`/`trade_fleets_used` (campos nuevos) + `production_delta_per_colony`
-  + pasivo `trade_cost_discount` -- ver mecánica de colonias arriba.
+  + pasivo `trade_cost_discount` + `build_colony` (efecto de carta) + `mc_per_card_resource`
+  (gana MC por recurso guardado en la carta SIN gastarlo, con tope opcional) -- ver mecánica de
+  colonias arriba (bloques 25-26).
 
 **Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
 creada a partir de `main` una vez que el bloque anterior ya se mergeó, o de la rama del bloque
-anterior si todavía no se mergeó. Commiteada y pusheada a `origin` individualmente. La mecánica
-de colonias vive en un commit aparte sobre `feat/review-block-25` (no es un bloque de revisión
-de 10 cartas nuevo).
+anterior si todavía no se mergeó. Commiteada y pusheada a `origin` individualmente.
 
 **Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su
 pieza de mecánica ya diagnosticada pero no implementada:**
@@ -213,7 +214,7 @@ pieza de mecánica ya diagnosticada pero no implementada:**
   categoría que Self-Replicating Robots (mecánica de pago no trivial).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-26`, consultar
+checkout -b feat/review-block-27`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans
