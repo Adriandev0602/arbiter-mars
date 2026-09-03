@@ -37,6 +37,7 @@ from app.agent.rules_engine import (
     register_active_card,
     use_card_action,
     increment_tags_played,
+    increment_zero_tag_cards_played,
     register_passive_effect,
     compute_conversion_rates,
     compute_card_cost_discount,
@@ -3903,3 +3904,72 @@ def test_venusian_plants_requires_venus_16_raises_venus_boosts_other_card():
     new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects, target_card_id="aerial_mappers")
     assert new_globals["venus"] == 2
     assert new_player["active_cards"]["aerial_mappers"]["resources"] == 1
+
+
+# --- Pieza nueva de motor (bloque 25): zero_tag_cards_played -----------------
+
+def test_increment_zero_tag_cards_played_only_for_cards_without_tags():
+    player = new_player_state()
+    p1 = increment_zero_tag_cards_played(player, ())
+    assert p1["zero_tag_cards_played"] == 1
+    p2 = increment_zero_tag_cards_played(p1, ("earth",))
+    assert p2["zero_tag_cards_played"] == 1  # no cambia, tiene tag
+
+
+def test_production_delta_per_zero_tag_card_includes_this():
+    player = {**new_player_state(), "zero_tag_cards_played": 2}
+    effects = {"production_delta_per_zero_tag_card": {"production": "mc_production", "per_card": 1, "include_this": True}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 3  # base 1 + (2 previas + esta misma)
+
+
+# --- Bloque de revision 25 (Colonies) ----------------------------------------
+
+def test_atmo_collectors_action_choice_add_or_spend_for_titanium_energy_heat():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "atmo_collectors")
+    action_spec = {"choice": [
+        {"gains": {"card_resource_delta": 1}},
+        {"cost": {"card_resource": 1}, "gains": {"resource_deltas": {"titanium": 2}}},
+        {"cost": {"card_resource": 1}, "gains": {"resource_deltas": {"energy": 3}}},
+        {"cost": {"card_resource": 1}, "gains": {"resource_deltas": {"heat": 4}}},
+    ]}
+    p1, _ = use_card_action(player, globals_, "atmo_collectors", action_spec, effect_choice=0)
+    assert p1["active_cards"]["atmo_collectors"]["resources"] == 1
+
+    player_with_floater = {**player, "active_cards": {"atmo_collectors": {"resources": 1, "action_used": False}}}
+    p2, _ = use_card_action(player_with_floater, globals_, "atmo_collectors", action_spec, effect_choice=2)
+    assert p2["energy"] == 3
+    assert p2["active_cards"]["atmo_collectors"]["resources"] == 0
+
+    # Efecto inmediato al jugar: +2 floaters a cualquier carta (incluida ella misma)
+    new_player, _ = apply_card_effect(player, globals_, {"target_card_resource_delta": 2}, target_card_id="atmo_collectors")
+    assert new_player["active_cards"]["atmo_collectors"]["resources"] == 2
+
+
+def test_community_services_mc_production_per_zero_tag_card():
+    player = {**new_player_state(), "zero_tag_cards_played": 1}
+    effects = {"production_delta_per_zero_tag_card": {"production": "mc_production", "per_card": 1, "include_this": True}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 2
+
+
+def test_conscription_requires_2_earth_tags_discounts_next_card():
+    req = {"min_tag_count": {"tag": "earth", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"earth": 1}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"next_card_discount_mc": 16})
+    assert new_player["pending_mc_discount"] == 16
+
+
+def test_corona_extractor_requires_4_science_tags_energy_production():
+    req = {"min_tag_count": {"tag": "science", "count": 4}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 3}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"energy_production": 4}})
+    assert new_player["energy_production"] == 5
+
+
+def test_earth_elevator_titanium_production():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"titanium_production": 3}})
+    assert new_player["titanium_production"] == 4  # base 1 + 3

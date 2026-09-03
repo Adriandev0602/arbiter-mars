@@ -31,6 +31,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         pending_mc_discount=row.get("pending_mc_discount") or 0,
         pending_requirement_tolerance_steps=row.get("pending_requirement_tolerance_steps") or 0,
         reserved_cards=row.get("reserved_cards") or {},
+        zero_tag_cards_played=row.get("zero_tag_cards_played") or 0,
     )
 
 
@@ -590,6 +591,7 @@ def play_card(
         )
 
     new_player = engine.increment_tags_played(new_player, card_tags)
+    new_player = engine.increment_zero_tag_cards_played(new_player, card_tags)
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
         new_globals = engine.increment_events_played(new_globals)

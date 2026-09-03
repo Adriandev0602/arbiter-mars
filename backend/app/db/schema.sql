@@ -69,6 +69,11 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists zero_tag_cards_played integer not null default 0;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -148,6 +153,11 @@ create table if not exists players (
     -- Ver rules_engine.reserve_card_in_slot / compute_reserved_card_discount
     -- y tools.play_card / tools.use_card_action.
     reserved_cards jsonb not null default '{}'::jsonb,
+
+    -- Cuenta de cartas jugadas SIN ningun tag (ej. Community Services: +1
+    -- produccion MC por cada una, incluida ella misma). Ver
+    -- rules_engine.increment_zero_tag_cards_played.
+    zero_tag_cards_played integer not null default 0,
 
     created_at timestamptz not null default now()
 );

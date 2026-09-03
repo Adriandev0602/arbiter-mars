@@ -1155,3 +1155,44 @@ on conflict (id) do update set
     effects = excluded.effects;
 
 update cards set is_event = true where id in ('water_to_venus');
+
+-- Bloque de revision 25 (expansion Colonies). Bloque completo, incluida
+-- primera vez que aparecen cartas Colonies -- 5 de 10 cargadas ahora, ver
+-- CARDS_LOG.md "Pendientes" para las 5 restantes (4 necesitan piezas de
+-- motor no triviales: suma de floaters entre todas las cartas activas, o
+-- la mecanica completa de colonias/comercio; 1 es multi-jugador puro).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'atmo_collectors', 'Atmo Collectors', 15, '{}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "target_card_resource_delta": 2,
+          "action": {"choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"resource_deltas": {"titanium": 2}}},
+            {"cost": {"card_resource": 1}, "gains": {"resource_deltas": {"energy": 3}}},
+            {"cost": {"card_resource": 1}, "gains": {"resource_deltas": {"heat": 4}}}
+        ]}}'::jsonb
+    ),
+    (
+        'community_services', 'Community Services', 13, '{}', null,
+        '{"production_delta_per_zero_tag_card": {"production": "mc_production", "per_card": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'conscription', 'Conscription', 5, '{earth,earth}',
+        '{"min_tag_count": {"tag": "earth", "count": 2}}'::jsonb,
+        '{"next_card_discount_mc": 16}'::jsonb
+    ),
+    (
+        'corona_extractor', 'Corona Extractor', 10, '{science}',
+        '{"min_tag_count": {"tag": "science", "count": 4}}'::jsonb,
+        '{"production_deltas": {"energy_production": 4}}'::jsonb
+    ),
+    (
+        'earth_elevator', 'Earth Elevator', 43, '{earth,power}', null,
+        '{"production_deltas": {"titanium_production": 3}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
