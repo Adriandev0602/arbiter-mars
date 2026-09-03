@@ -8,6 +8,7 @@ import pytest
 
 from app.agent.board import (
     HEX_DEFS,
+    VOLCANO_NAMES,
     ADJACENCY,
     NOCTIS_CITY_HEX_ID,
     new_board,
@@ -246,6 +247,42 @@ def test_can_place_special_tile_requires_matching_hex_bonus():
     plain_hex = "05"  # sin bonus
     assert can_place_special_tile(board, steel_hex, requirement, "player-1") is True
     assert can_place_special_tile(board, plain_hex, requirement, "player-1") is False
+
+
+def test_volcano_names_match_the_4_volcanic_hexes():
+    # Los 4 hex_ids marcados volcanic=True en HEX_DEFS son exactamente los
+    # 4 nombrados en VOLCANO_NAMES (verificado en HEX_MAP_RESEARCH.md contra
+    # coordenadas areograficas oficiales de cada volcan + la posicion ya
+    # verificada de Noctis City).
+    volcanic_hex_ids = {hex_id for hex_id, hex_def in HEX_DEFS.items() if hex_def["volcanic"]}
+    assert volcanic_hex_ids == set(VOLCANO_NAMES.keys()) == {"09", "14", "21", "29"}
+    assert VOLCANO_NAMES == {
+        "09": "tharsis_tholus", "14": "ascraeus_mons", "21": "pavonis_mons", "29": "arsia_mons",
+    }
+    for hex_id, name in VOLCANO_NAMES.items():
+        assert HEX_DEFS[hex_id]["volcano_name"] == name
+    # Ningun otro hexagono tiene volcano_name asignado
+    for hex_id, hex_def in HEX_DEFS.items():
+        if hex_id not in VOLCANO_NAMES:
+            assert hex_def["volcano_name"] is None
+
+
+def test_lava_flows_can_only_place_on_one_of_the_4_named_volcanoes():
+    board = new_board()
+    requirement = {"hex_id_in": list(VOLCANO_NAMES.keys())}
+    for volcano_hex in VOLCANO_NAMES:
+        assert can_place_special_tile(board, volcano_hex, requirement, "player-1") is True
+    non_volcanic_land_hex = "05"
+    assert HEX_DEFS[non_volcanic_land_hex]["volcanic"] is False
+    assert can_place_special_tile(board, non_volcanic_land_hex, requirement, "player-1") is False
+
+    new_board_state, hex_bonus, _ = place_special_tile(board, "09", requirement, "player-1", "lava_flows")
+    assert new_board_state["09"]["tile_type"] == "special"
+    assert new_board_state["09"]["card"] == "lava_flows"
+    assert hex_bonus == HEX_DEFS["09"]["bonus"]  # Lava Flows no consume el bonus impreso del hex
+
+    with pytest.raises(InvalidPlacementError):
+        place_special_tile(board, non_volcanic_land_hex, requirement, "player-1", "lava_flows")
 
 
 def test_mining_rights_no_adjacency_required():

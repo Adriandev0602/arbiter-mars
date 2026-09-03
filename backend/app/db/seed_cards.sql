@@ -890,6 +890,14 @@ insert into cards (id, name, cost, tags, requirements, effects) values
             {"gains": {"card_resource_delta": 1}},
             {"cost": {"card_resource": 1}, "gains": {"production_deltas": {"energy_production": 1}}}
         ]}}'::jsonb
+    ),
+
+    -- Lava Flows (#140): pieza pendiente resuelta 2026-09-02 -- ver
+    -- HEX_MAP_RESEARCH.md "Los 4 volcanes con nombre" para las fuentes
+    -- usadas en identificar cada hex_id (09/14/21/29).
+    (
+        'lava_flows', 'Lava Flows', 18, '{}', null,
+        '{"raise_temperature_steps": 2, "place_special_tile": {"hex_id_in": ["09", "14", "21", "29"]}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -907,4 +915,4 @@ where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'relea
              'convoy_from_europa', 'imported_ghg', 'imported_nitrogen', 'import_of_advanced_ghg',
              'aerobraked_ammonia_asteroid', 'ice_cap_melting', 'flooding', 'permafrost_extraction',
              'indentured_workers', 'technology_demonstration', 'special_design', 'small_asteroid',
-             'air_scrapping_expedition', 'comet_for_venus');
+             'air_scrapping_expedition', 'comet_for_venus', 'lava_flows');
