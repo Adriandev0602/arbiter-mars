@@ -138,13 +138,14 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-02, bloques 12→20 + Venus Next)
+### 📍 Punto de retoma (última sesión: 2026-09-02, bloques 12→20 + Venus Next + Lava Flows)
 
-**Progreso:** catálogo en **211 cartas** cargadas en `cards`. `main` ya tiene mergeados los
-bloques 13-19 (merge normal, `Merge rama feat/self-replicating-robots-mechanic a main`) más las
-piezas de mecánica de Viral Enhancers y Self-Replicating Robots. `card_review_queue` tiene 101
-filas `reviewed = true` y **201 sin revisar** — el próximo bloque (21) son las filas #1-10 de
-`select * from card_review_queue where reviewed = false order by id limit 10`.
+**Progreso:** catálogo en **212 cartas** cargadas en `cards`. `main` ya tiene mergeados los
+bloques 13-20 (incluye el bloque 20 completo de Venus Next, mergeado por el usuario vía PR),
+más las piezas de mecánica de Viral Enhancers, Self-Replicating Robots y el soporte a Venus
+Next. `card_review_queue` tiene 102 filas `reviewed = true` y **200 sin revisar** — el próximo
+bloque (21) son las filas #1-10 de `select * from card_review_queue where reviewed = false
+order by id limit 10`.
 
 **Decisión de alcance (2026-09-02):** la expansión **Venus Next** entró al alcance del proyecto
 porque el bloque 20 completo resultó ser de esa expansión (ver sección 7). Motor extendido con
@@ -152,18 +153,20 @@ porque el bloque 20 completo resultó ser de esa expansión (ver sección 7). Mo
 próximos bloques siguen trayendo cartas de otras expansiones nuevas (Colonies, Prelude, Ares),
 la misma pregunta aplica: confirmar con el usuario antes de asumir que entran al alcance.
 
+**Lava Flows (140) resuelta (2026-09-02):** los 4 hexágonos volcánicos ya tienen nombre
+(`VOLCANO_NAMES` en `board.py`, ver "Los 4 volcanes con nombre" en `HEX_MAP_RESEARCH.md` para
+las dos fuentes usadas -- coordenadas areográficas oficiales + verificación cruzada con Noctis
+City), con requirement genérico nuevo `hex_id_in` en `can_place_special_tile`. Carta cargada y
+verificada contra su scan real (18 MC, evento, sin tag).
+
 **Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
 creada a partir de la rama del bloque anterior (o de `main` una vez que un bloque ya se
-mergeó — como ahora, con `main` al día hasta el bloque 19), commiteada y pusheada a `origin`
-individualmente. Falta decidir cuándo mergear el bloque 20 (rama `feat/review-block-20`,
-incluye el commit de soporte a Venus Next) — no asumir, preguntar al usuario antes de mergear.
+mergeó), commiteada y pusheada a `origin` individualmente. Lava Flows (no es un bloque de 10
+cartas nuevo, sino resolver una carta ya identificada como pendiente) vive en su propia rama
+`feat/lava-flows-mechanic`, ramificada desde `main` -- pusheada, no mergeada todavía.
 
-**Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su pieza
-de mecánica ya diagnosticada pero no implementada:**
-- **Lava Flows** (140): coloca tile en uno de 4 hexágonos volcánicos nombrados
-  (Tharsis Tholus/Ascraeus/Pavonis/Arsia Mons) que `board.py` todavía no identifica
-  individualmente — ver nota en `HEX_MAP_RESEARCH.md`. Necesita investigación de fuente antes
-  de tocar código (no solo extender el motor).
+**Carta pendiente identificada (`CARDS_LOG.md`, sección "Pendientes"), con su pieza de
+mecánica ya diagnosticada pero no implementada:**
 - **Aerosport Tournament** (214, Venus Next): requisito "tener 5 floaters" — suma de un recurso
   de un tipo específico a través de TODAS las cartas activas del jugador, no solo una carta
   puntual. `active_cards[card_id]["resources"]` no distingue tipo de recurso hoy (microbio,
@@ -171,8 +174,8 @@ de mecánica ya diagnosticada pero no implementada:**
   requirement nuevo (`min_total_card_resources`) que sume sobre las que matcheen. Prevista para
   cuando aparezcan más cartas Venus Next de este tipo (varias piden "N floaters" acumulados).
 
-**Para retomar:** mismo flujo que bloques anteriores: `git checkout feat/review-block-20 &&
-git checkout -b feat/review-block-21` (o desde `main` si el bloque 20 ya se mergeó), consultar
+**Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
+checkout -b feat/review-block-21`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans

@@ -229,6 +229,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `corroder_suits` | Corroder Suits | 219 | 8 MC | Tag venus. +2 producción MC, +1 floater a una carta Venus activa elegida |
 | `dawn_city` | Dawn City | 220 | 15 MC | Tags power+city. Requiere 4 tags de ciencia. -1 producción energía, +1 producción titanio, +1 ciudad (mismo mecanismo genérico ya usado para Phobos Space Haven -- exige hex_id real de Tharsis, no modela el área reservada de Venus por separado) |
 | `deuterium_export` | Deuterium Export | 221 | 11 MC | Tags venus+power+power (doble power, verificado contra el scan). Acción con elección: +1 floater a sí misma, O gastar 1 floater propio para +1 producción energía |
+| `lava_flows` | Lava Flows | 140 | 18 MC | Evento, sin tag. +2 pasos temperatura, coloca tile especial en UNO de los 4 hexágonos volcánicos nombrados (Tharsis Tholus/Ascraeus/Pavonis/Arsia Mons, ver `VOLCANO_NAMES` en `board.py` y "Los 4 volcanes con nombre" en `HEX_MAP_RESEARCH.md`) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -237,8 +238,20 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| 140 | Lava Flows | Sube temperatura 2 pasos (trivial) pero además coloca su tile en UNO de 4 hexágonos volcánicos nombrados específicamente (Tharsis Tholus, Ascraeus Mons, Pavonis Mons, Arsia Mons) — el mapa (`board.py`) todavía no asigna nombre individual a esos 4 hexágonos ni tiene un requirement tipo "uno de esta lista de hex_ids" en `can_place_special_tile` (hoy solo filtra por `hex_type`/bonus/adyacencia genérica, ver nota "Nombrar los 4 hexágonos volcánicos" en `HEX_MAP_RESEARCH.md`). Implementar esa pieza requeriría verificar contra la fuente qué hex_id corresponde a cada volcán — no reverificado todavía, no arriesgar la precisión cargando algo mal identificado. |
 | 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). |
+
+**Resuelto (2026-09-02):** la pieza que faltaba para Lava Flows (140) — colocar
+tile en uno de 4 hexágonos volcánicos nombrados individualmente — quedó
+implementada en `board.py`: constante `VOLCANO_NAMES` (mapea los 4 hex_ids ya
+marcados `volcanic=True` a su nombre real, ver "Los 4 volcanes con nombre" en
+`HEX_MAP_RESEARCH.md` para las dos fuentes usadas: coordenadas areográficas
+oficiales de cada volcán + verificación cruzada con la posición ya conocida de
+Noctis City) y requirement nuevo `hex_id_in` en `can_place_special_tile`
+(lista cerrada de hex_ids válidos, genérico, no hardcodea la carta). Carta
+cargada con costo/texto verificados contra el scan real (18 MC, evento, sin
+tag). Tests: `test_volcano_names_match_the_4_volcanic_hexes`,
+`test_lava_flows_can_only_place_on_one_of_the_4_named_volcanoes` en
+`test_board.py`.
 
 **Resuelto (2026-09-02):** la pieza que faltaba para Viral Enhancers (074) —
 pasivo con elección del jugador que dispara con CUALQUIER carta de tag

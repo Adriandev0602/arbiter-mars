@@ -35,6 +35,7 @@ class HexDef(TypedDict):
     x: int
     hex_type: HexType
     volcanic: bool
+    volcano_name: str | None
     bonus: list[tuple[str, int]]
     reserved_city: str | None
 
@@ -71,7 +72,7 @@ def _row(row: int, x_offset: int, defs: list[tuple[HexType, bool, list[tuple[str
     for i, (hex_type, volcanic, bonus, reserved_city) in enumerate(defs):
         out.append(HexDef(
             id="", row=row, x=x_offset + i, hex_type=hex_type,
-            volcanic=volcanic, bonus=bonus, reserved_city=reserved_city,
+            volcanic=volcanic, volcano_name=None, bonus=bonus, reserved_city=reserved_city,
         ))
     return out
 
@@ -135,11 +136,27 @@ def _build_hex_defs() -> dict[str, HexDef]:
             hex_id = f"{next_id:02d}"
             defs[hex_id] = HexDef(
                 id=hex_id, row=hex_def["row"], x=hex_def["x"], hex_type=hex_def["hex_type"],
-                volcanic=hex_def["volcanic"], bonus=hex_def["bonus"], reserved_city=hex_def["reserved_city"],
+                volcanic=hex_def["volcanic"], volcano_name=VOLCANO_NAMES.get(hex_id),
+                bonus=hex_def["bonus"], reserved_city=hex_def["reserved_city"],
             )
             next_id += 1
     return defs
 
+
+# Nombre de cada uno de los 4 hexagonos volcanicos (id 09/14/21/29, ver
+# HEX_MAP_RESEARCH.md seccion "Los 4 volcanes con nombre" para las dos
+# fuentes independientes usadas: coordenadas areograficas oficiales
+# (IAU/Wikipedia) de cada volcan ordenadas norte a sur, cotejadas contra la
+# posicion relativa de Noctis City (fila 4, x=2, al ESTE del volcan de esa
+# misma fila) -- en la realidad Noctis Labyrinthus (7S, 257.8E) esta al
+# este de Arsia Mons (8.35S, 239.9E) a latitud casi identica, lo mismo que
+# en este mapa. Usado por Lava Flows (coloca su tile en UNO de estos 4).
+VOLCANO_NAMES: dict[str, str] = {
+    "09": "tharsis_tholus",   # fila 1 (y=1), la mas al norte (13.25N)
+    "14": "ascraeus_mons",    # fila 2 (y=2), 11.92N
+    "21": "pavonis_mons",     # fila 3 (y=3), 1.48N
+    "29": "arsia_mons",       # fila 4 (y=4), la mas al sur (8.35S) -- misma fila que Noctis City
+}
 
 HEX_DEFS: dict[str, HexDef] = _build_hex_defs()
 
@@ -402,6 +419,10 @@ def can_place_special_tile(board: Board, hex_id: str, requirement: dict, player_
         reservada para oceano SIN colocar oceano ahi (ej. Mohole Area: +4
         produccion de calor, bloquea ese hex para siempre en vez de contar
         como uno de los 9 oceanos del parametro global).
+      - "hex_id_in": lista cerrada de hex_ids -- el hexagono elegido debe
+        ser UNO de esos (ej. Lava Flows: uno de los 4 hexagonos volcanicos
+        nombrados, ver VOLCANO_NAMES). Ausente/None = cualquier hexagono
+        que cumpla el resto de los filtros sirve.
     """
     hex_def = HEX_DEFS.get(hex_id)
     if hex_def is None:
@@ -410,6 +431,9 @@ def can_place_special_tile(board: Board, hex_id: str, requirement: dict, player_
     if hex_def["hex_type"] != required_hex_type or not is_hex_empty(board, hex_id):
         return False
     if hex_def["reserved_city"] is not None:
+        return False
+    allowed_hex_ids = requirement.get("hex_id_in")
+    if allowed_hex_ids is not None and hex_id not in allowed_hex_ids:
         return False
     allowed_resources = requirement.get("hex_bonus_resource")
     if allowed_resources is not None:

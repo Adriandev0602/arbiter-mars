@@ -194,8 +194,43 @@ módulo, igual que recomienda la investigación (sección 2) -- no se recalcula 
   desbloquear Mining Area/Mining Rights/Land Claim sin hardcodear cada una.
 - No hardcodear las ~20 special tiles particulares del catálogo completo.
 - No implementar mapas alternativos (Hellas/Elysium) ni el pago cruzado de Ares.
-- Nombrar los 4 hexágonos volcánicos (Tharsis Tholus/Ascraeus/Pavonis/Arsia Mons) si alguna
-  carta futura los distingue individualmente (no verificado, ver sección 9).
+- ~~Nombrar los 4 hexágonos volcánicos~~ — HECHO (2026-09-02, ver sección "Los 4 volcanes con
+  nombre" más abajo), necesario para cargar Lava Flows.
+
+## Los 4 volcanes con nombre (resuelto 2026-09-02, para Lava Flows #140)
+
+Lava Flows exige colocar su tile en UNO de 4 hexágonos volcánicos nombrados individualmente
+("place this tile ON EITHER THARSIS THOLUS, ASCRAEUS MONS, PAVONIS MONS OR ARSIA MONS" —
+verificado contra el scan real de la carta). El código fuente de `TharsisBoard.ts` (fuente
+primaria de todo el mapa, ver arriba) marca 4 espacios como `volcanic` pero **no les asigna
+nombre** — confirmado releyendo el archivo: los 4 `.volcanic(...)` no llevan ningún string de
+nombre asociado, a diferencia de otros espacios especiales del mismo archivo. Tampoco lo hace
+el rulebook base (pág. 4: *"The game board has an accurate map of the Tharsis region of Mars,
+including Valles Marineris and 3 of the 4 great volcanoes. Only the region around Olympus Mons
+is missing"* — esto se refiere a Olympus Mons + los 3 Tharsis Montes, un grupo distinto al de
+Lava Flows, así que tampoco resuelve la asignación).
+
+Como ninguna fuente digital/reglamentaria nombra explícitamente cada hexágono, se resolvió con
+**dos fuentes independientes de datos geográficos reales** (el mapa del juego es una
+representación geográficamente precisa de la región, según el propio rulebook):
+
+1. **Coordenadas areográficas oficiales (IAU, vía Wikipedia)** de los 4 volcanes, ordenadas de
+   norte a sur: Tharsis Tholus 13.25°N, Ascraeus Mons 11.92°N, Pavonis Mons 1.48°N, Arsia Mons
+   8.35°S. Esto da un orden norte→sur inequívoco.
+2. **Verificación cruzada con Noctis City** (ya ubicada y verificada en una sesión anterior, no
+   depende de esta investigación): Noctis City está en la fila 4 (`y=4`, id 31), en la MISMA
+   fila que el hexágono volcánico más al sur (id 29), al ESTE de él (x=2 vs x=0). En la
+   realidad, Noctis Labyrinthus (7.0°S, 257.8°E) está efectivamente al ESTE de Arsia Mons
+   (8.35°S, 239.9°E) a una latitud casi idéntica — la única combinación de los 4 volcanes que
+   coincide con esa relación geográfica exacta es que el hexágono de la fila 4 sea Arsia Mons.
+
+Combinando ambas: fila 1 (id 09, la más al norte de las 4) = Tharsis Tholus; fila 2 (id 14) =
+Ascraeus Mons; fila 3 (id 21) = Pavonis Mons; fila 4 (id 29, junto a Noctis City) = Arsia Mons.
+Implementado como constante `VOLCANO_NAMES` en `board.py`, expuesto en cada `HexDef` como
+`volcano_name`. Nuevo requirement genérico en `can_place_special_tile`: `"hex_id_in": [...]`
+(lista cerrada de hex_ids válidos) — usado por Lava Flows con los 4 ids de `VOLCANO_NAMES`, sin
+hardcodear la carta en `board.py`. Tests: `test_volcano_names_match_the_4_volcanic_hexes`,
+`test_lava_flows_can_only_place_on_one_of_the_4_named_volcanoes` en `test_board.py`.
 
 ## Fuente
 
