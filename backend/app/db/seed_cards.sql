@@ -1095,3 +1095,63 @@ where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'relea
              'indentured_workers', 'technology_demonstration', 'special_design', 'small_asteroid',
              'air_scrapping_expedition', 'comet_for_venus', 'lava_flows',
              'ghg_import_from_venus', 'hydrogen_to_venus');
+
+-- Bloque de revision 24 (Venus Next). Las 10 resueltas con vocabulario
+-- existente, salvo el requirement nuevo "min_tr" (Terraforming Contract).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'terraforming_contract', 'Terraforming Contract', 8, '{earth}', '{"min_tr": 25}'::jsonb,
+        '{"production_deltas": {"mc_production": 4}}'::jsonb
+    ),
+    (
+        'thermophiles', 'Thermophiles', 9, '{venus,microbe}', '{"min_venus": 6}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"target_card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'water_to_venus', 'Water to Venus', 9, '{power}', null,
+        '{"raise_venus_steps": 1}'::jsonb
+    ),
+    (
+        'venus_governor', 'Venus Governor', 4, '{venus,venus}',
+        '{"min_tag_count": {"tag": "venus", "count": 2}}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'venus_magnetizer', 'Venus Magnetizer', 7, '{venus}', '{"min_venus": 10}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {},
+          "gains": {"production_deltas": {"energy_production": -1}, "raise_venus_steps": 1}}}'::jsonb
+    ),
+    (
+        'venus_soils', 'Venus Soils', 20, '{venus,plant}', null,
+        '{"raise_venus_steps": 1, "production_deltas": {"plant_production": 1}, "target_card_resource_delta": 2}'::jsonb
+    ),
+    (
+        'venus_waystation', 'Venus Waystation', 9, '{venus,power}', null,
+        '{"passive": {"card_cost_discount_mc": 2, "tag_filter": "venus"}}'::jsonb
+    ),
+    (
+        'venusian_animals', 'Venusian Animals', 15, '{venus,science,animal}', '{"min_venus": 18}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0,
+          "passive": {"on_tag_played_add_resource": {"matching_tags": ["science"], "resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'venusian_insects', 'Venusian Insects', 5, '{venus,microbe}', '{"min_venus": 12}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        -- "1 microbio O 1 animal a OTRA carta Venus" -- mecanicamente identico
+        -- en este motor (recursos sin tipo por carta), aplicado sin choice.
+        'venusian_plants', 'Venusian Plants', 13, '{venus,plant}', '{"min_venus": 16}'::jsonb,
+        '{"raise_venus_steps": 1, "target_card_resource_delta": 1}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
+
+update cards set is_event = true where id in ('water_to_venus');

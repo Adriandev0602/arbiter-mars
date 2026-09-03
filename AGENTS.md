@@ -138,19 +138,20 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→23 + Venus Next + Lava Flows)
+### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→24 + Venus Next + Lava Flows)
 
-**Progreso:** catálogo en **241 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-22 y Lava Flows (140). `card_review_queue` tiene 131 filas `reviewed = true` y
-**171 sin revisar** — el próximo bloque (24) son las filas #1-10 de `select * from
+**Progreso:** catálogo en **251 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-23 y Lava Flows (140). `card_review_queue` tiene 141 filas `reviewed = true` y
+**161 sin revisar** — el próximo bloque (25) son las filas #1-10 de `select * from
 card_review_queue where reviewed = false order by id limit 10`.
 
 **Decisión de alcance (2026-09-02):** la expansión **Venus Next** entró al alcance del proyecto
 porque el bloque 20 completo resultó ser de esa expansión (ver sección 7). Motor extendido con
 4to parámetro global `venus` + proyecto estándar `air_scrapping` — ver sección 3. Los bloques
-21-23 también resultaron íntegramente Venus Next (171 filas sin revisar todavía, mayoría
-probable de la misma expansión) -- si los próximos bloques siguen trayendo cartas de OTRAS
-expansiones nuevas (Colonies, Prelude, Ares), la misma pregunta aplica: confirmar con el
+21-24 también resultaron íntegramente Venus Next (161 filas sin revisar todavía, mayoría
+probable de la misma expansión, aunque el bloque 24 llegó hasta "Venusian Plants" alfabético --
+puede que el próximo bloque ya sea otra expansión) -- si los próximos bloques traen cartas de
+OTRAS expansiones nuevas (Colonies, Prelude, Ares), la misma pregunta aplica: confirmar con el
 usuario antes de asumir que entran al alcance.
 
 **Verificación contra el rulebook oficial (2026-09-02):** se releyó el reglamento completo
@@ -159,13 +160,13 @@ encontradas. Se documentó una decisión ya implícita: el modo "un jugador" de 
 una partida ESTÁNDAR (TR 20), no la variante solitario oficial del reglamento (TR 14, 14
 generaciones fijas, ciudades neutrales) -- ver sección 7 más abajo.
 
-**Bloques 21-23 (Venus Next), 29 de 30 cargadas** (1 pendiente: Aerosport Tournament, ver
-abajo). Piezas de motor nuevas agregadas a lo largo de los tres bloques, todas extensiones
+**Bloques 21-24 (Venus Next), 39 de 40 cargadas** (1 pendiente: Aerosport Tournament, ver
+abajo). Piezas de motor nuevas agregadas a lo largo de los cuatro bloques, todas extensiones
 chicas de vocabulario existente:
 - `production_delta_per_tag` acepta una LISTA de specs (Gyropolis, bloque 21).
 - `target_card_resource_delta_per_tag` (Hydrogen to Venus, bloque 21).
 - `min_tag_count` en lista de 3+ tags distintos, patrón reusado sin cambios en motor (bloques
-  22-23: Luxury Foods, Mining Quota, Omnicourt, Solarnet, Sponsored Academies, etc.).
+  22-24).
 - `mc_or_titanium` en el `cost` de `use_card_action` -- el titanio puede cubrir parte/todo un
   costo de acción en MC, igual que al pagar cartas (Rotator Impacts, bloque 23; nuevo parámetro
   `titanium_to_pay`).
@@ -174,6 +175,8 @@ chicas de vocabulario existente:
 - `discard_card_then_draw` en `apply_card_effect` -- descarta 1 carta elegida (parámetro nuevo
   `discard_card_id`, distinto de `discard_for_draw_card_id` que ya existía para el pasivo de
   Mars University) y roba N (Sponsored Academies, bloque 23).
+- `min_tr` en `check_card_requirements` -- TR mínimo del jugador (Terraforming Contract,
+  bloque 24).
 
 **Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
 creada a partir de `main` una vez que el bloque anterior ya se mergeó, o de la rama del bloque

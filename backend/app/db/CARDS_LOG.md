@@ -259,6 +259,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `stratospheric_birds` | Stratospheric Birds | 249 | 12 MC | Tags venus+animal. Requiere Venus ≥12%. Acción repetible sin costo propio: mueve 1 floater desde OTRA carta activa elegida → +1 animal en esta |
 | `sulphur_exports` | Sulphur Exports | 250 | 21 MC | Tag venus. +1 paso Venus, +1 producción MC por cada tag venus (incluida esta) |
 | `sulphur_eating_bacteria` | Sulphur-Eating Bacteria | 251 | 6 MC | Tags venus+microbe. Requiere Venus ≥6%. Acción con elección: +1 microbio a sí misma, O gastar X microbios propios (pieza nueva `convert_card_resource_amount`) → +3X MC |
+| `terraforming_contract` | Terraforming Contract | 252 | 8 MC | Tag earth. Requiere TR ≥25 (pieza nueva `min_tr`). +4 producción MC |
+| `thermophiles` | Thermophiles | 253 | 9 MC | Tags venus+microbe. Requiere Venus ≥6%. Acción con elección: +1 microbio a OTRA carta Venus activa elegida, O gastar 2 microbios propios → +1 paso Venus |
+| `water_to_venus` | Water to Venus | 254 | 9 MC | Tag power, evento. +1 paso Venus |
+| `venus_governor` | Venus Governor | 255 | 4 MC | Doble tag venus (verificado contra el scan). Requiere 2 tags venus jugados. +2 producción MC |
+| `venus_magnetizer` | Venus Magnetizer | 256 | 7 MC | Tag venus. Requiere Venus ≥10%. Acción repetible sin costo de stock: -1 producción energía, +1 paso Venus |
+| `venus_soils` | Venus Soils | 257 | 20 MC | Tags venus+plant. +1 paso Venus, +1 producción plantas, +2 recursos a OTRA carta activa elegida |
+| `venus_waystation` | Venus Waystation | 258 | 9 MC | Tags venus+power. Pasivo: cartas con tag venus cuestan 2 MC menos (mismo patrón de Space Station) |
+| `venusian_animals` | Venusian Animals | 259 | 15 MC | Tags venus+science+animal. Requiere Venus ≥18%. Pasivo: +1 animal en la carta por cada tag science jugado (incluida esta, mismo patrón de Ecological Zone) |
+| `venusian_insects` | Venusian Insects | 260 | 5 MC | Tags venus+microbe. Requiere Venus ≥12%. Acción repetible sin costo: +1 microbio en la carta |
+| `venusian_plants` | Venusian Plants | 261 | 13 MC | Tags venus+plant. Requiere Venus ≥16%. +1 paso Venus, +1 recurso a OTRA carta Venus activa elegida (texto real ofrece elegir microbio O animal, mecánicamente idéntico, resuelto sin `choice`) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
