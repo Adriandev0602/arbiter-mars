@@ -269,6 +269,13 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `venusian_animals` | Venusian Animals | 259 | 15 MC | Tags venus+science+animal. Requiere Venus ≥18%. Pasivo: +1 animal en la carta por cada tag science jugado (incluida esta, mismo patrón de Ecological Zone) |
 | `venusian_insects` | Venusian Insects | 260 | 5 MC | Tags venus+microbe. Requiere Venus ≥12%. Acción repetible sin costo: +1 microbio en la carta |
 | `venusian_plants` | Venusian Plants | 261 | 13 MC | Tags venus+plant. Requiere Venus ≥16%. +1 paso Venus, +1 recurso a OTRA carta Venus activa elegida (texto real ofrece elegir microbio O animal, mecánicamente idéntico, resuelto sin `choice`) |
+| `atmo_collectors` | Atmo Collectors | C03 | 15 MC | Sin tags propios. Acción con elección de 4: +1 floater a sí misma, O gastar 1 floater propio → +2 titanio / +3 energía / +4 calor (mismo recurso, tres ramas separadas). Efecto inmediato al jugar: +2 floaters a cualquier carta (target puede ser ella misma) |
+| `community_services` | Community Services | C04 | 13 MC | Sin tags propios. +1 producción MC por cada carta jugada SIN tags, incluida ella misma (pieza nueva `production_delta_per_zero_tag_card` + contador `zero_tag_cards_played`) |
+| `conscription` | Conscription | C05 | 5 MC | Doble tag earth. Requiere 2 tags earth jugados. Próxima carta cuesta 16 MC menos (`next_card_discount_mc`, ya existente) |
+| `corona_extractor` | Corona Extractor | C06 | 10 MC | Tag science. Requiere 4 tags de ciencia. +4 producción energía |
+| `earth_elevator` | Earth Elevator | C08 | 43 MC | Tags earth+power. +3 producción titanio |
+| `cryo_sleep` | Cryo-Sleep | C07 | 10 MC | Tag science. Pasivo: comerciar cuesta 1 recurso menos (mecánica de colonias/comercio, ver sección dedicada abajo) |
+| `ecology_research` | Ecology Research | C09 | 21 MC | Tags science+animal+microbe+plant. +1 producción plantas por cada colonia propia, +1 recurso a una carta activa elegida y +2 a otra distinta |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -277,8 +284,39 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). |
+| 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). **Actualización bloque 25:** ya son 4 cartas las que necesitan esta pieza (ver Airliners y Floater Leasing abajo) — sube de prioridad para una sesión dedicada. |
 | 222 | Dirigibles | Pasivo: "when playing a Venus tag, floaters [guardados en ESTA carta] may be used as payment, and are worth 3 M€ each" — los floaters acumulados en una carta activa funcionan como una TERCERA moneda de pago (como acero/titanio, pero el stock vive en una carta, no en el jugador, y solo aplica a cartas con tag Venus). `calculate_card_payment`/`compute_conversion_rates` solo conocen mc/steel/titanium del jugador — necesitaría un parámetro nuevo tipo `floater_card_id`+`floaters_to_pay` en `tools.play_card`, validar que esa carta tenga tag Venus el objetivo, y sumar `floaters_to_pay * 3` al pago igual que steel/titanium. Pieza real de pago, no de efecto — misma categoría que Self-Replicating Robots (mecánica de pago no trivial), pospuesta para abordarla con foco dedicado en vez de forzarla en un bloque de revisión normal. Mismo patrón se repetirá en más cartas Venus Next que usan floaters como pago (verificar cuando aparezcan). |
+| C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
+| C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
+
+### Colonies: mecánica de colonias/comercio
+
+**Resuelto (2026-09-03):** implementada en `backend/app/agent/colonies.py` (módulo nuevo, mismo
+estilo que `board.py`), verificada contra el rulebook oficial de la expansión
+(TM_COLONIES_ENG_RULES, 4 páginas, leído completo) — proyecto estándar `build_colony` (17 MC),
+acción `use_trade_fleet` (9 MC / 3 energía / 3 titanio, a elección), reparto de "trade income" +
+"colony bonus" al comerciar, reset del track al lado de las colonias construidas, y el paso de
+producción de colonias de la fase solar (el marcador sube 1 paso, las flotas vuelven a estar
+disponibles). Campos nuevos en `PlayerState`: `colonies_owned`, `trade_fleets`,
+`trade_fleets_used`; en `GlobalParameters` (cargado/guardado aparte, igual que `board`):
+`colonies`. Tools nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`.
+
+**Catálogo de colonias — solo Callisto cargada por ahora.** El juego real tiene 11 Colony Tiles
+con nombre (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto, Ceres,
+Io), cada una con su propio track de valores. Mismo criterio que el catálogo de cartas: no se
+generan datos al voleo. Callisto quedó verificada con dos fuentes independientes (el ejemplo
+trabajado del rulebook oficial, que muestra el track completo 0/2/3/5/7/10/13 con el marcador en
+10 energía y colony bonus 3 energía; y una búsqueda independiente que reporta el mismo track).
+Las otras 10 quedan sin cargar hasta verificarlas de la misma forma — el mecanismo ya es
+genérico (`COLONY_DEFS`) y no hace falta tocar código para agregar una colonia nueva, solo datos
+verificados. Cartas que targeteen una colonia específica por nombre distinta de Callisto quedan
+pendientes hasta cargar esa colonia (ninguna hasta ahora — Cryo-Sleep y Ecology Research no
+dependían de una colonia puntual).
+
+Esto desbloqueó **Cryo-Sleep** (pasivo `trade_cost_discount`) y **Ecology Research** (efecto
+nuevo `production_delta_per_colony`, que cuenta `player["colonies_owned"]` sin importar cuál).
+Tests: `test_colonies.py` (mecanismo completo) y los tests de `cryo_sleep`/`ecology_research` en
+`test_rules_engine.py`.
 
 **Resuelto (2026-09-02):** la pieza que faltaba para Lava Flows (140) — colocar
 tile en uno de 4 hexágonos volcánicos nombrados individualmente — quedó
@@ -381,6 +419,7 @@ ambos excluidos explícitamente del MVP. Se reevalúan si el alcance del proyect
 |---|---|---|
 | 038 | Rover Construction | Bonus disparado por colocación de tile de ciudad de **cualquier jugador** — depende de multi-jugador + tiles. |
 | 147 | Herbivores | Puede decrementar la producción de otro jugador — depende de multi-jugador. |
+| C02 | Air Raid (Colonies) | Evento cuyo ÚNICO efecto es "steal 5 M€ from any player" (robo obligatorio, no "hasta N" opcional como la regla de diseño de abajo) — a diferencia de Comet/Asteroid (donde el robo es una cláusula secundaria opcional sobre un efecto garantizado), acá TODO el efecto depende de un oponente. En single-player, jugarla costaría el recurso (perder 1 floater) sin ningún beneficio — no tiene sentido cargarla como una carta "vacía" a propósito. |
 
 ## Regla de diseño: "remove up to N &lt;recurso&gt; from any player"
 

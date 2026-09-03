@@ -7,6 +7,7 @@ lenguaje natural -- nunca calcula los numeros el mismo.
 from langchain_core.tools import tool
 
 from app.agent import board as boardlib
+from app.agent import colonies as colonieslib
 from app.agent import rules_engine as engine
 from app.db.supabase_client import supabase
 
@@ -31,6 +32,10 @@ def _load_player(player_id: str) -> engine.PlayerState:
         pending_mc_discount=row.get("pending_mc_discount") or 0,
         pending_requirement_tolerance_steps=row.get("pending_requirement_tolerance_steps") or 0,
         reserved_cards=row.get("reserved_cards") or {},
+        zero_tag_cards_played=row.get("zero_tag_cards_played") or 0,
+        colonies_owned=row.get("colonies_owned") or [],
+        trade_fleets=row.get("trade_fleets") if row.get("trade_fleets") is not None else 1,
+        trade_fleets_used=row.get("trade_fleets_used") or 0,
     )
 
 
@@ -67,6 +72,16 @@ def _load_board(game_id: str = "default") -> boardlib.Board:
 
 def _save_board(board: boardlib.Board, game_id: str = "default") -> None:
     supabase.table("global_parameters").update({"board": board}).eq("game_id", game_id).execute()
+
+
+def _load_colonies(game_id: str = "default") -> colonieslib.Colonies:
+    """Trae el estado mutable de las Colony Tiles en juego (expansion Colonies)."""
+    res = supabase.table("global_parameters").select("colonies").eq("game_id", game_id).single().execute()
+    return res.data.get("colonies") or {}
+
+
+def _save_colonies(colonies: colonieslib.Colonies, game_id: str = "default") -> None:
+    supabase.table("global_parameters").update({"colonies": colonies}).eq("game_id", game_id).execute()
 
 
 def _apply_hex_bonus(player: engine.PlayerState, hex_bonus: list[tuple[str, int]]) -> engine.PlayerState:
@@ -285,6 +300,12 @@ def run_production_phase(player_id: str) -> dict:
     """
     player = _load_player(player_id)
     new_player = engine.run_production_phase(player)
+    new_player = {**new_player, "trade_fleets_used": 0}
+
+    colonies = _load_colonies()
+    if colonies:
+        new_colonies = colonieslib.run_colony_production(colonies)
+        _save_colonies(new_colonies)
 
     _save_player(player_id, new_player)
     _log_transaction(player_id, "production_phase", {})
@@ -590,6 +611,7 @@ def play_card(
         )
 
     new_player = engine.increment_tags_played(new_player, card_tags)
+    new_player = engine.increment_zero_tag_cards_played(new_player, card_tags)
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
         new_globals = engine.increment_events_played(new_globals)
@@ -910,9 +932,147 @@ def resolve_research_phase(
     return {"player": dict(new_player)}
 
 
+@tool
+def setup_colonies(colony_ids: list[str]) -> dict:
+    """
+    Elige que Colony Tiles estan en juego esta partida (expansion Colonies,
+    solo tiene sentido llamarla una vez, al arrancar). Regla oficial del
+    modo solo ("Solo with Colonies"): sortear 4 y elegir 3 -- el sorteo/
+    eleccion de cuales queda fuera de esta tool (el LLM se las ofrece al
+    usuario a partir de `colonies.COLONY_DEFS`, que hoy solo tiene
+    'callisto' cargada y verificada -- ver CARDS_LOG.md, seccion
+    "Colonies: mecanica de colonias/comercio", para el resto de las 11
+    colonias reales del juego, todavia sin cargar).
+
+    Args:
+        colony_ids: ids de `colonies.COLONY_DEFS` a poner en juego (ej.
+            ["callisto"]).
+
+    Returns:
+        dict con el estado inicial de las colonias en juego.
+
+    Lanza colonies.UnknownColonyError si algun id no esta en COLONY_DEFS.
+    """
+    new_colonies = colonieslib.new_colonies(colony_ids)
+    _save_colonies(new_colonies)
+    return {"colonies": dict(new_colonies)}
+
+
+@tool
+def build_colony(player_id: str, colony_id: str) -> dict:
+    """
+    Proyecto estandar de la expansion Colonies: paga 17 MC, coloca el
+    marcador del jugador en el slot mas bajo libre de `colony_id` (maximo 3
+    duenos por colonia, 1 por jugador) y otorga el placement_bonus impreso
+    (ej. Callisto: +1 produccion de energia). No es lo mismo que comerciar
+    -- ver use_trade_fleet.
+
+    Args:
+        player_id: id del jugador.
+        colony_id: id de `colonies.COLONY_DEFS`, debe estar en juego (ver
+            setup_colonies).
+
+    Returns:
+        dict con el estado actualizado del jugador y de las colonias.
+
+    Lanza InsufficientResourcesError si falta MC, colonies.ColonyFullError
+    si la colonia ya esta completa o el jugador ya tiene una ahi,
+    colonies.UnknownColonyError si `colony_id` no esta en juego.
+    """
+    player = _load_player(player_id)
+    if player["mc"] < colonieslib.BUILD_COLONY_COST_MC:
+        raise engine.InsufficientResourcesError(
+            f"Se necesitan {colonieslib.BUILD_COLONY_COST_MC} MC, hay {player['mc']}"
+        )
+    colonies = _load_colonies()
+    new_colonies, placement_bonus = colonieslib.build_colony(colonies, colony_id, player_id)
+
+    new_player: dict = {
+        **player, "mc": player["mc"] - colonieslib.BUILD_COLONY_COST_MC,
+        "colonies_owned": [*player["colonies_owned"], colony_id],
+    }
+    for key, delta in placement_bonus.items():
+        new_player[key] = new_player[key] + delta
+
+    _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
+    _save_colonies(new_colonies)
+    _log_transaction(player_id, "build_colony", {"colony_id": colony_id})
+
+    return {"player": new_player, "colonies": dict(new_colonies)}
+
+
+@tool
+def use_trade_fleet(player_id: str, colony_id: str, payment: str) -> dict:
+    """
+    Accion de comerciar de la expansion Colonies (no es un proyecto
+    estandar -- una accion mas del turno). Paga el costo elegido (9 MC, 3
+    energia o 3 titanio, reducido por el pasivo "trade_cost_discount" si el
+    jugador lo tiene, ej. Cryo-Sleep), gasta 1 flota de comercio disponible
+    (`trade_fleets - trade_fleets_used`), y mueve la flota a `colony_id`
+    (debe estar libre de flota). Da el trade income (segun el track actual
+    de esa colonia) al jugador, y el colony_bonus a TODOS sus duenos
+    (incluido este jugador si tiene una ahi). Las flotas usadas vuelven a
+    estar disponibles en la fase de produccion (ver run_production_phase).
+
+    Args:
+        player_id: id del jugador.
+        colony_id: id de `colonies.COLONY_DEFS`, debe estar en juego.
+        payment: "mc", "energy" o "titanium" -- que recurso usa para pagar
+            el costo de comerciar.
+
+    Returns:
+        dict con el estado actualizado del jugador y de las colonias, mas
+        `income_type`/`income_amount`/`colony_bonus` para que el LLM le
+        explique al usuario que gano.
+
+    Lanza ValueError si `payment` no es valido, InsufficientResourcesError
+    si falta el recurso o no hay flotas disponibles,
+    colonies.ColonyOccupiedError si la colonia ya tiene flota visitandola.
+    """
+    if payment not in ("mc", "energy", "titanium"):
+        raise ValueError("payment debe ser 'mc', 'energy' o 'titanium'")
+
+    player = _load_player(player_id)
+    if player["trade_fleets"] - player["trade_fleets_used"] <= 0:
+        raise engine.InsufficientResourcesError("El jugador no tiene flotas de comercio disponibles")
+
+    discount = engine.compute_trade_cost_discount(player)
+    base_cost = {
+        "mc": colonieslib.TRADE_COST_MC,
+        "energy": colonieslib.TRADE_COST_ENERGY,
+        "titanium": colonieslib.TRADE_COST_TITANIUM,
+    }[payment]
+    cost = max(0, base_cost - discount)
+    if player[payment] < cost:
+        raise engine.InsufficientResourcesError(f"Se necesita {cost} de {payment}, hay {player[payment]}")
+
+    colonies = _load_colonies()
+    new_colonies, income_type, income_amount, colony_bonus = colonieslib.trade_with_colony(colonies, colony_id)
+
+    new_player: dict = {**player, payment: player[payment] - cost, "trade_fleets_used": player["trade_fleets_used"] + 1}
+    new_player[income_type] = new_player[income_type] + income_amount
+    if player_id in new_colonies[colony_id]["owners"]:
+        for key, delta in colony_bonus.items():
+            new_player[key] = new_player[key] + delta
+
+    _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
+    _save_colonies(new_colonies)
+    _log_transaction(
+        player_id, "use_trade_fleet",
+        {"colony_id": colony_id, "payment": payment, "cost": cost,
+         "income_type": income_type, "income_amount": income_amount},
+    )
+
+    return {
+        "player": new_player, "colonies": dict(new_colonies),
+        "income_type": income_type, "income_amount": income_amount, "colony_bonus": colony_bonus,
+    }
+
+
 # Lista de tools que se bindean al LLM en graph.py
 ALL_TOOLS = [
     use_standard_project, convert_resources, run_production_phase,
     play_card, use_card_action, get_player_state, get_board_state,
     deal_starting_hand, start_research_phase, resolve_research_phase,
+    setup_colonies, build_colony, use_trade_fleet,
 ]

@@ -69,6 +69,23 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists zero_tag_cards_played integer not null default 0;
+exception when undefined_table then null;
+end $$;
+
+do $$ begin
+    alter table if exists players add column if not exists colonies_owned jsonb not null default '[]'::jsonb;
+    alter table if exists players add column if not exists trade_fleets integer not null default 1;
+    alter table if exists players add column if not exists trade_fleets_used integer not null default 0;
+exception when undefined_table then null;
+end $$;
+
+do $$ begin
+    alter table if exists global_parameters add column if not exists colonies jsonb not null default '{}'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -149,6 +166,19 @@ create table if not exists players (
     -- y tools.play_card / tools.use_card_action.
     reserved_cards jsonb not null default '{}'::jsonb,
 
+    -- Cuenta de cartas jugadas SIN ningun tag (ej. Community Services: +1
+    -- produccion MC por cada una, incluida ella misma). Ver
+    -- rules_engine.increment_zero_tag_cards_played.
+    zero_tag_cards_played integer not null default 0,
+
+    -- Expansion Colonies: colonias propias (ver rules_engine.PlayerState,
+    -- colonies.build_colony) y flotas de comercio (colonies.trade_with_colony,
+    -- disponibles = trade_fleets - trade_fleets_used, este ultimo vuelve a
+    -- 0 en cada fase de produccion).
+    colonies_owned jsonb not null default '[]'::jsonb,
+    trade_fleets integer not null default 1,
+    trade_fleets_used integer not null default 0,
+
     created_at timestamptz not null default now()
 );
 
@@ -172,7 +202,14 @@ create table if not exists global_parameters (
     -- ausente de este jsonb se interpreta como vacio (board.is_hex_empty).
     -- Todavia NO esta cableado a tools.py -- ver "Pendiente" en
     -- HEX_MAP_RESEARCH.md.
-    board jsonb not null default '{}'::jsonb
+    board jsonb not null default '{}'::jsonb,
+
+    -- Expansion Colonies: Colony Tiles en juego esta partida. Forma:
+    -- {colony_id: {"track_position": int, "owners": [player_id,...],
+    -- "trade_fleet_present": bool}}. Los datos ESTATICOS de cada colonia
+    -- (track de valores, bonus) viven en colonies.COLONY_DEFS, no aca.
+    -- Arranca vacio hasta llamar tools.setup_colonies.
+    colonies jsonb not null default '{}'::jsonb
 );
 
 -- Catalogo de cartas de proyecto.
