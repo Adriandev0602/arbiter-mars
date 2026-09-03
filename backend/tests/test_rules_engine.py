@@ -3788,3 +3788,118 @@ def test_sulphur_eating_bacteria_requires_venus_6():
     with pytest.raises(CardRequirementNotMetError):
         check_card_requirements({"min_venus": 6}, {**new_global_parameters(), "venus": 4})
     check_card_requirements({"min_venus": 6}, {**new_global_parameters(), "venus": 6})
+
+
+# --- Pieza nueva de motor (bloque 24): min_tr --------------------------------
+
+def test_min_tr_requirement():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tr": 25}, new_global_parameters(), player={**new_player_state(), "tr": 24})
+    check_card_requirements({"min_tr": 25}, new_global_parameters(), player={**new_player_state(), "tr": 25})
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tr": 25}, new_global_parameters(), player=None)
+
+
+# --- Bloque de revision 24 (Venus Next) --------------------------------------
+
+def test_terraforming_contract_requires_tr_25_mc_production():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 4}})
+    assert new_player["mc_production"] == 5
+
+
+def test_thermophiles_requires_venus_6_action_choice_add_other_or_spend_for_venus():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 6}, {**new_global_parameters(), "venus": 4})
+
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "thermophiles")
+    player = register_active_card(player, "aerial_mappers")
+    action_spec = {
+        "choice": [
+            {"gains": {"target_card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}},
+        ]
+    }
+    p1, _ = use_card_action(player, globals_, "thermophiles", action_spec, effect_choice=0, target_card_id="aerial_mappers")
+    assert p1["active_cards"]["aerial_mappers"]["resources"] == 1
+
+    player_with_microbes = {**player, "active_cards": {"thermophiles": {"resources": 2, "action_used": False}}}
+    p2, g2 = use_card_action(player_with_microbes, globals_, "thermophiles", action_spec, effect_choice=1)
+    assert p2["active_cards"]["thermophiles"]["resources"] == 0
+    assert g2["venus"] == 2
+
+
+def test_water_to_venus_raises_venus():
+    _, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {"raise_venus_steps": 1})
+    assert new_globals["venus"] == 2
+
+
+def test_venus_governor_requires_2_venus_tags_mc_production():
+    req = {"min_tag_count": {"tag": "venus", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"venus": 1}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 2}})
+    assert new_player["mc_production"] == 3
+
+
+def test_venus_magnetizer_requires_venus_10_action_swaps_energy_for_venus():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 10}, {**new_global_parameters(), "venus": 8})
+
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "venus_magnetizer")
+    action_spec = {"cost": {}, "gains": {"production_deltas": {"energy_production": -1}, "raise_venus_steps": 1}}
+    new_player, new_globals = use_card_action(player, globals_, "venus_magnetizer", action_spec)
+    assert new_player["energy_production"] == 0
+    assert new_globals["venus"] == 2
+
+
+def test_venus_soils_raises_venus_plant_production_and_boosts_target_card():
+    player = register_active_card(new_player_state(), "venus_soils")
+    player = register_active_card(player, "aerial_mappers")
+    effects = {"raise_venus_steps": 1, "production_deltas": {"plant_production": 1}, "target_card_resource_delta": 2}
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects, target_card_id="aerial_mappers")
+    assert new_globals["venus"] == 2
+    assert new_player["plant_production"] == 2
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+
+
+def test_venus_waystation_passive_discounts_venus_tag_cards():
+    player = register_passive_effect(
+        new_player_state(), "venus_waystation", {"card_cost_discount_mc": 2, "tag_filter": "venus"},
+    )
+    assert compute_card_cost_discount(player, ("venus",)) == 2
+    assert compute_card_cost_discount(player, ("earth",)) == 0
+
+
+def test_venusian_animals_requires_venus_18_passive_adds_resource_on_science_tag():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 18}, {**new_global_parameters(), "venus": 16})
+
+    player = register_active_card(new_player_state(), "venusian_animals")
+    player = register_passive_effect(
+        player, "venusian_animals", {"on_tag_played_add_resource": {"matching_tags": ["science"], "resource_delta": 1}},
+    )
+    new_player = apply_tag_played_resource_bonuses(player, ("science",))
+    assert new_player["active_cards"]["venusian_animals"]["resources"] == 1
+
+
+def test_venusian_insects_requires_venus_12_action_adds_microbe():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 12}, {**new_global_parameters(), "venus": 10})
+    player = register_active_card(new_player_state(), "venusian_insects")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "venusian_insects", action_spec)
+    assert new_player["active_cards"]["venusian_insects"]["resources"] == 1
+
+
+def test_venusian_plants_requires_venus_16_raises_venus_boosts_other_card():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 16}, {**new_global_parameters(), "venus": 14})
+
+    player = register_active_card(new_player_state(), "venusian_plants")
+    player = register_active_card(player, "aerial_mappers")
+    effects = {"raise_venus_steps": 1, "target_card_resource_delta": 1}
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects, target_card_id="aerial_mappers")
+    assert new_globals["venus"] == 2
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 1

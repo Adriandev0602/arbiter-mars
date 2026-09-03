@@ -565,6 +565,8 @@ def check_card_requirements(
       - "max_oxygen": oxigeno maximo en % (ej. Domed Crater: 7).
       - "min_oceans" / "max_oceans": cantidad minima/maxima de tiles de
         oceano colocados (ej. Dust Seals: maximo 3).
+      - "min_tr": Terraform Rating minimo del jugador (ej. Terraforming
+        Contract: 25). Requiere pasar `player`.
       - "min_venus" / "max_venus": Venus scale minimo/maximo en % (expansion
         Venus Next, ej. cartas que piden Venus >= 8%).
       - "min_city_tiles": cantidad minima de tiles de ciudad colocados en el
@@ -650,6 +652,11 @@ def check_card_requirements(
             raise CardRequirementNotMetError(
                 f"Requiere {threshold} oceanos colocados, hay {globals_['oceans_placed']}"
             )
+    if "min_tr" in requirements:
+        if player is None:
+            raise CardRequirementNotMetError("Este requisito necesita el estado del jugador (TR)")
+        if player["tr"] < requirements["min_tr"]:
+            raise CardRequirementNotMetError(f"Requiere TR >= {requirements['min_tr']}, hay {player['tr']}")
     if "min_venus" in requirements:
         threshold = requirements["min_venus"] - venus_tolerance
         if globals_["venus"] < threshold:
