@@ -220,6 +220,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `ai_central` | AI Central | 208 | 21 MC | Requiere 3 tags de ciencia ya jugados. -1 producción energía. Acción repetible gratis: roba 2 cartas |
 | `small_asteroid` | Small Asteroid | 209 | 10 MC | Evento, tag space. Sube temperatura 1 paso (cláusula opcional de robar plantas a otro jugador omitida, MVP de un solo jugador) |
 | `snow_algae` | Snow Algae | 211 | 12 MC | Requiere 2 océanos colocados. +1 producción plantas, +1 producción calor |
+| `penguins` | Penguins | 212 | 7 MC | Requiere 8 océanos. Acción repetible sin costo: +1 recurso (animal) en la carta |
+| `aerial_mappers` | Aerial Mappers | 213 | 11 MC | Tag venus. Acción con elección: +1 floater a sí misma, O +1 floater a OTRA carta activa, O gastar 1 floater propio para robar 1 carta |
+| `air_scrapping_expedition` | Air-Scrapping Expedition | 215 | 13 MC | Tag venus, evento. +1 paso Venus, +3 floaters a una carta Venus activa elegida |
+| `atalanta_planitia_lab` | Atalanta Planitia Lab | 216 | 10 MC | Tags venus+science. Requiere 3 tags de ciencia. Roba 2 cartas |
+| `atmoscoop` | Atmoscoop | 217 | 22 MC | Tags jovian+power. Requiere 3 tags de ciencia. Elección: +2 pasos temperatura O +2 pasos Venus; siempre +2 floaters a una carta Venus activa elegida |
+| `comet_for_venus` | Comet for Venus | 218 | 11 MC | Tag power, evento. +1 paso Venus (cláusula "remove up to 4 MC de un oponente con tag Venus" omitida, regla de oro single-player) |
+| `corroder_suits` | Corroder Suits | 219 | 8 MC | Tag venus. +2 producción MC, +1 floater a una carta Venus activa elegida |
+| `dawn_city` | Dawn City | 220 | 15 MC | Tags power+city. Requiere 4 tags de ciencia. -1 producción energía, +1 producción titanio, +1 ciudad (mismo mecanismo genérico ya usado para Phobos Space Haven -- exige hex_id real de Tharsis, no modela el área reservada de Venus por separado) |
+| `deuterium_export` | Deuterium Export | 221 | 11 MC | Tags venus+power+power (doble power, verificado contra el scan). Acción con elección: +1 floater a sí misma, O gastar 1 floater propio para +1 producción energía |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -229,6 +238,7 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | # scan | Nombre | Qué falta |
 |---|---|---|
 | 140 | Lava Flows | Sube temperatura 2 pasos (trivial) pero además coloca su tile en UNO de 4 hexágonos volcánicos nombrados específicamente (Tharsis Tholus, Ascraeus Mons, Pavonis Mons, Arsia Mons) — el mapa (`board.py`) todavía no asigna nombre individual a esos 4 hexágonos ni tiene un requirement tipo "uno de esta lista de hex_ids" en `can_place_special_tile` (hoy solo filtra por `hex_type`/bonus/adyacencia genérica, ver nota "Nombrar los 4 hexágonos volcánicos" en `HEX_MAP_RESEARCH.md`). Implementar esa pieza requeriría verificar contra la fuente qué hex_id corresponde a cada volcán — no reverificado todavía, no arriesgar la precisión cargando algo mal identificado. |
+| 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). |
 
 **Resuelto (2026-09-02):** la pieza que faltaba para Viral Enhancers (074) —
 pasivo con elección del jugador que dispara con CUALQUIER carta de tag

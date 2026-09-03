@@ -838,6 +838,58 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'snow_algae', 'Snow Algae', 12, '{plant}', '{"min_oceans": 2}'::jsonb,
         '{"production_deltas": {"plant_production": 1, "heat_production": 1}}'::jsonb
+    ),
+
+    -- Bloque de revision 20 (expansion Venus Next, ver CLAUDE.md seccion 7 y
+    -- CARDS_LOG.md "Resuelto 2026-09-02: expansion Venus Next").
+    (
+        'penguins', 'Penguins', 7, '{animal}', '{"min_oceans": 8}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'aerial_mappers', 'Aerial Mappers', 11, '{venus}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"gains": {"target_card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"draw_cards": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'air_scrapping_expedition', 'Air-Scrapping Expedition', 13, '{venus}', null,
+        '{"raise_venus_steps": 1, "target_card_resource_delta": 3}'::jsonb
+    ),
+    (
+        'atalanta_planitia_lab', 'Atalanta Planitia Lab', 10, '{venus,science}',
+        '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
+        '{"draw_cards": 2}'::jsonb
+    ),
+    (
+        'atmoscoop', 'Atmoscoop', 22, '{jovian,power}',
+        '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
+        '{"choice": [
+            {"raise_temperature_steps": 2, "target_card_resource_delta": 2},
+            {"raise_venus_steps": 2, "target_card_resource_delta": 2}
+        ]}'::jsonb
+    ),
+    (
+        'comet_for_venus', 'Comet for Venus', 11, '{power}', null,
+        '{"raise_venus_steps": 1}'::jsonb
+    ),
+    (
+        'corroder_suits', 'Corroder Suits', 8, '{venus}', null,
+        '{"production_deltas": {"mc_production": 2}, "target_card_resource_delta": 1}'::jsonb
+    ),
+    (
+        'dawn_city', 'Dawn City', 15, '{power,city}',
+        '{"min_tag_count": {"tag": "science", "count": 4}}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "titanium_production": 1}, "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'deuterium_export', 'Deuterium Export', 11, '{venus,power,power}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"production_deltas": {"energy_production": 1}}}
+        ]}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -854,4 +906,5 @@ where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'relea
              'local_heat_trapping', 'imported_hydrogen', 'large_convoy', 'ceos_favorite_project',
              'convoy_from_europa', 'imported_ghg', 'imported_nitrogen', 'import_of_advanced_ghg',
              'aerobraked_ammonia_asteroid', 'ice_cap_melting', 'flooding', 'permafrost_extraction',
-             'indentured_workers', 'technology_demonstration', 'special_design', 'small_asteroid');
+             'indentured_workers', 'technology_demonstration', 'special_design', 'small_asteroid',
+             'air_scrapping_expedition', 'comet_for_venus');

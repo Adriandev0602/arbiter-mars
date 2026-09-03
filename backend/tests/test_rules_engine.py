@@ -3198,3 +3198,147 @@ def test_great_dam_requires_4_oceans_and_gives_2_energy_production():
     )
     assert new_player["energy_production"] == 3
 
+
+
+# --- Bloque de revision 20 (expansion Venus Next) ---------------------------
+
+def test_penguins_action_adds_animal_to_card():
+    globals_ = new_global_parameters()
+    check_card_requirements({"min_oceans": 8}, {**globals_, "oceans_placed": 8})
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_oceans": 8}, {**globals_, "oceans_placed": 7})
+
+    player = register_active_card(new_player_state(), "penguins")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "penguins", action_spec)
+    assert new_player["active_cards"]["penguins"]["resources"] == 1
+
+
+def test_aerial_mappers_action_choice_add_self_add_other_or_spend_to_draw():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "aerial_mappers")
+    player = register_active_card(player, "decomposers")
+    action_spec = {
+        "choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"gains": {"target_card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"draw_cards": 1}},
+        ]
+    }
+
+    # Opcion 0: agrega floater a si misma
+    p1, _ = use_card_action(player, globals_, "aerial_mappers", action_spec, effect_choice=0)
+    assert p1["active_cards"]["aerial_mappers"]["resources"] == 1
+
+    # Opcion 1: agrega floater a OTRA carta activa (ej. otra carta con tag Venus)
+    p2, _ = use_card_action(player, globals_, "aerial_mappers", action_spec, effect_choice=1, target_card_id="decomposers")
+    assert p2["active_cards"]["decomposers"]["resources"] == 1
+    assert p2["active_cards"]["aerial_mappers"]["resources"] == 0
+
+    # Opcion 2: gasta 1 floater guardado para robar 1 carta
+    player_with_floater = {
+        **player,
+        "active_cards": {**player["active_cards"], "aerial_mappers": {"resources": 1, "action_used": False}},
+        "deck": ["card_a"],
+    }
+    p3, _ = use_card_action(player_with_floater, globals_, "aerial_mappers", action_spec, effect_choice=2)
+    assert p3["active_cards"]["aerial_mappers"]["resources"] == 0
+    assert p3["hand"] == ["card_a"]
+
+
+def test_air_scrapping_expedition_raises_venus_and_adds_floaters_to_target():
+    player = register_active_card(new_player_state(), "air_scrapping_expedition")
+    player = register_active_card(player, "aerial_mappers")
+    globals_ = new_global_parameters()
+    effects = {"raise_venus_steps": 1, "target_card_resource_delta": 3}
+
+    new_player, new_globals = apply_card_effect(player, globals_, effects, target_card_id="aerial_mappers")
+    assert new_globals["venus"] == 2
+    assert new_player["tr"] == 21
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 3
+
+
+def test_atalanta_planitia_lab_requires_3_science_tags_draws_2():
+    req = {"min_tag_count": {"tag": "science", "count": 3}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 2}})
+    check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 3}})
+
+    player = {**new_player_state(), "deck": ["card_a", "card_b"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
+    assert new_player["hand"] == ["card_a", "card_b"]
+
+
+def test_atmoscoop_choice_temperature_or_venus_plus_floaters_to_target():
+    player = register_active_card(new_player_state(), "atmoscoop")
+    player = register_active_card(player, "aerial_mappers")
+    globals_ = new_global_parameters()
+    effects = {
+        "choice": [
+            {"raise_temperature_steps": 2, "target_card_resource_delta": 2},
+            {"raise_venus_steps": 2, "target_card_resource_delta": 2},
+        ]
+    }
+
+    # Opcion 0: sube temperatura, no Venus
+    p1, g1 = apply_card_effect(player, globals_, effects, effect_choice=0, target_card_id="aerial_mappers")
+    assert g1["temperature"] == TEMPERATURE_MIN + 2 * TEMPERATURE_STEP
+    assert g1["venus"] == 0
+    assert p1["active_cards"]["aerial_mappers"]["resources"] == 2
+
+    # Opcion 1: sube Venus, no temperatura
+    p2, g2 = apply_card_effect(player, globals_, effects, effect_choice=1, target_card_id="aerial_mappers")
+    assert g2["venus"] == 4
+    assert g2["temperature"] == TEMPERATURE_MIN
+    assert p2["active_cards"]["aerial_mappers"]["resources"] == 2
+
+
+def test_comet_for_venus_raises_venus_omits_opponent_clause():
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {"raise_venus_steps": 1})
+    assert new_globals["venus"] == 2
+    assert new_player["tr"] == 21
+
+
+def test_corroder_suits_mc_production_and_target_card_resource():
+    player = register_active_card(new_player_state(), "corroder_suits")
+    player = register_active_card(player, "aerial_mappers")
+    globals_ = new_global_parameters()
+    effects = {"production_deltas": {"mc_production": 2}, "target_card_resource_delta": 1}
+
+    new_player, _ = apply_card_effect(player, globals_, effects, target_card_id="aerial_mappers")
+    assert new_player["mc_production"] == 3
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 1
+
+
+def test_dawn_city_requires_4_science_tags_swaps_energy_for_titanium_and_places_city():
+    req = {"min_tag_count": {"tag": "science", "count": 4}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 3}})
+
+    effects = {"production_deltas": {"energy_production": -1, "titanium_production": 1}, "place_city_tiles": 1}
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), effects)
+    assert new_player["energy_production"] == 0
+    assert new_player["titanium_production"] == 2
+    assert new_globals["city_tiles_placed"] == 1
+
+
+def test_deuterium_export_action_choice_add_floater_or_spend_for_energy():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "deuterium_export")
+    action_spec = {
+        "choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"production_deltas": {"energy_production": 1}}},
+        ]
+    }
+
+    p1, _ = use_card_action(player, globals_, "deuterium_export", action_spec, effect_choice=0)
+    assert p1["active_cards"]["deuterium_export"]["resources"] == 1
+
+    player_with_floater = {
+        **player,
+        "active_cards": {"deuterium_export": {"resources": 1, "action_used": False}},
+    }
+    p2, _ = use_card_action(player_with_floater, globals_, "deuterium_export", action_spec, effect_choice=1)
+    assert p2["active_cards"]["deuterium_export"]["resources"] == 0
+    assert p2["energy_production"] == 2
