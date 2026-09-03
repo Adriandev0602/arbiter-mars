@@ -17,11 +17,13 @@ from app.agent.rules_engine import (
     new_global_parameters,
     raise_temperature,
     raise_oxygen,
+    raise_venus,
     place_ocean,
     place_city_tile,
     standard_project_sell_patents,
     standard_project_power_plant,
     standard_project_asteroid,
+    standard_project_air_scrapping,
     standard_project_aquifer,
     standard_project_greenery,
     standard_project_city,
@@ -133,6 +135,68 @@ def test_place_ocean_at_max_raises():
     globals_ = {**new_global_parameters(), "oceans_placed": 9}
     with pytest.raises(GlobalParameterMaxedError):
         place_ocean(player, globals_)
+
+
+def test_raise_venus_one_step_is_2_percent_and_1_tr():
+    player = new_player_state()
+    globals_ = new_global_parameters()
+    player, globals_ = raise_venus(player, globals_, steps=1)
+    assert globals_["venus"] == 2
+    assert player["tr"] == 21
+
+
+def test_raise_venus_caps_at_30():
+    player = new_player_state()
+    globals_ = {**new_global_parameters(), "venus": 28}
+    player, globals_ = raise_venus(player, globals_, steps=3)
+    assert globals_["venus"] == 30
+    assert player["tr"] == 21  # solo 1 paso real
+
+
+def test_raise_venus_at_max_raises():
+    player = new_player_state()
+    globals_ = {**new_global_parameters(), "venus": 30}
+    with pytest.raises(GlobalParameterMaxedError):
+        raise_venus(player, globals_)
+
+
+def test_raise_venus_bonus_step_8_percent_draws_free_card():
+    player = {**new_player_state(), "deck": ["card_a", "card_b"]}
+    globals_ = {**new_global_parameters(), "venus": 6}  # a 1 paso de 8%
+    player, globals_ = raise_venus(player, globals_, steps=1)
+    assert globals_["venus"] == 8
+    assert player["hand"] == ["card_a"]  # +1 carta gratis al cruzar 8%
+    assert player["tr"] == 21  # sin TR extra todavia (eso es a los 16%)
+
+
+def test_raise_venus_bonus_step_16_percent_grants_extra_tr():
+    player = new_player_state()
+    globals_ = {**new_global_parameters(), "venus": 14}  # a 1 paso de 16%
+    player, globals_ = raise_venus(player, globals_, steps=1)
+    assert globals_["venus"] == 16
+    assert player["tr"] == 22  # +1 normal del paso, +1 bonus del umbral = +2
+    assert player["hand"] == []  # el bonus de 16% es TR, no carta
+
+
+def test_raise_venus_multiple_steps_crossing_both_bonus_thresholds_at_once():
+    player = {**new_player_state(), "deck": ["card_a"]}
+    globals_ = new_global_parameters()  # venus en 0%
+    player, globals_ = raise_venus(player, globals_, steps=10)  # 0% -> 20%, cruza 8% y 16%
+    assert globals_["venus"] == 20
+    assert player["tr"] == 20 + 10 + 1  # 10 pasos normales + 1 TR bonus de 16%
+    assert player["hand"] == ["card_a"]  # 1 carta gratis, una sola vez, al cruzar 8%
+
+
+def test_standard_project_air_scrapping_costs_15_mc_and_raises_venus():
+    player = {**new_player_state(), "mc": 15}
+    globals_ = new_global_parameters()
+    player, globals_ = standard_project_air_scrapping(player, globals_)
+    assert player["mc"] == 0
+    assert globals_["venus"] == 2
+    assert player["tr"] == 21
+
+    with pytest.raises(InsufficientResourcesError):
+        standard_project_air_scrapping(new_player_state(), new_global_parameters())
 
 
 # --- Proyectos estandar ------------------------------------------------------

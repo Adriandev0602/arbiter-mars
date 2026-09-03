@@ -45,6 +45,7 @@ def _load_global_parameters(game_id: str = "default") -> engine.GlobalParameters
         temperature=row["temperature"], oxygen=row["oxygen"], oceans_placed=row["oceans_placed"],
         city_tiles_placed=row.get("city_tiles_placed") or 0,
         events_played=row.get("events_played") or 0,
+        venus=row.get("venus") or 0,
     )
 
 
@@ -146,7 +147,8 @@ def use_standard_project(
     Args:
         player_id: id del jugador.
         project_name: uno de 'sell_patents', 'power_plant', 'asteroid',
-            'aquifer', 'greenery', 'city'.
+            'aquifer', 'greenery', 'city', 'air_scrapping' (expansion Venus
+            Next: 15 MC, +1 paso de Venus).
         num_cards_to_sell: solo se usa si project_name == 'sell_patents';
             cantidad de cartas que el jugador descarta (1 MC cada una).
         hex_id: OBLIGATORIO para 'aquifer' (coloca oceano), 'greenery' (coloca
@@ -201,10 +203,12 @@ def use_standard_project(
             raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hex_id}'")
         new_player, new_globals = engine.standard_project_city(player, globals_)
         board, new_player = _place_city_and_apply_bonus(board, new_player, hex_id, player_id)
+    elif project_name == "air_scrapping":
+        new_player, new_globals = engine.standard_project_air_scrapping(player, globals_)
     else:
         raise ValueError(
             f"project_name debe ser uno de: sell_patents, power_plant, asteroid, "
-            f"aquifer, greenery, city. Recibido: {project_name}"
+            f"aquifer, greenery, city, air_scrapping. Recibido: {project_name}"
         )
 
     new_player = engine.apply_standard_project_used_bonuses(new_player, project_name)

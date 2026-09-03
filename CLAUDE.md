@@ -49,8 +49,10 @@ Supabase y orquesta llamadas a estos módulos.
 
 - Terraform Rating: arranca en 20, +1 por cada paso de parámetro global subido.
 - Parámetros globales: temperatura (-30 a +8, pasos de 2°C), oxígeno (0 a 14%, pasos de 1%),
-  océanos (0 a 9 tiles, con 12 hexágonos reservados donde colocarlos — ver sección 4), con
-  clamping correcto al tope y sin otorgar TR por pasos no aplicados.
+  océanos (0 a 9 tiles, con 12 hexágonos reservados donde colocarlos — ver sección 4), Venus
+  scale (expansión Venus Next, 0% a 30%, pasos de 2%, con bonus de umbral: +1 carta gratis al
+  cruzar 8%, +1 TR extra al cruzar 16% — no es condición de fin de partida), con clamping
+  correcto al tope y sin otorgar TR por pasos no aplicados.
 - Los 6 proyectos estándar con sus costos reales (sell_patents, power_plant, asteroid, aquifer,
   greenery, city).
 - Conversiones del tablero de jugador (8 plantas → greenery, 8 calor → +1 paso de temperatura).
@@ -240,12 +242,26 @@ arbiter-mars/
 
 **Dentro de alcance:** interfaz conversacional en sidebar, dashboard de estado del jugador,
 enrutamiento a herramientas para cálculos de redención, memoria persistente del estado de la
-sesión actual, el mapa hexagonal Tharsis completo (ver sección 3).
+sesión actual, el mapa hexagonal Tharsis completo (ver sección 3), la expansión **Venus Next**
+(decisión explícita del usuario, 2026-09-02): 4to parámetro global Venus scale (0% a 30%, pasos
+de 2%, bonus de umbral verificados contra el rulebook oficial de FryxGames -- ver
+`raise_venus`/`VENUS_BONUS_STEP_*` en `rules_engine.py`), proyecto estándar nuevo `air_scrapping`
+(15 MC, +1 paso de Venus), requirements `min_venus`/`max_venus`, efecto `raise_venus_steps`. El
+recurso "floater" de la expansión NO necesita campo nuevo -- se guarda en `active_cards` igual
+que microbios/animales (mismo mecanismo, solo cambia el nombre del recurso en el efecto de la
+carta). El tag "venus" tampoco necesita nada nuevo -- los tags ya son genéricos. Las 4 áreas de
+ciudad fuera de tablero de Venus Next (Maxwell Base, Stratopolis, Luna Metropolis, Dawn City)
+reusan el mecanismo genérico existente de `place_city_tiles` (contador global, sin mapa -- mismo
+patrón que Phobos Space Haven/Research Outpost).
 
 **Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, soporte para
-múltiples juegos simultáneos, milestones y awards, mapas alternativos (Hellas/Elysium), la
-mecánica de pago cruzado de la expansión Ares, y el catálogo completo hardcodeado de special
-tiles de cartas (`place_special_tile` es genérica a propósito).
+múltiples juegos simultáneos, milestones y awards (incluidos los nuevos de Venus Next: Hoverlord
+milestone, Venuphile award), mapas alternativos (Hellas/Elysium), la mecánica de pago cruzado de
+la expansión Ares, el catálogo completo hardcodeado de special tiles de cartas
+(`place_special_tile` es genérica a propósito), y la **Solar Phase** de Venus Next (fase
+automática post-producción donde el "World Government" sube un parámetro global elegido por el
+jugador que actúa como primer jugador) -- automatización de fin de generación, no una mecánica
+de carta; se evalúa aparte si hace falta.
 
 ## 8. Comandos de desarrollo
 

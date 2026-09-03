@@ -64,6 +64,11 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists global_parameters add column if not exists venus integer not null default 0;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -156,6 +161,7 @@ create table if not exists global_parameters (
     oceans_placed integer not null default 0,   -- rango: 0 a 9
     city_tiles_placed integer not null default 0,  -- ciudades colocadas por cualquier jugador
     events_played integer not null default 0,   -- cartas "Event" jugadas alguna vez, historico
+    venus integer not null default 0,   -- Venus scale (expansion Venus Next), rango: 0 a 30, pasos de 2, no es condicion de fin de partida
     generation integer not null default 1,
 
     -- Tablero hexagonal (mapa Tharsis, ver backend/app/agent/board.py y

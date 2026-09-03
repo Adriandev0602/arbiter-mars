@@ -41,6 +41,21 @@ OXYGEN_STEP = 1
 
 OCEANS_MAX = 9  # cantidad maxima de tiles de oceano colocables
 
+# Venus (expansion Venus Next): 4to parametro global, opcional -- 0% a 30%
+# (a diferencia de temperatura/oxigeno que llegan a 100% de progreso), en
+# pasos de 2%. Fuente: rulebook oficial de Venus Next (fryxgames.se). No
+# es condicion de fin de partida (solo temperatura/oxigeno/oceanos lo son).
+VENUS_MIN = 0
+VENUS_MAX = 30
+VENUS_STEP = 2
+
+# Bonus de paso del Venus scale (verificado contra el rulebook oficial): al
+# CRUZAR 8% se roba 1 carta gratis (una sola vez); al cruzar 16% se otorga
+# 1 TR extra (una sola vez). "Cruzar" = el valor anterior estaba por debajo
+# del umbral y el nuevo lo alcanza o supera -- ver raise_venus.
+VENUS_BONUS_STEP_DRAW_CARD = 8
+VENUS_BONUS_STEP_EXTRA_TR = 16
+
 # Valor de conversion de recursos (solo para pagar cartas con el tag correspondiente)
 STEEL_VALUE_MC = 2       # 1 acero = 2 MC, solo para cartas con tag "building"
 TITANIUM_VALUE_MC = 3    # 1 titanio = 3 MC, solo para cartas con tag "space"
@@ -63,6 +78,7 @@ STANDARD_PROJECT_ASTEROID_COST = 14      # +1 paso de temperatura (+1 TR)
 STANDARD_PROJECT_AQUIFER_COST = 18       # coloca tile de oceano (+1 TR)
 STANDARD_PROJECT_GREENERY_COST = 23      # coloca tile de greenery, +1 paso de oxigeno (+1 TR)
 STANDARD_PROJECT_CITY_COST = 25          # coloca tile de ciudad, +1 produccion de MC
+STANDARD_PROJECT_AIR_SCRAPPING_COST = 15  # +1 paso de Venus (Venus Next, +1 TR como cualquier paso)
 
 
 # ---------------------------------------------------------------------------
@@ -167,12 +183,16 @@ class GlobalParameters(TypedDict):
     events_played: cuenta total de cartas con is_event=true jugadas por
     CUALQUIER jugador, historico, nunca se resetea (ej. Media Archives: gana
     1 MC por cada evento jugado alguna vez). Se incrementa en tools.play_card
-    via increment_events_played, junto con apply_event_played_bonuses."""
+    via increment_events_played, junto con apply_event_played_bonuses.
+
+    venus: 4to parametro global, opcional (expansion Venus Next), 0% a 30%
+    en pasos de 2%. NO es condicion de fin de partida -- ver raise_venus."""
     temperature: int
     oxygen: int
     oceans_placed: int
     city_tiles_placed: int
     events_played: int
+    venus: int
 
 
 def new_player_state() -> PlayerState:
@@ -192,7 +212,7 @@ def new_player_state() -> PlayerState:
 def new_global_parameters() -> GlobalParameters:
     return GlobalParameters(
         temperature=TEMPERATURE_MIN, oxygen=OXYGEN_MIN, oceans_placed=0, city_tiles_placed=0,
-        events_played=0,
+        events_played=0, venus=VENUS_MIN,
     )
 
 
@@ -247,6 +267,30 @@ def raise_oxygen(player: PlayerState, globals_: GlobalParameters, steps: int = 1
     new_globals = {**globals_, "oxygen": globals_["oxygen"] + max_possible_steps}
     new_player = {**player, "tr": player["tr"] + max_possible_steps}
     return new_player, new_globals
+
+
+def raise_venus(player: PlayerState, globals_: GlobalParameters, steps: int = 1) -> tuple[PlayerState, GlobalParameters]:
+    """
+    Sube el Venus scale (expansion Venus Next) `steps` pasos (2% cada uno).
+    +1 TR por paso aplicado, igual que temperatura/oxigeno. Ademas aplica
+    los bonus de paso oficiales, cada uno una sola vez al CRUZAR el umbral
+    (el valor anterior estaba por debajo, el nuevo lo alcanza o supera):
+    al llegar a 8% roba 1 carta gratis; al llegar a 16% otorga 1 TR extra.
+    """
+    if globals_["venus"] >= VENUS_MAX:
+        raise GlobalParameterMaxedError("El Venus scale ya esta en su maximo (30%)")
+
+    before = globals_["venus"]
+    max_possible_steps = min(steps, (VENUS_MAX - before) // VENUS_STEP)
+    after = before + max_possible_steps * VENUS_STEP
+
+    new_globals = {**globals_, "venus": after}
+    new_player: dict = {**player, "tr": player["tr"] + max_possible_steps}
+    if before < VENUS_BONUS_STEP_DRAW_CARD <= after:
+        new_player = dict(draw_cards_to_hand(PlayerState(**new_player), 1))  # type: ignore[typeddict-item]
+    if before < VENUS_BONUS_STEP_EXTRA_TR <= after:
+        new_player["tr"] = new_player["tr"] + 1
+    return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
 
 
 def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[PlayerState, GlobalParameters]:
@@ -346,6 +390,23 @@ def standard_project_greenery(player: PlayerState, globals_: GlobalParameters) -
         )
     paid_player = {**player, "mc": player["mc"] - STANDARD_PROJECT_GREENERY_COST}
     return raise_oxygen(paid_player, globals_, steps=1)
+
+
+def standard_project_air_scrapping(
+    player: PlayerState, globals_: GlobalParameters
+) -> tuple[PlayerState, GlobalParameters]:
+    """
+    Proyecto estandar de la expansion Venus Next: paga 15 MC, sube el Venus
+    scale 1 paso (+1 TR, mas los bonus de umbral si corresponde -- ver
+    raise_venus). Solo disponible si el proyecto usa el parametro Venus
+    (ver tools.use_standard_project).
+    """
+    if player["mc"] < STANDARD_PROJECT_AIR_SCRAPPING_COST:
+        raise InsufficientResourcesError(
+            f"Se necesitan {STANDARD_PROJECT_AIR_SCRAPPING_COST} MC, hay {player['mc']}"
+        )
+    paid_player = {**player, "mc": player["mc"] - STANDARD_PROJECT_AIR_SCRAPPING_COST}
+    return raise_venus(paid_player, globals_, steps=1)
 
 
 def standard_project_city(
@@ -504,6 +565,8 @@ def check_card_requirements(
       - "max_oxygen": oxigeno maximo en % (ej. Domed Crater: 7).
       - "min_oceans" / "max_oceans": cantidad minima/maxima de tiles de
         oceano colocados (ej. Dust Seals: maximo 3).
+      - "min_venus" / "max_venus": Venus scale minimo/maximo en % (expansion
+        Venus Next, ej. cartas que piden Venus >= 8%).
       - "min_city_tiles": cantidad minima de tiles de ciudad colocados en el
         mapa por CUALQUIER jugador (`globals_["city_tiles_placed"]`, ej.
         Rad-Suits: requiere 2 ciudades en juego).
@@ -542,6 +605,7 @@ def check_card_requirements(
     temperature_tolerance = tolerance_steps * TEMPERATURE_STEP
     oxygen_tolerance = tolerance_steps * OXYGEN_STEP
     oceans_tolerance = tolerance_steps
+    venus_tolerance = tolerance_steps * VENUS_STEP
 
     if "min_tag_count" in requirements:
         specs = requirements["min_tag_count"]
@@ -586,6 +650,14 @@ def check_card_requirements(
             raise CardRequirementNotMetError(
                 f"Requiere {threshold} oceanos colocados, hay {globals_['oceans_placed']}"
             )
+    if "min_venus" in requirements:
+        threshold = requirements["min_venus"] - venus_tolerance
+        if globals_["venus"] < threshold:
+            raise CardRequirementNotMetError(f"Requiere Venus >= {threshold}%, hay {globals_['venus']}%")
+    if "max_venus" in requirements:
+        threshold = requirements["max_venus"] + venus_tolerance
+        if globals_["venus"] > threshold:
+            raise CardRequirementNotMetError(f"Requiere Venus <= {threshold}%, hay {globals_['venus']}%")
     if "min_city_tiles" in requirements and globals_["city_tiles_placed"] < requirements["min_city_tiles"]:
         raise CardRequirementNotMetError(
             f"Requiere {requirements['min_city_tiles']} ciudades en juego, "
@@ -644,6 +716,8 @@ def apply_card_effect(
       - "raise_temperature_steps": N -- sube la temperatura N pasos (+N TR),
         via raise_temperature (ej. Comet: 1 paso).
       - "raise_oxygen_steps": N -- sube el oxigeno N pasos (+N TR).
+      - "raise_venus_steps": N -- sube el Venus scale N pasos (+N TR, mas los
+        bonus de umbral, ver raise_venus). Expansion Venus Next.
       - "place_oceans": N -- coloca N tiles de oceano (+N TR) (ej. Comet: 1).
       - "place_city_tiles": N -- suma N al contador global de ciudades, sin
         TR (ej. Capital: 1).
@@ -835,6 +909,13 @@ def apply_card_effect(
         )
         new_player, new_globals = dict(p2), dict(g2)
 
+    if "raise_venus_steps" in effects:
+        p2, g2 = raise_venus(
+            PlayerState(**new_player), GlobalParameters(**new_globals),  # type: ignore[typeddict-item]
+            steps=effects["raise_venus_steps"],
+        )
+        new_player, new_globals = dict(p2), dict(g2)
+
     if "place_oceans" in effects:
         for _ in range(effects["place_oceans"]):
             p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
@@ -953,7 +1034,7 @@ def use_card_action(
         "card_resource" gasta N recursos guardados en la propia carta (ej.
         Regolith Eaters: remover 2 microbios).
       - "gains": {"resource_deltas": {...}, "production_deltas": {...},
-        "raise_oxygen_steps": N, "raise_temperature_steps": N,
+        "raise_oxygen_steps": N, "raise_temperature_steps": N, "raise_venus_steps": N,
         "card_resource_delta": N, "target_card_resource_delta": N,
         "move_from_target_card_resource_delta": N, "tr_delta": N,
         "mc_per_counter": "<nombre del contador en GlobalParameters>"} -- N > 0 en
@@ -1076,6 +1157,9 @@ def use_card_action(
         new_player, new_globals = dict(p2), dict(g2)
     if "raise_temperature_steps" in gains:
         p2, g2 = raise_temperature(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_temperature_steps"])  # type: ignore[typeddict-item]
+        new_player, new_globals = dict(p2), dict(g2)
+    if "raise_venus_steps" in gains:
+        p2, g2 = raise_venus(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_venus_steps"])  # type: ignore[typeddict-item]
         new_player, new_globals = dict(p2), dict(g2)
     if "tr_delta" in gains:
         new_player["tr"] = new_player["tr"] + gains["tr_delta"]
