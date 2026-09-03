@@ -41,6 +41,7 @@ from app.agent.rules_engine import (
     register_passive_effect,
     compute_conversion_rates,
     compute_card_cost_discount,
+    compute_trade_cost_discount,
     apply_event_played_bonuses,
     STEEL_VALUE_MC,
     TITANIUM_VALUE_MC,
@@ -3973,3 +3974,49 @@ def test_corona_extractor_requires_4_science_tags_energy_production():
 def test_earth_elevator_titanium_production():
     new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"titanium_production": 3}})
     assert new_player["titanium_production"] == 4  # base 1 + 3
+
+
+# --- Piezas nuevas de motor (Colonies) ---------------------------------------
+
+def test_production_delta_per_colony():
+    player = {**new_player_state(), "colonies_owned": ["callisto", "ganymede"]}
+    effects = {"production_delta_per_colony": {"production": "plant_production", "per_colony": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["plant_production"] == 1 + 2  # base 1 + 2 colonias
+
+
+def test_production_delta_per_colony_no_colonies_no_change():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_delta_per_colony": {"production": "plant_production", "per_colony": 1}},
+    )
+    assert new_player["plant_production"] == 1
+
+
+def test_compute_trade_cost_discount_from_passive():
+    player = register_passive_effect(new_player_state(), "cryo_sleep", {"trade_cost_discount": 1})
+    assert compute_trade_cost_discount(player) == 1
+    assert compute_trade_cost_discount(new_player_state()) == 0
+
+
+def test_cryo_sleep_passive_trade_discount():
+    player = register_passive_effect(new_player_state(), "cryo_sleep", {"trade_cost_discount": 1})
+    assert compute_trade_cost_discount(player) == 1
+
+
+def test_ecology_research_plant_production_per_colony_and_targets_two_cards():
+    player = {**new_player_state(), "colonies_owned": ["callisto"]}
+    player = register_active_card(player, "ecology_research")
+    player = register_active_card(player, "aerial_mappers")
+    player = register_active_card(player, "decomposers")
+    effects = {
+        "production_delta_per_colony": {"production": "plant_production", "per_colony": 1},
+        "target_card_resource_delta": 1, "target_card_resource_delta_2": 2,
+    }
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), effects,
+        target_card_id="aerial_mappers", target_card_id_2="decomposers",
+    )
+    assert new_player["plant_production"] == 2  # base 1 + 1 colonia
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 1
+    assert new_player["active_cards"]["decomposers"]["resources"] == 2

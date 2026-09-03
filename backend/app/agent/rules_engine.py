@@ -178,6 +178,20 @@ class PlayerState(TypedDict):
     # no puede expresar, ya que no hay ningun tag que contar).
     zero_tag_cards_played: int
 
+    # colonies_owned: colony_ids donde este jugador ya construyo una
+    # colonia (maximo 1 por colonia, ver colonies.build_colony). Alimenta
+    # "production_delta_per_colony" (ej. Ecology Research: +1 produccion
+    # de plantas por cada colonia propia).
+    colonies_owned: list
+
+    # trade_fleets: cantidad de flotas de comercio que POSEE el jugador
+    # (arranca en 1, algunas cartas dan mas). trade_fleets_used: cuantas ya
+    # uso esta generacion (vuelve a 0 en la fase solar, junto con
+    # run_production_phase -- ver tools.run_production_phase). Disponibles
+    # para comerciar = trade_fleets - trade_fleets_used. Ver colonies.py.
+    trade_fleets: int
+    trade_fleets_used: int
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -213,6 +227,7 @@ def new_player_state() -> PlayerState:
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0,
         reserved_cards={}, zero_tag_cards_played=0,
+        colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
     )
 
 
@@ -791,6 +806,11 @@ def apply_card_effect(
         min_tag_count en check_card_requirements) para sumar por mas de un
         tag a la vez (ej. Gyropolis: +1 produccion de MC por cada tag venus
         Y +1 por cada tag earth, en la misma carta).
+      - "production_delta_per_colony": {"production": "<recurso>_production",
+        "per_colony": N (default 1)} -- suma N por cada colonia que el
+        jugador ya construyo (`player["colonies_owned"]`, expansion
+        Colonies, ver colonies.py) (ej. Ecology Research: +1 produccion de
+        plantas por cada colonia propia).
       - "production_delta_per_zero_tag_card": {"production": "<recurso>_production",
         "per_card": N (default 1), "include_this": bool} -- suma N por cada
         carta jugada SIN NINGUN tag (`zero_tag_cards_played`, incluida esta
@@ -899,6 +919,12 @@ def apply_card_effect(
         if spec.get("include_this"):
             count += 1
         new_player["tr"] = new_player["tr"] + count * spec.get("per_tag", 1)
+
+    if "production_delta_per_colony" in effects:
+        spec = effects["production_delta_per_colony"]
+        key = spec["production"]
+        count = len(player["colonies_owned"])
+        new_player[key] = _apply_production_floor(key, new_player[key] + count * spec.get("per_colony", 1))
 
     if "production_delta_per_zero_tag_card" in effects:
         spec = effects["production_delta_per_zero_tag_card"]
@@ -1432,6 +1458,10 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         requisitos de temperatura/oxigeno/oceanos de OTRAS cartas que el
         jugador quiera jugar despues (ej. Adaptation Technology: N=2). Ver
         check_card_requirements.
+      - "trade_cost_discount": N -- descuenta N del costo de comerciar
+        (expansion Colonies, 9 MC / 3 energia / 3 titanio, cualquiera sea
+        el elegido) cada vez que el jugador usa tools.use_trade_fleet (ej.
+        Cryo-Sleep: N=1). Ver compute_trade_cost_discount.
       - "on_tag_played_add_resource": {"matching_tags": ["<tag>", ...], "resource_delta": N (default 1)}
         -- suma N recurso(s) a la propia carta activa cada vez que el jugador juega
         una carta con alguno de esos tags (ej. Ecological Zone: tags animal/plant;
@@ -1513,6 +1543,21 @@ def compute_card_cost_discount(player: PlayerState, card_tags: tuple[str, ...]) 
         if tag_filter is not None and tag_filter not in card_tags:
             continue
         discount += bonus
+    return discount
+
+
+def compute_trade_cost_discount(player: PlayerState) -> int:
+    """
+    Suma los descuentos "trade_cost_discount" de todos los efectos pasivos
+    activos del jugador (ej. Cryo-Sleep: "when you trade, you pay 1 less
+    resource for it" -- trade_cost_discount: 1). Se resta del costo de
+    comerciar (9 MC / 3 energia / 3 titanio, cualquiera sea el elegido)
+    antes de cobrarlo -- nunca deja el costo por debajo de 0. Ver
+    tools.use_trade_fleet.
+    """
+    discount = 0
+    for effect in player["passive_effects"]:
+        discount += effect.get("trade_cost_discount", 0)
     return discount
 
 

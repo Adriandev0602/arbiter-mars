@@ -138,19 +138,21 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→25 + Venus Next + Lava Flows)
+### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→25 + Venus Next + Lava Flows + Colonies)
 
-**Progreso:** catálogo en **256 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-24 y Lava Flows (140). `card_review_queue` tiene 151 filas `reviewed = true` y
-**151 sin revisar** — el próximo bloque (26) son las filas #1-10 de `select * from
-card_review_queue where reviewed = false order by id limit 10`.
+**Progreso:** catálogo en **258 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-24 y Lava Flows (140); el bloque 25 (rama `feat/review-block-25`) y la mecánica de
+colonias/comercio (commit aparte sobre esa misma rama) todavía no están mergeados. `card_review_queue`
+tiene 153 filas `reviewed = true` y **151 sin revisar** — el próximo bloque (26) son las filas
+#1-10 de `select * from card_review_queue where reviewed = false order by id limit 10`.
 
 **Decisión de alcance (2026-09-02/03):** primero entró **Venus Next** (bloque 20 completo era
 de esa expansión, ver sección 7). El bloque 25 trajo la primera tanda de **Colonies** -- el
 usuario confirmó seguir cargando cartas de cualquier expansión que aparezca sin preguntar cada
-vez, así que Colonies también entró. Si aparecen expansiones nuevas (Prelude, Ares) el criterio
-es el mismo: cargar lo que se pueda con vocabulario existente, diagnosticar y posponer lo que
-necesite mecánica grande nueva (ver más abajo el caso de Colonies).
+vez, así que Colonies también entró, **incluida su mecánica central** (el usuario pidió
+implementarla explícitamente después de ver el bloque 25). Si aparecen expansiones nuevas
+(Prelude, Ares) el criterio es el mismo: cargar lo que se pueda con vocabulario existente,
+diagnosticar y posponer lo que necesite mecánica grande nueva.
 
 **Verificación contra el rulebook oficial (2026-09-02):** se releyó el reglamento completo
 (fryxgames/Stronghold Games, 16 páginas) y se cruzó contra el motor -- sin discrepancias
@@ -158,7 +160,19 @@ encontradas. Se documentó una decisión ya implícita: el modo "un jugador" de 
 una partida ESTÁNDAR (TR 20), no la variante solitario oficial del reglamento (TR 14, 14
 generaciones fijas, ciudades neutrales) -- ver sección 7 más abajo.
 
-**Bloques 21-25, 44 de 50 cargadas** (6 pendientes, ver abajo). Piezas de motor nuevas
+**Colonies: mecánica de colonias/comercio, implementada (2026-09-03).** Módulo nuevo
+`backend/app/agent/colonies.py` (mismo estilo que `board.py`), verificado contra el rulebook
+oficial de la expansión (TM_COLONIES_ENG_RULES, leído completo): proyecto estándar
+`build_colony` (17 MC), acción `use_trade_fleet` (9 MC/3 energía/3 titanio a elección), trade
+income + colony bonus, reset de track, paso de producción de colonias en la fase solar. Tools
+nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`. Solo **Callisto** cargada en
+`COLONY_DEFS` (verificada con dos fuentes independientes) -- las otras 10 colonias reales del
+juego quedan sin cargar hasta verificarlas igual que el catálogo de cartas; el mecanismo ya es
+genérico, agregar una colonia nueva es solo datos, no código. Desbloqueó Cryo-Sleep (pasivo
+`trade_cost_discount`) y Ecology Research (`production_delta_per_colony`). Ver detalle completo
+en `CARDS_LOG.md`, sección "Colonies: mecánica de colonias/comercio". Tests: `test_colonies.py`.
+
+**Bloques 21-25, 46 de 50 cargadas** (4 pendientes, ver abajo). Piezas de motor nuevas
 agregadas a lo largo de los cinco bloques, todas extensiones chicas de vocabulario existente:
 - `production_delta_per_tag` acepta una LISTA de specs (Gyropolis, bloque 21).
 - `target_card_resource_delta_per_tag` (Hydrogen to Venus, bloque 21).
@@ -177,17 +191,14 @@ agregadas a lo largo de los cinco bloques, todas extensiones chicas de vocabular
 - `zero_tag_cards_played` (campo nuevo en `PlayerState`) + `production_delta_per_zero_tag_card`
   -- cuenta cartas jugadas sin ningún tag, para producción escalada por esa cuenta (Community
   Services, bloque 25, primera carta Colonies cargada).
-
-**Colonies: mecánica de colonias/comercio, todavía NO implementada.** El bloque 25 mostró que
-la mayoría de las cartas Colonies no la necesitan (se cargan con vocabulario existente), pero
-un par sí (Cryo-Sleep, Ecology Research) -- construir colonias en pistas de comercio, la acción
-de "trade", flotas de comercio. Comparable en esfuerzo al mapa hexagonal de Tharsis. Ver nota
-completa en `CARDS_LOG.md`, sección "Colonies: mecánica de colonias/comercio (pendiente de
-decisión)" -- no abordada todavía, cartas que la necesitan quedan en "Pendientes".
+- `colonies_owned`/`trade_fleets`/`trade_fleets_used` (campos nuevos) + `production_delta_per_colony`
+  + pasivo `trade_cost_discount` -- ver mecánica de colonias arriba.
 
 **Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
 creada a partir de `main` una vez que el bloque anterior ya se mergeó, o de la rama del bloque
-anterior si todavía no se mergeó. Commiteada y pusheada a `origin` individualmente.
+anterior si todavía no se mergeó. Commiteada y pusheada a `origin` individualmente. La mecánica
+de colonias vive en un commit aparte sobre `feat/review-block-25` (no es un bloque de revisión
+de 10 cartas nuevo).
 
 **Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su
 pieza de mecánica ya diagnosticada pero no implementada:**
@@ -200,8 +211,6 @@ pieza de mecánica ya diagnosticada pero no implementada:**
 - **Dirigibles** (222, Venus Next): floaters guardados en la carta valen 3 M€ como pago para
   cartas Venus -- tercera moneda de pago cuyo stock vive en una carta, no en el jugador. Misma
   categoría que Self-Replicating Robots (mecánica de pago no trivial).
-- **Cryo-Sleep / Ecology Research** (Colonies): dependen de la mecánica completa de
-  colonias/comercio, no implementada -- ver nota de alcance arriba.
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
 checkout -b feat/review-block-26`, consultar
@@ -290,12 +299,15 @@ carta). El tag "venus" tampoco necesita nada nuevo -- los tags ya son genéricos
 ciudad fuera de tablero de Venus Next (Maxwell Base, Stratopolis, Luna Metropolis, Dawn City)
 reusan el mecanismo genérico existente de `place_city_tiles` (contador global, sin mapa -- mismo
 patrón que Phobos Space Haven/Research Outpost). También la expansión **Colonies** (decisión
-del usuario, 2026-09-03: cargar cartas de cualquier expansión que aparezca en la cola) -- la
-mayoría de sus cartas no necesita mecánica propia y se carga con vocabulario existente, PERO la
-mecánica central (colonias en pistas de comercio, acción de "trade", flotas de comercio) NO
-está implementada todavía -- ver "Colonies: mecánica de colonias/comercio" en `CARDS_LOG.md`.
-Cartas que la necesitan (Cryo-Sleep, Ecology Research) quedan en "Pendientes" hasta que se
-aborde con foco dedicado.
+del usuario, 2026-09-03: cargar cartas de cualquier expansión que aparezca en la cola), incluida
+su mecánica central de colonias/comercio (`backend/app/agent/colonies.py`, verificada contra el
+rulebook oficial: construir colonia 17 MC, comerciar 9 MC/3 energía/3 titanio, trade income +
+colony bonus, reset de track, paso de producción de colonias en la fase solar) -- ver
+"Colonies: mecánica de colonias/comercio" en `CARDS_LOG.md`. Solo **Callisto** está cargada en
+`COLONY_DEFS` por ahora (verificada con dos fuentes independientes); las otras 10 colonias
+reales del juego quedan sin cargar hasta verificarlas de la misma forma que el catálogo de
+cartas -- el mecanismo ya es genérico, agregar una colonia nueva es solo agregar datos
+verificados a `COLONY_DEFS`, no tocar código.
 
 **Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, soporte para
 múltiples juegos simultáneos, milestones y awards (incluidos los nuevos de Venus Next: Hoverlord

@@ -1189,6 +1189,16 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'earth_elevator', 'Earth Elevator', 43, '{earth,power}', null,
         '{"production_deltas": {"titanium_production": 3}}'::jsonb
+    ),
+    (
+        -- Resueltas 2026-09-03 al implementar la mecanica de colonias/comercio.
+        'cryo_sleep', 'Cryo-Sleep', 10, '{science}', null,
+        '{"passive": {"trade_cost_discount": 1}}'::jsonb
+    ),
+    (
+        'ecology_research', 'Ecology Research', 21, '{science,animal,microbe,plant}', null,
+        '{"production_delta_per_colony": {"production": "plant_production", "per_colony": 1},
+          "target_card_resource_delta": 1, "target_card_resource_delta_2": 2}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,

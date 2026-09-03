@@ -274,6 +274,8 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `conscription` | Conscription | C05 | 5 MC | Doble tag earth. Requiere 2 tags earth jugados. Próxima carta cuesta 16 MC menos (`next_card_discount_mc`, ya existente) |
 | `corona_extractor` | Corona Extractor | C06 | 10 MC | Tag science. Requiere 4 tags de ciencia. +4 producción energía |
 | `earth_elevator` | Earth Elevator | C08 | 43 MC | Tags earth+power. +3 producción titanio |
+| `cryo_sleep` | Cryo-Sleep | C07 | 10 MC | Tag science. Pasivo: comerciar cuesta 1 recurso menos (mecánica de colonias/comercio, ver sección dedicada abajo) |
+| `ecology_research` | Ecology Research | C09 | 21 MC | Tags science+animal+microbe+plant. +1 producción plantas por cada colonia propia, +1 recurso a una carta activa elegida y +2 a otra distinta |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -285,22 +287,36 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). **Actualización bloque 25:** ya son 4 cartas las que necesitan esta pieza (ver Airliners y Floater Leasing abajo) — sube de prioridad para una sesión dedicada. |
 | 222 | Dirigibles | Pasivo: "when playing a Venus tag, floaters [guardados en ESTA carta] may be used as payment, and are worth 3 M€ each" — los floaters acumulados en una carta activa funcionan como una TERCERA moneda de pago (como acero/titanio, pero el stock vive en una carta, no en el jugador, y solo aplica a cartas con tag Venus). `calculate_card_payment`/`compute_conversion_rates` solo conocen mc/steel/titanium del jugador — necesitaría un parámetro nuevo tipo `floater_card_id`+`floaters_to_pay` en `tools.play_card`, validar que esa carta tenga tag Venus el objetivo, y sumar `floaters_to_pay * 3` al pago igual que steel/titanium. Pieza real de pago, no de efecto — misma categoría que Self-Replicating Robots (mecánica de pago no trivial), pospuesta para abordarla con foco dedicado en vez de forzarla en un bloque de revisión normal. Mismo patrón se repetirá en más cartas Venus Next que usan floaters como pago (verificar cuando aparezcan). |
 | C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
-| C07 | Cryo-Sleep (Colonies) | "When you trade, you pay 1 less resource for it" — depende de la mecánica de COMERCIO de la expansión Colonies (colonias construidas, pistas de comercio, acción de comerciar), que este proyecto todavía no implementa en absoluto. Ver nota de alcance más abajo, sección "Colonies: mecánica de colonias/comercio (pendiente de decisión)". |
-| C09 | Ecology Research (Colonies) | "+1 producción de plantas por cada colonia que tengas" — depende de contar colonias propias, mismo bloqueo que Cryo-Sleep (mecánica de Colonies no implementada). |
 | C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
 
-### Colonies: mecánica de colonias/comercio (pendiente de decisión)
+### Colonies: mecánica de colonias/comercio
 
-El bloque 25 fue la primera vez que aparecieron cartas de la expansión **Colonies** en la cola
-de revisión. La mayoría de las cartas del bloque no dependían de la mecánica central de
-Colonies (construir colonias en pistas de comercio, la acción de "trade", flotas de comercio) —
-se cargaron con vocabulario existente. Pero **Cryo-Sleep** y **Ecology Research** sí la
-necesitan de verdad, y es una mecánica nueva y grande (comparable en esfuerzo al mapa hexagonal
-de Tharsis): pistas de colonias (cada una con su propio track de bonus 0-6), colocar una
-colonia, la acción de comerciar (gastar una flota + un recurso para vender en una colonia y
-subir su track), flotas de comercio. No se construyó todavía — decisión de alcance pendiente de
-confirmar con el usuario antes de abordarla (como Venus Next, pero de tamaño mayor). Mientras
-tanto, las cartas que la necesitan quedan en esta tabla de "Pendientes", no descartadas.
+**Resuelto (2026-09-03):** implementada en `backend/app/agent/colonies.py` (módulo nuevo, mismo
+estilo que `board.py`), verificada contra el rulebook oficial de la expansión
+(TM_COLONIES_ENG_RULES, 4 páginas, leído completo) — proyecto estándar `build_colony` (17 MC),
+acción `use_trade_fleet` (9 MC / 3 energía / 3 titanio, a elección), reparto de "trade income" +
+"colony bonus" al comerciar, reset del track al lado de las colonias construidas, y el paso de
+producción de colonias de la fase solar (el marcador sube 1 paso, las flotas vuelven a estar
+disponibles). Campos nuevos en `PlayerState`: `colonies_owned`, `trade_fleets`,
+`trade_fleets_used`; en `GlobalParameters` (cargado/guardado aparte, igual que `board`):
+`colonies`. Tools nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`.
+
+**Catálogo de colonias — solo Callisto cargada por ahora.** El juego real tiene 11 Colony Tiles
+con nombre (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto, Ceres,
+Io), cada una con su propio track de valores. Mismo criterio que el catálogo de cartas: no se
+generan datos al voleo. Callisto quedó verificada con dos fuentes independientes (el ejemplo
+trabajado del rulebook oficial, que muestra el track completo 0/2/3/5/7/10/13 con el marcador en
+10 energía y colony bonus 3 energía; y una búsqueda independiente que reporta el mismo track).
+Las otras 10 quedan sin cargar hasta verificarlas de la misma forma — el mecanismo ya es
+genérico (`COLONY_DEFS`) y no hace falta tocar código para agregar una colonia nueva, solo datos
+verificados. Cartas que targeteen una colonia específica por nombre distinta de Callisto quedan
+pendientes hasta cargar esa colonia (ninguna hasta ahora — Cryo-Sleep y Ecology Research no
+dependían de una colonia puntual).
+
+Esto desbloqueó **Cryo-Sleep** (pasivo `trade_cost_discount`) y **Ecology Research** (efecto
+nuevo `production_delta_per_colony`, que cuenta `player["colonies_owned"]` sin importar cuál).
+Tests: `test_colonies.py` (mecanismo completo) y los tests de `cryo_sleep`/`ecology_research` en
+`test_rules_engine.py`.
 
 **Resuelto (2026-09-02):** la pieza que faltaba para Lava Flows (140) — colocar
 tile en uno de 4 hexágonos volcánicos nombrados individualmente — quedó
