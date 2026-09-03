@@ -3342,3 +3342,170 @@ def test_deuterium_export_action_choice_add_floater_or_spend_for_energy():
     p2, _ = use_card_action(player_with_floater, globals_, "deuterium_export", action_spec, effect_choice=1)
     assert p2["active_cards"]["deuterium_export"]["resources"] == 0
     assert p2["energy_production"] == 2
+
+
+# --- Piezas nuevas de motor (bloque 21) --------------------------------------
+
+def test_production_delta_per_tag_accepts_list_of_specs():
+    player = {**new_player_state(), "tags_played": {"venus": 2, "earth": 3}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_delta_per_tag": [
+            {"tag": "venus", "production": "mc_production", "per_tag": 1},
+            {"tag": "earth", "production": "mc_production", "per_tag": 1},
+        ]},
+    )
+    assert new_player["mc_production"] == 1 + 2 + 3  # base 1 + 2 venus + 3 earth
+
+
+def test_target_card_resource_delta_per_tag_scales_with_tag_count():
+    player = register_active_card(new_player_state(), "hydrogen_to_venus")
+    player = register_active_card(player, "aerial_mappers")
+    player = {**player, "tags_played": {"jovian": 3}}
+    effects = {"target_card_resource_delta_per_tag": {"tag": "jovian", "per_tag": 1}}
+
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, target_card_id="aerial_mappers")
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 3
+
+
+def test_target_card_resource_delta_per_tag_no_tags_is_noop_without_target():
+    player = register_active_card(new_player_state(), "hydrogen_to_venus")
+    effects = {"target_card_resource_delta_per_tag": {"tag": "jovian", "per_tag": 1}}
+    # Sin tags jovian, no hace nada Y no exige target_card_id
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player == player
+
+
+# --- Bloque de revision 21 (Venus Next) --------------------------------------
+
+def test_extractor_balloons_starts_with_3_floaters_action_choice():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "extractor_balloons", initial_resources=3)
+    action_spec = {
+        "choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}},
+        ]
+    }
+
+    p1, _ = use_card_action(player, globals_, "extractor_balloons", action_spec, effect_choice=0)
+    assert p1["active_cards"]["extractor_balloons"]["resources"] == 4
+
+    p2, g2 = use_card_action(player, globals_, "extractor_balloons", action_spec, effect_choice=1)
+    assert p2["active_cards"]["extractor_balloons"]["resources"] == 1
+    assert g2["venus"] == 2
+
+
+def test_extremophiles_requires_2_science_action_adds_microbe():
+    req = {"min_tag_count": {"tag": "science", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 1}})
+
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "extremophiles")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "extremophiles", action_spec)
+    assert new_player["active_cards"]["extremophiles"]["resources"] == 1
+
+
+def test_floating_habs_action_choice_add_self_or_target():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "floating_habs")
+    player = {**register_active_card(player, "aerial_mappers"), "mc": 4}
+    action_spec = {
+        "choice": [
+            {"cost": {"mc": 2}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"mc": 2}, "gains": {"target_card_resource_delta": 1}},
+        ]
+    }
+
+    p1, _ = use_card_action(player, globals_, "floating_habs", action_spec, effect_choice=0)
+    assert p1["active_cards"]["floating_habs"]["resources"] == 1
+    assert p1["mc"] == 2
+
+    p2, _ = use_card_action(player, globals_, "floating_habs", action_spec, effect_choice=1, target_card_id="aerial_mappers")
+    assert p2["active_cards"]["aerial_mappers"]["resources"] == 1
+    assert p2["mc"] == 2
+
+
+def test_forced_precipitation_action_choice_add_or_spend_for_venus():
+    globals_ = new_global_parameters()
+    player = {**register_active_card(new_player_state(), "forced_precipitation"), "mc": 2}
+    action_spec = {
+        "choice": [
+            {"cost": {"mc": 2}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}},
+        ]
+    }
+    p1, _ = use_card_action(player, globals_, "forced_precipitation", action_spec, effect_choice=0)
+    assert p1["active_cards"]["forced_precipitation"]["resources"] == 1
+
+    player_with_floaters = {
+        **player,
+        "active_cards": {"forced_precipitation": {"resources": 2, "action_used": False}},
+    }
+    p2, g2 = use_card_action(player_with_floaters, globals_, "forced_precipitation", action_spec, effect_choice=1)
+    assert p2["active_cards"]["forced_precipitation"]["resources"] == 0
+    assert g2["venus"] == 2
+
+
+def test_freyja_biodomes_requires_venus_10_percent_and_boosts_target_card():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 10}, {**new_global_parameters(), "venus": 8})
+    check_card_requirements({"min_venus": 10}, {**new_global_parameters(), "venus": 10})
+
+    player = register_active_card(new_player_state(), "freyja_biodomes")
+    player = register_active_card(player, "aerial_mappers")
+    effects = {"target_card_resource_delta": 2, "production_deltas": {"energy_production": -1, "mc_production": 2}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, target_card_id="aerial_mappers")
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 3
+
+
+def test_ghg_import_from_venus_raises_venus_and_heat_production():
+    new_player, new_globals = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"raise_venus_steps": 1, "production_deltas": {"heat_production": 3}},
+    )
+    assert new_globals["venus"] == 2
+    assert new_player["heat_production"] == 4
+
+
+def test_giant_solar_shade_raises_venus_3_steps():
+    _, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {"raise_venus_steps": 3})
+    assert new_globals["venus"] == 6
+
+
+def test_gyropolis_swaps_energy_for_mc_per_venus_and_earth_tag_places_city():
+    player = {**new_player_state(), "tags_played": {"venus": 2, "earth": 1}}
+    globals_ = new_global_parameters()
+    effects = {
+        "production_deltas": {"energy_production": -2},
+        "production_delta_per_tag": [
+            {"tag": "venus", "production": "mc_production", "per_tag": 1},
+            {"tag": "earth", "production": "mc_production", "per_tag": 1},
+        ],
+        "place_city_tiles": 1,
+    }
+    new_player, new_globals = apply_card_effect(player, globals_, effects)
+    assert new_player["energy_production"] == 0  # piso 0
+    assert new_player["mc_production"] == 1 + 2 + 1  # base 1 + 2 venus + 1 earth
+    assert new_globals["city_tiles_placed"] == 1
+
+
+def test_hydrogen_to_venus_raises_venus_and_floaters_per_jovian_tag():
+    player = register_active_card(new_player_state(), "hydrogen_to_venus")
+    player = register_active_card(player, "aerial_mappers")
+    player = {**player, "tags_played": {"jovian": 2}}
+    effects = {"raise_venus_steps": 1, "target_card_resource_delta_per_tag": {"tag": "jovian", "per_tag": 1}}
+
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects, target_card_id="aerial_mappers")
+    assert new_globals["venus"] == 2
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+
+    # Sin tags jovian, sube Venus igual pero no toca ninguna carta ni exige target
+    player_no_jovian = register_active_card(new_player_state(), "hydrogen_to_venus")
+    new_player2, new_globals2 = apply_card_effect(player_no_jovian, new_global_parameters(), effects)
+    assert new_globals2["venus"] == 2
+    assert new_player2["active_cards"] == player_no_jovian["active_cards"]

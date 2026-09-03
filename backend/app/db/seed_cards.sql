@@ -898,6 +898,63 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         'lava_flows', 'Lava Flows', 18, '{}', null,
         '{"raise_temperature_steps": 2, "place_special_tile": {"hex_id_in": ["09", "14", "21", "29"]}}'::jsonb
+    ),
+
+    -- Bloque de revision 21 (Venus Next). Dirigibles (#222) queda pendiente
+    -- -- ver CARDS_LOG.md "Pendientes" (floaters como moneda de pago).
+    (
+        'extractor_balloons', 'Extractor Balloons', 21, '{venus}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 3, "action": {"choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'extremophiles', 'Extremophiles', 3, '{venus,microbe}',
+        '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'floating_habs', 'Floating Habs', 5, '{venus}',
+        '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"cost": {"mc": 2}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"mc": 2}, "gains": {"target_card_resource_delta": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'forced_precipitation', 'Forced Precipitation', 8, '{venus}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"cost": {"mc": 2}, "gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 2}, "gains": {"raise_venus_steps": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        -- El texto real ofrece elegir "2 microbios O 2 animales a OTRA carta
+        -- Venus" -- mecanicamente identico en este motor (recursos sin tipo
+        -- por carta), asi que se aplica directo sin choice (ver CARDS_LOG.md).
+        'freyja_biodomes', 'Freyja Biodomes', 14, '{venus,plant}',
+        '{"min_venus": 10}'::jsonb,
+        '{"target_card_resource_delta": 2, "production_deltas": {"energy_production": -1, "mc_production": 2}}'::jsonb
+    ),
+    (
+        'ghg_import_from_venus', 'GHG Import from Venus', 23, '{venus,power}', null,
+        '{"raise_venus_steps": 1, "production_deltas": {"heat_production": 3}}'::jsonb
+    ),
+    (
+        'giant_solar_shade', 'Giant Solar Shade', 27, '{venus,power}', null,
+        '{"raise_venus_steps": 3}'::jsonb
+    ),
+    (
+        'gyropolis', 'Gyropolis', 20, '{city,building}', null,
+        '{"production_deltas": {"energy_production": -2}, "production_delta_per_tag": [
+            {"tag": "venus", "production": "mc_production", "per_tag": 1},
+            {"tag": "earth", "production": "mc_production", "per_tag": 1}
+        ], "place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'hydrogen_to_venus', 'Hydrogen to Venus', 11, '{power}', null,
+        '{"raise_venus_steps": 1, "target_card_resource_delta_per_tag": {"tag": "jovian", "per_tag": 1}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name,
@@ -915,4 +972,5 @@ where id in ('investment_loan', 'comet', 'asteroid_card', 'big_asteroid', 'relea
              'convoy_from_europa', 'imported_ghg', 'imported_nitrogen', 'import_of_advanced_ghg',
              'aerobraked_ammonia_asteroid', 'ice_cap_melting', 'flooding', 'permafrost_extraction',
              'indentured_workers', 'technology_demonstration', 'special_design', 'small_asteroid',
-             'air_scrapping_expedition', 'comet_for_venus', 'lava_flows');
+             'air_scrapping_expedition', 'comet_for_venus', 'lava_flows',
+             'ghg_import_from_venus', 'hydrogen_to_venus');
