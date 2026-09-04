@@ -971,6 +971,32 @@ def apply_card_effect(
         Influence counts as unique tags" -> threshold=9, resource="mc",
         amount=10). Sin tope de 5 -- es un umbral booleano, no un
         contador que se multiplica.
+      - "resource_delta_clamp_to_capped_max": {"resource": "<recurso>",
+        "base_max": N} -- expansion Turmoil (Global Events), BAJA el stock
+        de ese recurso al minimo entre su valor actual y `base_max +
+        influence` (nunca lo sube) -- distinto de un delta, es un techo
+        (ej. Eco Sabotage: "Lose all plants except 3 + influence" ->
+        resource="plants", base_max=3).
+      - "resource_set_to_zero": ["<recurso>", ...] -- pone esos recursos
+        en 0 (ej. Global Dust Storm: "Lose all heat" -> ["heat"]).
+      - "tr_delta_by_threshold": {"score_tags": ["<tag>", ...] (opcional),
+        "score_counters": ["<contador global>", ...] (opcional),
+        "thresholds": [[min_score, tr], ...] (orden descendente)} --
+        calcula un puntaje (Influencia + suma de tags + suma de
+        contadores globales) y suma el TR del primer umbral que alcance
+        (ej. Election: "Count your influence plus building tags and city
+        tiles... The player with most (or 10 in solo) gains 2 TR, the 2nd
+        (or counting 5 in solo) gains 1 TR" -> score_tags=["building"],
+        score_counters=["city_tiles_placed"], thresholds=[[10,2],[5,1]] --
+        la carta imprime explícitamente la regla de un jugador, sin
+        ambigüedad).
+      - "production_delta_per_tag_plus_influence": {"tag": "<tag>",
+        "production": "<recurso>_production", "divisor": N (default 1),
+        "per_unit": N (default 1)} -- como production_delta_per_card_resource_type
+        pero el contador es tags jugados + Influencia, SIN tope (ej.
+        Improved Energy Templates: "+1 energy production per 2 power tags
+        (no limit). Influence counts as power tags" -> tag="power",
+        production="energy_production", divisor=2).
       - "production_delta_per_tag_pair": {"tag_a": "<tag>", "tag_b": "<tag>",
         "production": "<recurso>_production", "per_set": N (default 1)} --
         suma N por cada PAR completo de tags "<tag_a>"+"<tag_b>" ya jugados
@@ -1147,6 +1173,37 @@ def apply_card_effect(
         if unique_tags + influence >= spec["threshold"]:
             key = spec["resource"]
             new_player[key] = max(0, new_player[key] + spec["amount"])
+
+    if "resource_delta_clamp_to_capped_max" in effects:
+        spec = effects["resource_delta_clamp_to_capped_max"]
+        key = spec["resource"]
+        cap = max(0, spec["base_max"] + influence)
+        new_player[key] = min(new_player[key], cap)
+
+    if "resource_set_to_zero" in effects:
+        for key in effects["resource_set_to_zero"]:
+            new_player[key] = 0
+
+    if "tr_delta_by_threshold" in effects:
+        spec = effects["tr_delta_by_threshold"]
+        score = influence
+        for tag in spec.get("score_tags", []):
+            score += player["tags_played"].get(tag, 0)
+        for counter in spec.get("score_counters", []):
+            score += new_globals[counter]
+        tr_gain = 0
+        for min_score, tr in spec["thresholds"]:
+            if score >= min_score:
+                tr_gain = tr
+                break
+        new_player["tr"] = new_player["tr"] + tr_gain
+
+    if "production_delta_per_tag_plus_influence" in effects:
+        spec = effects["production_delta_per_tag_plus_influence"]
+        key = spec["production"]
+        count = player["tags_played"].get(spec["tag"], 0) + influence
+        units = count // spec.get("divisor", 1)
+        new_player[key] = _apply_production_floor(key, new_player[key] + units * spec.get("per_unit", 1))
 
     if "production_delta_per_tag_pair" in effects:
         spec = effects["production_delta_per_tag_pair"]

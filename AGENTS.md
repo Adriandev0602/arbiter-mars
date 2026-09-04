@@ -167,12 +167,17 @@ seguir cargando), catalogado en el mismo índice del sitio (`hadronikle`, catego
 `"GlobalEvent"`) pero en tabla nueva `global_events` + cola `global_event_review_queue` (mismo
 patrón que `card_review_queue`, sin `scan_number`). Los Global Events REUSAN
 `rules_engine.apply_card_effect` (mismo `effects` jsonb que las cartas). Tool nueva:
-`resolve_global_event(player_id, event_id, target_card_id=None, effect_choice=None)`. **8 de 36
+`resolve_global_event(player_id, event_id, target_card_id=None, effect_choice=None)`. **13 de 36
 cargadas**: Generous Funding, Riots (bloque 1, verificados contra el rulebook oficial); Aquifer
 Released by Public Council, Asteroid Mining, Celebrity Leaders, Diversity (bloque 2); Cloud
-Societies, Corrosive Rain (bloque 3, desbloqueadas por la pieza de recursos tipados). **28
-pendientes** en la cola. Ver sección dedicada "Turmoil: Global Events" en `CARDS_LOG.md` para la
-lista completa y el flujo para seguir cargando de a bloques.
+Societies, Corrosive Rain (bloque 3, desbloqueadas por la pieza de recursos tipados); Eco
+Sabotage, Election, Global Dust Storm, Homeworld Support, Improved Energy Templates (bloque 4,
+2026-09-04 -- piezas nuevas `resource_delta_clamp_to_capped_max`, `resource_set_to_zero`,
+`tr_delta_by_threshold`, `production_delta_per_tag_plus_influence`). Dry Deserts (bloque 4)
+pospuesta -- depende de tablero hexagonal wireado a Global Events (todavía no) + una pieza de
+"elección de recurso estándar" sin construir. **22 pendientes** en la cola. Ver sección dedicada
+"Turmoil: Global Events" en `CARDS_LOG.md` para la lista completa y el flujo para seguir
+cargando de a bloques.
 
 **Turmoil: núcleo político, implementado (2026-09-04, decisión explícita del usuario).**
 Resolvió las últimas 2 cartas pendientes del catálogo normal: Colonial Envoys y Colonial

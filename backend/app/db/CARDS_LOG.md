@@ -441,9 +441,9 @@ antemano). `tools.resolve_global_event(player_id, event_id)` calcula la Influenc
 -- `rules_engine.py` NO importa `turmoil.py`, mismo desacople que el resto de las piezas de
 Turmoil ya resueltas.
 
-**8 de 36 cargadas** (bloque 1: 2, verificadas contra el rulebook oficial -- más fuerte que un
+**13 de 36 cargadas** (bloque 1: 2, verificadas contra el rulebook oficial -- más fuerte que un
 scan individual, trae el texto impreso Y un ejemplo numérico resuelto paso a paso, página 5;
-bloques 2-3, 2026-09-04: 6 más, verificadas contra su scan real):
+bloques 2-4, 2026-09-04: 11 más, verificadas contra su scan real):
 
 | id | Nombre | Efecto |
 |---|---|---|
@@ -455,23 +455,39 @@ bloques 2-3, 2026-09-04: 6 más, verificadas contra su scan real):
 | `diversity` | Diversity | +10 M€ si el jugador tiene 9+ tags DISTINTOS jugados, contando la Influencia como tags extra (pieza nueva `resource_delta_if_tag_diversity`, umbral booleano SIN tope de 5 -- el tope de 5 solo aplica a contadores que se multiplican, no a un chequeo de umbral) |
 | `cloud_societies` | Cloud Societies | +1 floater a CADA carta activa que coleccione floaters (pieza nueva `add_resource_to_all_matching_type`). +1 floater por Influencia a UNA carta elegida (pieza nueva, `target_card_resource_delta_typed` con `amount_per_influence`) |
 | `corrosive_rain` | Corrosive Rain | Elección: perder 2 floaters de una carta propia (`target_card_resource_delta_typed`, amount=-2) O perder 10 M€. Cualquiera sea la elección: roba 1 carta por Influencia (pieza nueva `draw_cards_per_influence`) |
+| `eco_sabotage` | Eco Sabotage | Pierde todas las plantas salvo 3 + Influencia (pieza nueva `resource_delta_clamp_to_capped_max`, techo -- nunca sube el stock) |
+| `election` | Election | Puntaje = Influencia + tags building + ciudades en el mapa (sin tope). La carta imprime la regla exacta de un jugador: ≥10 gana 2 TR, ≥5 gana 1 TR (pieza nueva `tr_delta_by_threshold`) |
+| `global_dust_storm` | Global Dust Storm | Pierde todo el calor (pieza nueva `resource_set_to_zero`). -2 M€ por cada tag building (tope 5) − Influencia (mismo `resource_delta_per_capped_counter`) |
+| `homeworld_support` | Homeworld Support | +2 M€ por cada tag earth (tope 5) + Influencia (mismo `resource_delta_per_capped_counter`) |
+| `improved_energy_templates` | Improved Energy Templates | +1 producción energía por cada 2 tags power + Influencia, SIN tope (pieza nueva `production_delta_per_tag_plus_influence`) |
 
-**28 pendientes** en `global_event_review_queue` (`reviewed = false`) — misma dinámica de
+**1 pendiente del bloque 4 -- Dry Deserts**: "First player removes 1 ocean tile from the
+gameboard. Gain 1 standard resource per influence." Dos piezas faltantes a la vez: (a) el
+tablero hexagonal no está wireado a `resolve_global_event` (mismo alcance no resuelto que
+`resolve_new_government`), y no está claro si "remover un tile" debería bajar
+`globals_["oceans_placed"]` (el contador usado para fin de partida/TR) o solo liberar el hex
+físico -- necesita una decisión antes de modelarlo, no un supuesto; (b) "gain 1 standard
+resource" es una elección del jugador entre los 6 recursos básicos (MC/acero/titanio/planta/
+energía/calor), pieza de "elección de recurso genérica" todavía no construida. Pospuesta hasta
+resolver ambas.
+
+**22 pendientes** en `global_event_review_queue` (`reviewed = false`) — misma dinámica de
 bloques que el catálogo de cartas: leer el scan real (`cards.hadronikle.com/global-events/...`),
 decidir vocabulario (reusar `apply_card_effect` primero, extender `_resolve_capped_counter` o
 agregar una pieza nueva si hace falta), cargar en `seed_global_events.sql`, marcar la fila con
-`event_id`. Nombres pendientes: Dry Deserts, Eco Sabotage, Election, Global
-Dust Storm, Homeworld Support, Improved Energy Templates, Interplanetary Trade, Jovian Tax
+`event_id`. Nombres pendientes: Interplanetary Trade, Jovian Tax
 Rights, Microgravity Health Problems, Miners on Strike, Mud Slides, Pandemic, Paradigm
 Breakdown, Productivity, Red Influence, Revolution, Sabotage, Scientific Community, Snow Cover,
 Solar Flare, Solarnet Shutdown, Spin-off Products, Sponsored Projects, Strong Society,
-Successful Organisms, Venus Infrastructure, Volcanic Eruptions, War on Earth.
+Successful Organisms, Venus Infrastructure, Volcanic Eruptions, War on Earth (más Dry Deserts,
+marcada `reviewed = true` con `event_id = null` -- pendiente por mecánica, no por revisar).
 
 **Alcance no resuelto todavía, documentado para cuando aparezca en una carta real:** el reparto
 de delegados neutrales al revelar la carta (Distant → Coming → Current) y el ciclo de
 generaciones no están automatizados (`resolve_global_event` es de disparo manual, no forma parte
 de un `run_production_phase`/fase Turmoil todavía) — mismo criterio de alcance que
-`resolve_new_government`.
+`resolve_new_government`. El tablero hexagonal tampoco está wireado a Global Events (ver Dry
+Deserts arriba).
 
 ### Tag comodín "wild" (Research Coordination)
 
