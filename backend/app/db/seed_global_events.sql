@@ -208,3 +208,60 @@ insert into global_events (id, name, effects) values
 on conflict (id) do update set
     name = excluded.name,
     effects = excluded.effects;
+
+-- CORRECCIONES por FAQ oficial (Comprehensive FAQ v1.7, compilado por Jeffrey
+-- Anchan con fuentes citadas -- seccion "Global Event Clarifications").
+-- Encontradas al revisar los informes de los agentes: son bugs en cartas ya
+-- cargadas en bloques anteriores, no cartas nuevas.
+--
+-- 1) Aquifer Released by Public Council: "the first player places an ocean
+--    tile, but NO player gets any TR or placement bonuses for the ocean
+--    placement" -- se cargo con "place_oceans" (que SI otorga TR).
+-- 2) Jovian Tax Rights: ERRATA oficial -- el texto deberia decir "Increase MC
+--    production 1 step for each colony (MAX 5)". El impreso omitio el tope.
+update global_events set effects =
+    '{"place_oceans_without_tr": 1, "resource_delta_per_influence": {"plants": 1, "steel": 1}}'::jsonb
+where id = 'aquifer_released_by_public_council';
+
+update global_events set effects =
+    '{"production_delta_per_colony": {"production": "mc_production", "per_colony": 1, "cap": 5},
+      "resource_delta_per_influence": {"titanium": 1}}'::jsonb
+where id = 'jovian_tax_rights';
+
+-- Pendientes resueltos (2026-09-04): Dry Deserts y Mud Slides, las dos que
+-- dependian de conectar el tablero hexagonal a los Global Events. Piezas
+-- nuevas: board.remove_ocean_tile y board.count_tiles_adjacent_to_ocean;
+-- effect "remove_ocean_tile" + parametro remove_ocean_hex_id en
+-- tools.resolve_global_event; contador "board_tiles_adjacent_to_ocean"
+-- (precalculado por tools.py, mismo desacople que `influence`);
+-- "resource_delta_per_influence_choice" (elige 1 de los 6 recursos basicos).
+insert into global_events (id, name, effects) values
+    (
+        'dry_deserts', 'Dry Deserts',
+        '{"remove_ocean_tile": true,
+          "resource_delta_per_influence_choice": {"options": ["mc", "steel", "titanium", "plants", "energy", "heat"], "per_unit": 1}}'::jsonb
+    ),
+    (
+        'mud_slides', 'Mud Slides',
+        '{"resource_delta_per_capped_counter": {"counter": "board_tiles_adjacent_to_ocean", "resource": "mc", "per_unit": -4, "influence_direction": "subtract"}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    effects = excluded.effects;
+
+-- Pendiente resuelto (2026-09-04): Solarnet Shutdown. El diagnostico anterior
+-- ("hace falta una columna card_type y un retrofit de ~300 cartas") resulto
+-- DEMASIADO PESIMISTA: el color de carta ya esta codificado implicitamente
+-- por `cards.is_event` + la presencia de "becomes_active"/"passive" en
+-- `cards.effects`. Regla en rules_engine.is_blue_card, verificada contra 6
+-- scans reales (uno por categoria, incluido el caso dificil: una carta azul
+-- con solo "passive", Spin-Off Department). Contador nuevo
+-- "blue_cards_played", precalculado por tools._count_blue_cards_played.
+insert into global_events (id, name, effects) values
+    (
+        'solarnet_shutdown', 'Solarnet Shutdown',
+        '{"resource_delta_per_capped_counter": {"counter": "blue_cards_played", "resource": "mc", "per_unit": -3, "influence_direction": "subtract"}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    effects = excluded.effects;

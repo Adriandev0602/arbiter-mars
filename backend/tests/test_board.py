@@ -19,6 +19,8 @@ from app.agent.board import (
     count_tiles_of_type,
     can_place_ocean,
     can_place_city,
+    count_tiles_adjacent_to_ocean,
+    remove_ocean_tile,
     can_place_city_on_volcanic,
     can_place_greenery,
     can_place_special_tile,
@@ -476,3 +478,38 @@ def test_protected_valley_places_greenery_on_ocean_hex_ignoring_restrictions():
     new_board_state, _, _ = place_greenery_tile(board, ocean_hex, "player-1", ignore_restrictions=True)
     assert new_board_state[ocean_hex]["tile_type"] == "greenery"
     assert new_board_state[ocean_hex]["owner"] == "player-1"
+
+
+def test_count_tiles_adjacent_to_ocean_counts_each_tile_once():
+    # FAQ oficial (Mud Slides): "Each tile is only counted once, even if next
+    # to multiple ocean tiles".
+    board = new_board()
+    assert count_tiles_adjacent_to_ocean(board) == 0
+
+    board, _, _ = place_ocean_tile(board, "04")
+    board, _, _ = place_city_tile(board, "05", "p1")  # "05" es vecino de "04"
+    assert count_tiles_adjacent_to_ocean(board) == 1  # solo la ciudad
+
+    # dos oceanos pegados se cuentan entre si: son tiles adyacentes a oceano
+    board2 = new_board()
+    board2, _, _ = place_ocean_tile(board2, "06")
+    board2, _, _ = place_ocean_tile(board2, "07")
+    assert count_tiles_adjacent_to_ocean(board2) == 2
+
+
+def test_remove_ocean_tile_frees_the_hex():
+    board = new_board()
+    board, _, _ = place_ocean_tile(board, "04")
+    assert is_hex_empty(board, "04") is False
+    board = remove_ocean_tile(board, "04")
+    assert is_hex_empty(board, "04") is True
+    assert can_place_ocean(board, "04") is True  # se puede volver a colocar
+
+
+def test_remove_ocean_tile_rejects_empty_hex_and_non_ocean():
+    board = new_board()
+    with pytest.raises(UnknownHexError):
+        remove_ocean_tile(board, "04")
+    board, _, _ = place_city_tile(board, "05", "p1")
+    with pytest.raises(InvalidPlacementError):
+        remove_ocean_tile(board, "05")

@@ -161,27 +161,22 @@ actualizaron con `active_card_resource_type: "floater"` -- sin esto las 5 cartas
 serían satisfacibles de verdad contra el resto del catálogo. Ver sección dedicada "Recursos
 tipados por carta activa" en `CARDS_LOG.md`.
 
-**Turmoil: Global Events, EN PROGRESO (empezado 2026-09-04).** Mazo APARTE de 36 cartas (el
-rulebook dice 31 en su lista de componentes -- diferencia sin explicar todavía, no bloquea
-seguir cargando), catalogado en el mismo índice del sitio (`hadronikle`, categoría
-`"GlobalEvent"`) pero en tabla nueva `global_events` + cola `global_event_review_queue` (mismo
-patrón que `card_review_queue`, sin `scan_number`). Los Global Events REUSAN
-`rules_engine.apply_card_effect` (mismo `effects` jsonb que las cartas). Tool nueva:
-`resolve_global_event(player_id, event_id, target_card_id=None, effect_choice=None,
-discard_card_ids=None)`. **33 de 36 cargadas y la cola de revisión quedó en 0 filas sin
-revisar** (bloques 1-4 + bloque 5). El **bloque 5 (2026-09-04)** cerró las 22 restantes con
-**orquestación multi-agente**: 4 agentes Sonnet en paralelo, uno por grupo de cartas, cada uno
-leyendo el vocabulario del motor, descargando y transcribiendo sus scans y proponiendo el
-`effects` JSON + tests, sin tocar archivos del repo (la integración y verificación quedaron
-centralizadas; se re-verificaron 3 scans de muestra, los que motivaron cambios de semántica).
-Piezas nuevas del bloque 5: contadores `colonies_owned`/`hand_size`/`<recurso>_production`/
-`tr_sets_of_5_over:<N>`, `cap: null` e `influence_direction: "none"` en
-`resource_delta_per_capped_counter`, `production_delta_per_influence`,
-`tr_delta_reduced_by_influence`, `lower_temperature_steps`,
-`add_resource_to_all_cards_with_resources` y `discard_cards`. **3 pendientes por mecánica**
-(no por revisar): Dry Deserts y Mud Slides (necesitan el tablero hexagonal wireado a Global
-Events) y Solarnet Shutdown (necesita clasificar cartas por color en el catálogo, retrofit de
-~300 cartas). Ver sección dedicada "Turmoil: Global Events" en `CARDS_LOG.md`.
+**Turmoil: Global Events, COMPLETO (2026-09-04).** Mazo APARTE de 36 cartas, catalogado en el
+índice del sitio (`hadronikle`, categoría `"GlobalEvent"`) en tabla propia `global_events` +
+cola `global_event_review_queue`. Reusan `rules_engine.apply_card_effect` (mismo `effects`
+jsonb que las cartas). Tool: `resolve_global_event(player_id, event_id, target_card_id=None,
+effect_choice=None, discard_card_ids=None, remove_ocean_hex_id=None)`. **36 de 36 cargadas, 0
+pendientes.** Los bloques 5 y 6 se hicieron con **orquestación multi-agente** (agentes Sonnet en
+paralelo que analizan/diseñan sin tocar el repo; integración, verificación y código
+centralizados) -- ver "Turmoil: Global Events" en `CARDS_LOG.md` para el detalle por agente.
+
+**Fuente nueva de alto valor: el Comprehensive FAQ v1.7** (compilado por Jeffrey Anchan, con
+fuentes citadas por entrada; PDF en tesera.ru, legible con `pypdf`). Tiene una tabla
+"Global Event Clarifications" con errata y aclaraciones oficiales. Leerla destapó **4 bugs en
+cartas ya cargadas** (Aquifer Released otorgaba TR y no debe; Jovian Tax Rights tenía errata
+"(max 5)"; Snow Cover bajaba temperatura ya maximizada; Diversity contaba el tag "wild", que no
+cuenta en Global Events). **Conviene consultarla antes de cargar cartas de cualquier expansión**,
+no solo Turmoil -- también trae aclaraciones de Colonies y Prelude.
 
 **Turmoil: núcleo político, implementado (2026-09-04, decisión explícita del usuario).**
 Resolvió las últimas 2 cartas pendientes del catálogo normal: Colonial Envoys y Colonial
