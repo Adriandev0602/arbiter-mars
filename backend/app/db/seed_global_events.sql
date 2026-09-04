@@ -23,3 +23,30 @@ insert into global_events (id, name, effects) values
 on conflict (id) do update set
     name = excluded.name,
     effects = excluded.effects;
+
+-- Bloque 2 (2026-09-04): 4 de 6 cargadas -- Cloud Societies y Corrosive Rain
+-- quedan pendientes (necesitan la mecanica de "floaters por carta activa",
+-- ya pendiente por Aerosport Tournament/Airliners/Floater Leasing -- ver
+-- CARDS_LOG.md). Piezas nuevas: contadores "events_played"/"tag:<tag>" en
+-- _resolve_capped_counter, "resource_delta_per_influence" (sin tope),
+-- "resource_delta_if_tag_diversity" (umbral booleano, sin tope).
+insert into global_events (id, name, effects) values
+    (
+        'aquifer_released_by_public_council', 'Aquifer Released by Public Council',
+        '{"place_oceans": 1, "resource_delta_per_influence": {"plants": 1, "steel": 1}}'::jsonb
+    ),
+    (
+        'asteroid_mining', 'Asteroid Mining',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:jovian", "resource": "titanium", "per_unit": 1, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'celebrity_leaders', 'Celebrity Leaders',
+        '{"resource_delta_per_capped_counter": {"counter": "events_played", "resource": "mc", "per_unit": 2, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'diversity', 'Diversity',
+        '{"resource_delta_if_tag_diversity": {"threshold": 9, "resource": "mc", "amount": 10}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    effects = excluded.effects;

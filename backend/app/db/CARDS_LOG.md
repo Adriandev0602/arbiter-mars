@@ -335,7 +335,7 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). **Actualización bloque 25:** ya son 4 cartas las que necesitan esta pieza (ver Airliners y Floater Leasing abajo) — sube de prioridad para una sesión dedicada. |
+| 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). **Actualización bloque 25:** ya son 4 cartas las que necesitan esta pieza (ver Airliners y Floater Leasing abajo). **Actualización Global Events bloque 2 (2026-09-04):** ya son 6 (Cloud Societies y Corrosive Rain, ver sección "Turmoil: Global Events") — sube de prioridad para una sesión dedicada. |
 | C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
 | C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
 
@@ -408,25 +408,43 @@ antemano). `tools.resolve_global_event(player_id, event_id)` calcula la Influenc
 -- `rules_engine.py` NO importa `turmoil.py`, mismo desacople que el resto de las piezas de
 Turmoil ya resueltas.
 
-**2 de 36 cargadas**, ambas verificadas contra el rulebook oficial (más fuerte que un scan
-individual: trae el texto impreso Y un ejemplo numérico resuelto paso a paso, página 5):
+**6 de 36 cargadas** (bloque 1: 2, verificadas contra el rulebook oficial -- más fuerte que un
+scan individual, trae el texto impreso Y un ejemplo numérico resuelto paso a paso, página 5;
+bloque 2, 2026-09-04: 4 más, verificadas contra su scan real):
 
 | id | Nombre | Efecto |
 |---|---|---|
 | `generous_funding` | Generous Funding | +2 M€ por cada set de 5 TR sobre 15 (tope 5 sets) + Influencia SUMA sets. Ejemplo del rulebook: TR 42 (5 sets) + 2 Influencia = 7 × 2 = 14 M€ |
 | `riots` | Riots | -4 M€ por cada ciudad en el mapa (tope 5 ciudades) − Influencia RESTA ciudades contadas. Ejemplo del rulebook: 7 ciudades (capa a 5) − 1 Influencia = 4 × 4 = 16 M€ perdidos |
+| `aquifer_released_by_public_council` | Aquifer Released by Public Council | Coloca 1 océano (+1 TR, `place_oceans`). +1 planta y +1 acero por cada punto de Influencia, SIN tope (pieza nueva `resource_delta_per_influence`) |
+| `asteroid_mining` | Asteroid Mining | +1 titanio por cada tag jovian jugado (tope 5) + Influencia SUMA (mismo `resource_delta_per_capped_counter`, contador nuevo `tag:<tag>`) |
+| `celebrity_leaders` | Celebrity Leaders | +2 M€ por cada evento jugado históricamente (tope 5) + Influencia SUMA (contador nuevo `events_played`) |
+| `diversity` | Diversity | +10 M€ si el jugador tiene 9+ tags DISTINTOS jugados, contando la Influencia como tags extra (pieza nueva `resource_delta_if_tag_diversity`, umbral booleano SIN tope de 5 -- el tope de 5 solo aplica a contadores que se multiplican, no a un chequeo de umbral) |
 
-**34 pendientes** en `global_event_review_queue` (`reviewed = false`) — misma dinámica de
+**2 pendientes del bloque 2 -- misma pieza faltante que Aerosport Tournament (ver "Pendientes"
+arriba):**
+- **Cloud Societies**: "Add a floater to each card that can collect floaters. Add 1 floater for
+  each influence to a card." Necesita saber qué cartas activas del jugador "coleccionan
+  floaters" específicamente -- la misma suma/tipado de recursos por carta activa que ya bloquea
+  Aerosport Tournament/Airliners/Floater Leasing. Ahora son **5 cartas** esperando esa pieza.
+- **Corrosive Rain**: "Lose 2 floaters from a card, or lose 10 M€. Draw 1 card for each
+  influence." La elección "perder floaters O 10 M€" depende de la misma pieza (saber si el
+  jugador tiene una carta con floaters) -- cargar solo la rama "10 M€" sería una carta distinta
+  a la real (el jugador perdería la opción, casi siempre mejor, de pagar con floaters). Ahora
+  son **6 cartas** esperando la pieza de floaters por carta activa.
+
+**28 pendientes** en `global_event_review_queue` (`reviewed = false`) — misma dinámica de
 bloques que el catálogo de cartas: leer el scan real (`cards.hadronikle.com/global-events/...`),
 decidir vocabulario (reusar `apply_card_effect` primero, extender `_resolve_capped_counter` o
 agregar una pieza nueva si hace falta), cargar en `seed_global_events.sql`, marcar la fila con
-`event_id`. Nombres pendientes: Aquifer Released by Public Council, Asteroid Mining, Celebrity
-Leaders, Cloud Societies, Corrosive Rain, Diversity, Dry Deserts, Eco Sabotage, Election, Global
+`event_id`. Nombres pendientes: Dry Deserts, Eco Sabotage, Election, Global
 Dust Storm, Homeworld Support, Improved Energy Templates, Interplanetary Trade, Jovian Tax
 Rights, Microgravity Health Problems, Miners on Strike, Mud Slides, Pandemic, Paradigm
 Breakdown, Productivity, Red Influence, Revolution, Sabotage, Scientific Community, Snow Cover,
 Solar Flare, Solarnet Shutdown, Spin-off Products, Sponsored Projects, Strong Society,
-Successful Organisms, Venus Infrastructure, Volcanic Eruptions, War on Earth.
+Successful Organisms, Venus Infrastructure, Volcanic Eruptions, War on Earth (más Cloud
+Societies y Corrosive Rain, marcadas `reviewed = true` con `event_id = null` -- pendientes por
+mecánica, no por revisar).
 
 **Alcance no resuelto todavía, documentado para cuando aparezca en una carta real:** el reparto
 de delegados neutrales al revelar la carta (Distant → Coming → Current) y el ciclo de

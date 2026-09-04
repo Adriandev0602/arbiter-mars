@@ -4737,3 +4737,49 @@ def test_unsupported_counter_raises():
     effects = {"resource_delta_per_capped_counter": {"counter": "bogus", "resource": "mc", "per_unit": 1}}
     with pytest.raises(CardEffectError):
         apply_card_effect(new_player_state(), new_global_parameters(), effects)
+
+
+# --- Global Events, bloque 2 --------------------------------------------
+
+def test_resource_delta_per_capped_counter_tag_source():
+    player = {**new_player_state(), "tags_played": {"jovian": 7}}
+    effects = {
+        "resource_delta_per_capped_counter": {
+            "counter": "tag:jovian", "resource": "titanium", "per_unit": 1, "influence_direction": "add",
+        }
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=1)
+    assert new_player["titanium"] == 6  # min(7,5) + 1 influencia
+
+
+def test_resource_delta_per_capped_counter_events_played_source():
+    globals_ = {**new_global_parameters(), "events_played": 3}
+    effects = {
+        "resource_delta_per_capped_counter": {
+            "counter": "events_played", "resource": "mc", "per_unit": 2, "influence_direction": "add",
+        }
+    }
+    new_player, _ = apply_card_effect(new_player_state(), globals_, effects, influence=0)
+    assert new_player["mc"] == 6
+
+
+def test_aquifer_released_places_ocean_and_gains_per_influence():
+    effects = {
+        "place_oceans": 1,
+        "resource_delta_per_influence": {"plants": 1, "steel": 1},
+    }
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), effects, influence=3)
+    assert new_globals["oceans_placed"] == 1
+    assert new_player["plants"] == 3
+    assert new_player["steel"] == 3
+    assert new_player["tr"] == TR_START + 1  # place_oceans ya suma TR
+
+
+def test_diversity_grants_mc_when_tag_diversity_meets_threshold():
+    player = {**new_player_state(), "tags_played": {t: 1 for t in ["science", "power", "earth", "space", "building", "venus", "jovian", "plant"]}}
+    effects = {"resource_delta_if_tag_diversity": {"threshold": 9, "resource": "mc", "amount": 10}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=0)
+    assert new_player["mc"] == 0  # 8 tags distintos, no llega a 9
+
+    new_player2, _ = apply_card_effect(player, new_global_parameters(), effects, influence=1)
+    assert new_player2["mc"] == 10  # 8 + 1 influencia = 9

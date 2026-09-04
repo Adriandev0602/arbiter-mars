@@ -591,11 +591,21 @@ def _resolve_capped_counter(counter: str, player: dict, globals_: dict) -> int:
       - "tr_sets_of_5_over_15": cuantos grupos completos de 5 TR el jugador
         tiene por encima de 15 (ej. Generous Funding: "Gain 2 M€ for each
         ... set of 5 TR over 15").
+      - "events_played": cartas evento jugadas historicamente, cualquier
+        jugador (`globals_["events_played"]`, ej. Celebrity Leaders: "Gain
+        2 M€ for each event played").
+      - "tag:<tag>": cartas jugadas con ese tag (`player["tags_played"]`,
+        ej. Asteroid Mining: "Gain 1 titanium for each Jovian tag" ->
+        counter="tag:jovian").
     """
     if counter == "city_tiles_placed":
         return globals_["city_tiles_placed"]
     if counter == "tr_sets_of_5_over_15":
         return max(0, (player["tr"] - 15) // 5)
+    if counter == "events_played":
+        return globals_["events_played"]
+    if counter.startswith("tag:"):
+        return player["tags_played"].get(counter[len("tag:"):], 0)
     raise CardEffectError(f"Contador '{counter}' no soportado en resource_delta_per_capped_counter")
 
 
@@ -929,6 +939,20 @@ def apply_card_effect(
         Riots: counter="city_tiles_placed", resource="mc", per_unit=-4,
         influence_direction="subtract" (+influencia RESTA del conteo de
         ciudades, reduciendo cuanto se pierde).
+      - "resource_delta_per_influence": {"<recurso>": per_unit, ...} --
+        expansion Turmoil (Global Events), suma `influence * per_unit` a
+        cada recurso listado, SIN tope de 5 (la Influencia se usa directo
+        como multiplicador, no como ajuste de un contador separado -- ej.
+        Aquifer Released by Public Council: "Gain 1 plant and 1 steel per
+        influence" -> {"plants": 1, "steel": 1}).
+      - "resource_delta_if_tag_diversity": {"threshold": N, "resource":
+        "<recurso>", "amount": M} -- suma M al recurso SOLO si la cantidad
+        de tags DISTINTOS que el jugador jugo (uno por tipo, sin importar
+        cuantas veces) mas su Influencia llega a `threshold` (ej.
+        Diversity: "Gain 10 M€ if you have 9 or more different tags.
+        Influence counts as unique tags" -> threshold=9, resource="mc",
+        amount=10). Sin tope de 5 -- es un umbral booleano, no un
+        contador que se multiplica.
       - "production_delta_per_tag_pair": {"tag_a": "<tag>", "tag_b": "<tag>",
         "production": "<recurso>_production", "per_set": N (default 1)} --
         suma N por cada PAR completo de tags "<tag_a>"+"<tag_b>" ya jugados
@@ -1063,6 +1087,17 @@ def apply_card_effect(
         count = max(0, capped + signed_influence)
         key = spec["resource"]
         new_player[key] = max(0, new_player[key] + count * spec.get("per_unit", 1))
+
+    if "resource_delta_per_influence" in effects:
+        for key, per_unit in effects["resource_delta_per_influence"].items():
+            new_player[key] = max(0, new_player[key] + influence * per_unit)
+
+    if "resource_delta_if_tag_diversity" in effects:
+        spec = effects["resource_delta_if_tag_diversity"]
+        unique_tags = sum(1 for count in player["tags_played"].values() if count > 0)
+        if unique_tags + influence >= spec["threshold"]:
+            key = spec["resource"]
+            new_player[key] = max(0, new_player[key] + spec["amount"])
 
     if "production_delta_per_tag_pair" in effects:
         spec = effects["production_delta_per_tag_pair"]
