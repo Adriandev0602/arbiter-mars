@@ -1476,3 +1476,47 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Bloque de revision 30 (cierre de scans P37-P42 de Prelude + P68/P69 Venus
+-- Next + primeras de Prelude 2). 6 de 10 cargadas -- Psychrophiles,
+-- Research Coordination, Colonial Envoys y Colonial Representation quedan
+-- pendientes (ver CARDS_LOG.md). Piezas nuevas: "city_placement_on_volcanic"
+-- (board.can_place_city_on_volcanic), "mc_per_discarded_card" en
+-- use_card_action, "resource_delta_per_colony" y
+-- "production_delta_per_tag_pair" en apply_card_effect.
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'lava_tube_settlement', 'Lava Tube Settlement', 15, '{city,building}', null,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 2},
+          "place_city_tiles": 1, "city_placement_on_volcanic": true}'::jsonb
+    ),
+    (
+        'martian_survey', 'Martian Survey', 9, '{science}', '{"max_oxygen": 4}'::jsonb,
+        '{"draw_cards": 2}'::jsonb
+    ),
+    (
+        'sf_memorial', 'SF Memorial', 7, '{building}', null,
+        '{"draw_cards": 1}'::jsonb
+    ),
+    (
+        'space_hotels', 'Space Hotels', 12, '{earth,earth}',
+        '{"min_tag_count": {"tag": "earth", "count": 2}}'::jsonb,
+        '{"production_deltas": {"mc_production": 4}}'::jsonb
+    ),
+    (
+        'ceres_tech_market', 'Ceres Tech Market', 12, '{science,power}', null,
+        '{"resource_delta_per_colony": {"resource": "mc", "per_colony": 2},
+          "becomes_active": true, "active_card_starting_resources": 0,
+          "action": {"cost": {}, "gains": {"mc_per_discarded_card": {"per_card": 2}}}}'::jsonb
+    ),
+    (
+        'cloud_tourism', 'Cloud Tourism', 11, '{jovian,venus}', null,
+        '{"production_delta_per_tag_pair": {"tag_a": "earth", "tag_b": "venus", "production": "mc_production", "per_set": 1},
+          "becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;

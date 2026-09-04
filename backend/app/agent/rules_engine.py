@@ -841,6 +841,15 @@ def apply_card_effect(
         jugador ya construyo (`player["colonies_owned"]`, expansion
         Colonies, ver colonies.py) (ej. Ecology Research: +1 produccion de
         plantas por cada colonia propia).
+      - "resource_delta_per_colony": {"resource": "<recurso>", "per_colony":
+        N (default 1)} -- igual que production_delta_per_colony pero suma
+        al STOCK del recurso en vez de a su produccion (ej. Ceres Tech
+        Market: +2 MC de stock por cada colonia propia).
+      - "production_delta_per_tag_pair": {"tag_a": "<tag>", "tag_b": "<tag>",
+        "production": "<recurso>_production", "per_set": N (default 1)} --
+        suma N por cada PAR completo de tags "<tag_a>"+"<tag_b>" ya jugados
+        (el minimo de los dos conteos, no la suma) (ej. Cloud Tourism: +1
+        produccion de MC por cada set de tag earth Y tag venus que tenga).
       - "production_delta_per_zero_tag_card": {"production": "<recurso>_production",
         "per_card": N (default 1), "include_this": bool} -- suma N por cada
         carta jugada SIN NINGUN tag (`zero_tag_cards_played`, incluida esta
@@ -955,6 +964,20 @@ def apply_card_effect(
         key = spec["production"]
         count = len(player["colonies_owned"])
         new_player[key] = _apply_production_floor(key, new_player[key] + count * spec.get("per_colony", 1))
+
+    if "resource_delta_per_colony" in effects:
+        spec = effects["resource_delta_per_colony"]
+        key = spec["resource"]
+        count = len(player["colonies_owned"])
+        new_player[key] = max(0, new_player[key] + count * spec.get("per_colony", 1))
+
+    if "production_delta_per_tag_pair" in effects:
+        spec = effects["production_delta_per_tag_pair"]
+        key = spec["production"]
+        count_a = player["tags_played"].get(spec["tag_a"], 0)
+        count_b = player["tags_played"].get(spec["tag_b"], 0)
+        sets = min(count_a, count_b)
+        new_player[key] = _apply_production_floor(key, new_player[key] + sets * spec.get("per_set", 1))
 
     if "production_delta_per_zero_tag_card" in effects:
         spec = effects["production_delta_per_zero_tag_card"]
@@ -1213,6 +1236,11 @@ def use_card_action(
         carta, SIN gastarlos (a diferencia de convert_card_resource_amount,
         que si los gasta), limitado a `cap` si esta presente (ej. Jupiter
         Floating Station: 1 MC por floater guardado, maximo 4).
+        "mc_per_discarded_card": {"per_card": N (default 1)} -- da N MC por
+        cada carta que el jugador declara descartar (`effect_amount` = X,
+        elegido por el jugador). Igual que standard_project_sell_patents,
+        NO valida ni saca cartas puntuales de `hand` -- confia en el X
+        declarado (ej. Ceres Tech Market: 2 MC por carta).
         "free_trade": true -- NO se procesa aca (este motor no conoce
         colonies.py a proposito, ver CLAUDE.md seccion 3): es un flag que
         `tools.use_card_action` detecta ANTES de llamar a esta funcion,
@@ -1364,6 +1392,13 @@ def use_card_action(
         spec = gains["mc_per_card_resource"]
         counted = min(card_resources, spec["cap"]) if "cap" in spec else card_resources
         new_player["mc"] = new_player["mc"] + counted * spec.get("per_resource", 1)
+    if "mc_per_discarded_card" in gains:
+        if effect_amount is None or effect_amount < 0:
+            raise CardEffectError("Esta accion requiere effect_amount (X) >= 0")
+        # Igual que standard_project_sell_patents: no se valida ni se saca
+        # de `hand` una carta puntual, solo se otorga el MC declarado (el
+        # jugador es quien elige cuantas descarta, el motor confia en X).
+        new_player["mc"] = new_player["mc"] + effect_amount * gains["mc_per_discarded_card"].get("per_card", 1)
     if "place_oceans" in gains:
         for _ in range(gains["place_oceans"]):
             p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
