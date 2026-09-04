@@ -286,6 +286,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `jovian_lanterns` | Jovian Lanterns | C18 | 20 MC | Tag jovian. Requiere 1 tag jovian jugado. +1 TR, +2 floaters a una carta activa elegida; acción repetible: -1 titanio → +2 floaters a sí misma |
 | `jupiter_floating_station` | Jupiter Floating Station | C19 | 9 MC | Tag jovian. Requiere 3 tags de ciencia. Acción con elección: +1 floater a OTRA carta activa elegida, O +1 MC por cada floater guardado (sin gastarlos, pieza nueva `mc_per_card_resource`, tope 4) |
 | `luna_governor` | Luna Governor | C20 | 4 MC | Doble tag earth. Requiere 3 tags earth jugados. +2 producción MC |
+| `lunar_exports` | Lunar Exports | C21 | 19 MC | Tags power+earth. Elección: +2 producción plantas O +5 producción MC |
+| `lunar_mining` | Lunar Mining | C22 | 11 MC | Tag earth. +1 producción titanio cada 2 tags earth (incluida esta) |
+| `market_manipulation` | Market Manipulation | C23 | 1 MC | Tag earth, evento. +1 paso a una colonia elegida, -1 paso a otra (pieza nueva `adjust_colony_tracks`) |
+| `martian_zoo` | Martian Zoo | C24 | 12 MC | Tags animal+building. Requiere 2 ciudades en juego. Pasivo: +1 animal por cada tag earth jugado; acción repetible sin costo: +1 MC por cada animal guardado (sin gastarlos) |
+| `mining_colony` | Mining Colony | C25 | 20 MC | Tag power. +1 producción titanio, construye 1 colonia |
+| `minority_refuge` | Minority Refuge | C26 | 5 MC | Tag power. -2 producción MC, construye 1 colonia |
+| `molecular_printing` | Molecular Printing | C27 | 11 MC | Tag science. +1 MC por cada ciudad en el mapa, +1 MC por cada colonia en juego (pieza nueva `mc_per_colony_in_play`) |
+| `nitrogen_from_titan` | Nitrogen from Titan | C28 | 25 MC | Tags jovian+power. +2 TR, +2 floaters a una carta Jovian activa elegida |
+| `pioneer_settlement` | Pioneer Settlement | C29 | 13 MC | Tag power. Requiere máximo 1 colonia propia (pieza nueva `max_colonies_owned`). -2 producción MC, construye 1 colonia |
+| `productive_outpost` | Productive Outpost | C30 | 0 MC | Sin tags propios. Aplica el colony bonus de cada colonia propia una vez (pieza nueva `gain_all_colony_bonuses`) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 

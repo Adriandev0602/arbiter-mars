@@ -334,6 +334,8 @@ def play_card(
     any_tag_played_choice: str | None = None,
     discard_card_id: str | None = None,
     build_colony_id: str | None = None,
+    colony_id_increase: str | None = None,
+    colony_id_decrease: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -435,6 +437,13 @@ def play_card(
             costo de la carta) -- el id de `colonies.COLONY_DEFS`, debe
             estar en juego (ver tools.setup_colonies). None si la carta no
             tiene esta mecanica.
+        colony_id_increase: OBLIGATORIO junto con `colony_id_decrease` si
+            `effects.adjust_colony_tracks` esta definido (ej. Market
+            Manipulation: subir el track de una colonia 1 paso, bajar el
+            de otra 1 paso) -- la colonia cuyo track sube. None si la
+            carta no tiene esta mecanica.
+        colony_id_decrease: la colonia cuyo track baja (ver
+            `colony_id_increase`). Debe ser distinta de esa.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -590,6 +599,25 @@ def play_card(
             new_player[key] = new_player[key] + delta
         _save_colonies(new_colonies)
 
+    if effects.get("adjust_colony_tracks"):
+        if colony_id_increase is None or colony_id_decrease is None:
+            raise ValueError(f"La carta '{card_id}' requiere colony_id_increase y colony_id_decrease")
+        if colony_id_increase == colony_id_decrease:
+            raise ValueError("colony_id_increase y colony_id_decrease deben ser distintas")
+        colonies = _load_colonies()
+        colonies = colonieslib.adjust_colony_track(colonies, colony_id_increase, 1)
+        colonies = colonieslib.adjust_colony_track(colonies, colony_id_decrease, -1)
+        _save_colonies(colonies)
+
+    if effects.get("gain_all_colony_bonuses"):
+        for colony_id in new_player["colonies_owned"]:
+            for key, delta in colonieslib.COLONY_DEFS[colony_id]["colony_bonus"].items():
+                new_player[key] = new_player[key] + delta
+
+    if effects.get("mc_per_colony_in_play"):
+        colonies_in_play = _load_colonies()
+        new_player = {**new_player, "mc": new_player["mc"] + len(colonies_in_play)}
+
     greenery_spec = effects.get("place_greenery")
     if greenery_spec is not None:
         if greenery_hex_id is None:
@@ -665,7 +693,8 @@ def play_card(
          "duplicate_production_target_card_id": duplicate_production_target_card_id,
          "target_card_id": target_card_id, "target_card_id_2": target_card_id_2,
          "tag_played_choice": tag_played_choice, "any_tag_played_choice": any_tag_played_choice,
-         "discard_card_id": discard_card_id, "build_colony_id": build_colony_id},
+         "discard_card_id": discard_card_id, "build_colony_id": build_colony_id,
+         "colony_id_increase": colony_id_increase, "colony_id_decrease": colony_id_decrease},
     )
 
     return {
