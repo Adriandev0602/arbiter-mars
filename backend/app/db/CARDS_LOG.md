@@ -441,9 +441,9 @@ antemano). `tools.resolve_global_event(player_id, event_id)` calcula la Influenc
 -- `rules_engine.py` NO importa `turmoil.py`, mismo desacople que el resto de las piezas de
 Turmoil ya resueltas.
 
-**13 de 36 cargadas** (bloque 1: 2, verificadas contra el rulebook oficial -- más fuerte que un
+**33 de 36 cargadas** (bloque 1: 2, verificadas contra el rulebook oficial -- más fuerte que un
 scan individual, trae el texto impreso Y un ejemplo numérico resuelto paso a paso, página 5;
-bloques 2-4, 2026-09-04: 11 más, verificadas contra su scan real):
+bloques 2-5, 2026-09-04: 31 más, verificadas contra su scan real):
 
 | id | Nombre | Efecto |
 |---|---|---|
@@ -460,6 +460,26 @@ bloques 2-4, 2026-09-04: 11 más, verificadas contra su scan real):
 | `global_dust_storm` | Global Dust Storm | Pierde todo el calor (pieza nueva `resource_set_to_zero`). -2 M€ por cada tag building (tope 5) − Influencia (mismo `resource_delta_per_capped_counter`) |
 | `homeworld_support` | Homeworld Support | +2 M€ por cada tag earth (tope 5) + Influencia (mismo `resource_delta_per_capped_counter`) |
 | `improved_energy_templates` | Improved Energy Templates | +1 producción energía por cada 2 tags power + Influencia, SIN tope (pieza nueva `production_delta_per_tag_plus_influence`) |
+| `interplanetary_trade` | Interplanetary Trade | +2 M€ por cada tag space (tope 5) + Influencia |
+| `jovian_tax_rights` | Jovian Tax Rights | +1 producción MC por cada colonia propia. +1 titanio por Influencia |
+| `microgravity_health_problems` | Microgravity Health Problems | -3 M€ por cada colonia propia (tope 5) − Influencia (contador nuevo `colonies_owned`) |
+| `miners_on_strike` | Miners on Strike | -1 titanio por cada tag jovian (tope 5) − Influencia |
+| `pandemic` | Pandemic | -3 M€ por cada tag building (tope 5) − Influencia |
+| `productivity` | Productivity | +1 acero por cada punto de producción de acero (tope 5) + Influencia (contador nuevo `<recurso>_production`) |
+| `revolution` | Revolution | La carta imprime su regla de solitario: si tags earth + Influencia ≥ 4, -2 TR (`tr_delta_by_threshold` con umbral negativo) |
+| `sabotage` | Sabotage | -1 producción acero y -1 producción energía. +1 acero por Influencia |
+| `paradigm_breakdown` | Paradigm Breakdown | Descarta 2 cartas elegidas de la mano (pieza nueva `discard_cards` + parámetro `discard_card_ids`). +2 M€ por Influencia |
+| `red_influence` | Red Influence | -3 M€ por cada set de 5 TR sobre 10 (tope 5 sets) — la Influencia NO ajusta ese conteo acá (pieza nueva `influence_direction: "none"`, contador nuevo `tr_sets_of_5_over:<N>`). +1 producción MC por Influencia (pieza nueva `production_delta_per_influence`) |
+| `scientific_community` | Scientific Community | +1 M€ por cada carta en mano + Influencia, SIN tope — la carta imprime "no limit" (piezas nuevas: contador `hand_size` y `cap: null`) |
+| `snow_cover` | Snow Cover | BAJA la temperatura 2 pasos sin tocar el TR (pieza nueva `lower_temperature_steps`). Roba 1 carta por Influencia |
+| `solar_flare` | Solar Flare | -3 M€ por cada tag space (tope 5) − Influencia |
+| `spin_off_products` | Spin-off Products | +2 M€ por cada tag science (tope 5) + Influencia |
+| `sponsored_projects` | Sponsored Projects | +1 recurso a TODA carta activa que ya tenga al menos 1, sin filtrar por tipo (pieza nueva `add_resource_to_all_cards_with_resources`). Roba 1 carta por Influencia |
+| `strong_society` | Strong Society | +2 M€ por cada ciudad en el mapa (tope 5) + Influencia |
+| `successful_organisms` | Successful Organisms | +1 planta por cada punto de producción de plantas (tope 5) + Influencia |
+| `venus_infrastructure` | Venus Infrastructure | +2 M€ por cada tag venus (tope 5) + Influencia |
+| `volcanic_eruptions` | Volcanic Eruptions | +2 pasos de temperatura (+2 TR). +1 producción calor por Influencia |
+| `war_on_earth` | War on Earth | -4 TR, y cada punto de Influencia evita 1 paso; nunca se convierte en ganancia (pieza nueva `tr_delta_reduced_by_influence`) |
 
 **1 pendiente del bloque 4 -- Dry Deserts**: "First player removes 1 ocean tile from the
 gameboard. Gain 1 standard resource per influence." Dos piezas faltantes a la vez: (a) el
@@ -471,16 +491,48 @@ resource" es una elección del jugador entre los 6 recursos básicos (MC/acero/t
 energía/calor), pieza de "elección de recurso genérica" todavía no construida. Pospuesta hasta
 resolver ambas.
 
-**22 pendientes** en `global_event_review_queue` (`reviewed = false`) — misma dinámica de
-bloques que el catálogo de cartas: leer el scan real (`cards.hadronikle.com/global-events/...`),
-decidir vocabulario (reusar `apply_card_effect` primero, extender `_resolve_capped_counter` o
-agregar una pieza nueva si hace falta), cargar en `seed_global_events.sql`, marcar la fila con
-`event_id`. Nombres pendientes: Interplanetary Trade, Jovian Tax
-Rights, Microgravity Health Problems, Miners on Strike, Mud Slides, Pandemic, Paradigm
-Breakdown, Productivity, Red Influence, Revolution, Sabotage, Scientific Community, Snow Cover,
-Solar Flare, Solarnet Shutdown, Spin-off Products, Sponsored Projects, Strong Society,
-Successful Organisms, Venus Infrastructure, Volcanic Eruptions, War on Earth (más Dry Deserts,
-marcada `reviewed = true` con `event_id = null` -- pendiente por mecánica, no por revisar).
+### Bloque 5 (2026-09-04): las 22 restantes, analizadas en paralelo por 4 agentes
+
+Único bloque hecho con **orquestación multi-agente**: se repartieron las 22 cartas que quedaban
+en 4 grupos, un agente (Sonnet) por grupo. Cada agente leyó el vocabulario del motor
+(`apply_card_effect` + `_resolve_capped_counter`), descargó sus scans espaciados 4s, transcribió
+el texto exacto de cada carta y propuso el `effects` JSON + casos de test, **sin tocar ningún
+archivo del repo** (así no competían por `rules_engine.py`/`seed_global_events.sql`; la
+integración, verificación y escritura de código quedó en un solo lugar). Los scans se borraron
+al terminar cada agente.
+
+**Verificación de la revisión (no se aceptaron los informes a ciegas):** se re-descargaron y
+releyeron 3 scans de muestra — Microgravity Health Problems (grupo A, motivó contador nuevo),
+Red Influence y Scientific Community (grupo B, motivaron cambios de SEMÁNTICA del motor:
+`influence_direction: "none"` y `cap: null`). Las 3 transcripciones coincidieron exactamente con
+lo reportado.
+
+| Grupo | Cartas | Resultado |
+|---|---|---|
+| **A** | Interplanetary Trade, Jovian Tax Rights, Microgravity Health Problems, Miners on Strike, Mud Slides, Pandemic | 5 cargadas, 1 pendiente (Mud Slides). Detectó que faltaba el contador `colonies_owned` |
+| **B** | Paradigm Breakdown, Productivity, Red Influence, Revolution, Sabotage, Scientific Community | 6 cargadas. Detectó 3 huecos de semántica: `influence_direction: "none"` (Red Influence usa la Influencia en una cláusula APARTE, no ajustando el contador), `cap: null` (Scientific Community imprime "no limit", contradiciendo el tope 5 por defecto) y el umbral de TR parametrizable (`tr_sets_of_5_over:<N>`) |
+| **C** | Snow Cover, Solar Flare, Solarnet Shutdown, Spin-off Products, Sponsored Projects | 4 cargadas, 1 pendiente (Solarnet Shutdown). Detectó que el motor solo sabía SUBIR temperatura, y que `add_resource_to_all_matching_type` no cubría "todas las cartas que ya tengan recursos" sin filtrar por tipo |
+| **D** | Strong Society, Successful Organisms, Venus Infrastructure, Volcanic Eruptions, War on Earth | 5 cargadas. Detectó que no existía análogo de producción para `resource_delta_per_influence`, ni forma de expresar "resta fija de TR que la Influencia evita paso a paso" |
+
+**Piezas nuevas de motor de este bloque** (todas extensiones chicas y compatibles hacia atrás):
+contadores `colonies_owned`, `hand_size`, `<recurso>_production` y `tr_sets_of_5_over:<N>`;
+`cap: null` (sin tope) e `influence_direction: "none"` en `resource_delta_per_capped_counter`;
+`production_delta_per_influence`, `tr_delta_reduced_by_influence`, `lower_temperature_steps`,
+`add_resource_to_all_cards_with_resources`, `discard_cards` (+ parámetro `discard_card_ids` en
+`apply_card_effect` y `tools.resolve_global_event`).
+
+**Cola de revisión: 0 filas sin revisar.** Las 36 cartas del mazo están leídas; 33 cargadas y
+**3 pendientes por mecánica** (marcadas `reviewed = true` con `event_id = null`):
+- **Dry Deserts** (bloque 4) — ver arriba.
+- **Mud Slides** — "Lose 4 M€ for each tile adjacent to ocean (max 5, then reduced by
+  influence)". Necesita contar tiles del mapa hexagonal adyacentes a océano: el tablero
+  (`board.py`) no está conectado a `resolve_global_event`. Mismo bloqueo que Dry Deserts.
+- **Solarnet Shutdown** — "Lose 3 M€ for each blue card (max 5, then reduced by influence)". El
+  catálogo no clasifica cartas por color: solo hay `is_event: bool`, y `active_cards` NO equivale
+  a "carta azul" (una azul sin acción repetible ni recursos propios no entra ahí). Cargarla con
+  `len(active_cards)` sería inventar una definición distinta a la real. Falta agregar un
+  `card_type` al catálogo, verificado carta por carta — retrofit de ~300 cartas, no una pieza
+  chica de motor.
 
 **Alcance no resuelto todavía, documentado para cuando aparezca en una carta real:** el reparto
 de delegados neutrales al revelar la carta (Distant → Coming → Current) y el ciclo de

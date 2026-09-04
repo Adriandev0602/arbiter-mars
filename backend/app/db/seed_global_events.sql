@@ -105,3 +105,106 @@ insert into global_events (id, name, effects) values
 on conflict (id) do update set
     name = excluded.name,
     effects = excluded.effects;
+
+-- Bloque 5 (2026-09-04): 20 de 22 cargadas, analizadas en paralelo por 4
+-- agentes (grupos A/B/C/D, ver CARDS_LOG.md para el detalle de quien tomo
+-- cada carta). Pendientes: Mud Slides (necesita el tablero hexagonal
+-- wireado -- contar tiles adyacentes a oceano) y Solarnet Shutdown
+-- (necesita clasificar cartas por color en el catalogo, retrofit completo).
+-- Piezas nuevas: contadores "colonies_owned", "hand_size",
+-- "<recurso>_production" y "tr_sets_of_5_over:<N>"; "cap": null (sin tope)
+-- e "influence_direction": "none" en resource_delta_per_capped_counter;
+-- production_delta_per_influence, tr_delta_reduced_by_influence,
+-- lower_temperature_steps, add_resource_to_all_cards_with_resources,
+-- discard_cards.
+insert into global_events (id, name, effects) values
+    -- Grupo A
+    (
+        'interplanetary_trade', 'Interplanetary Trade',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:space", "resource": "mc", "per_unit": 2, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'jovian_tax_rights', 'Jovian Tax Rights',
+        '{"production_delta_per_colony": {"production": "mc_production", "per_colony": 1},
+          "resource_delta_per_influence": {"titanium": 1}}'::jsonb
+    ),
+    (
+        'microgravity_health_problems', 'Microgravity Health Problems',
+        '{"resource_delta_per_capped_counter": {"counter": "colonies_owned", "resource": "mc", "per_unit": -3, "influence_direction": "subtract"}}'::jsonb
+    ),
+    (
+        'miners_on_strike', 'Miners on Strike',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:jovian", "resource": "titanium", "per_unit": -1, "influence_direction": "subtract"}}'::jsonb
+    ),
+    (
+        'pandemic', 'Pandemic',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:building", "resource": "mc", "per_unit": -3, "influence_direction": "subtract"}}'::jsonb
+    ),
+    -- Grupo B
+    (
+        'productivity', 'Productivity',
+        '{"resource_delta_per_capped_counter": {"counter": "steel_production", "resource": "steel", "per_unit": 1, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'revolution', 'Revolution',
+        '{"tr_delta_by_threshold": {"score_tags": ["earth"], "thresholds": [[4, -2]]}}'::jsonb
+    ),
+    (
+        'sabotage', 'Sabotage',
+        '{"production_deltas": {"steel_production": -1, "energy_production": -1},
+          "resource_delta_per_influence": {"steel": 1}}'::jsonb
+    ),
+    (
+        'paradigm_breakdown', 'Paradigm Breakdown',
+        '{"discard_cards": {"n": 2}, "resource_delta_per_influence": {"mc": 2}}'::jsonb
+    ),
+    (
+        'red_influence', 'Red Influence',
+        '{"resource_delta_per_capped_counter": {"counter": "tr_sets_of_5_over:10", "resource": "mc", "per_unit": -3, "influence_direction": "none"},
+          "production_delta_per_influence": {"mc_production": 1}}'::jsonb
+    ),
+    (
+        'scientific_community', 'Scientific Community',
+        '{"resource_delta_per_capped_counter": {"counter": "hand_size", "resource": "mc", "per_unit": 1, "cap": null, "influence_direction": "add"}}'::jsonb
+    ),
+    -- Grupo C
+    (
+        'snow_cover', 'Snow Cover',
+        '{"lower_temperature_steps": 2, "draw_cards_per_influence": true}'::jsonb
+    ),
+    (
+        'solar_flare', 'Solar Flare',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:space", "resource": "mc", "per_unit": -3, "influence_direction": "subtract"}}'::jsonb
+    ),
+    (
+        'spin_off_products', 'Spin-off Products',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:science", "resource": "mc", "per_unit": 2, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'sponsored_projects', 'Sponsored Projects',
+        '{"add_resource_to_all_cards_with_resources": {"amount": 1}, "draw_cards_per_influence": true}'::jsonb
+    ),
+    -- Grupo D
+    (
+        'strong_society', 'Strong Society',
+        '{"resource_delta_per_capped_counter": {"counter": "city_tiles_placed", "resource": "mc", "per_unit": 2, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'successful_organisms', 'Successful Organisms',
+        '{"resource_delta_per_capped_counter": {"counter": "plant_production", "resource": "plants", "per_unit": 1, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'venus_infrastructure', 'Venus Infrastructure',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:venus", "resource": "mc", "per_unit": 2, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'volcanic_eruptions', 'Volcanic Eruptions',
+        '{"raise_temperature_steps": 2, "production_delta_per_influence": {"heat_production": 1}}'::jsonb
+    ),
+    (
+        'war_on_earth', 'War on Earth',
+        '{"tr_delta_reduced_by_influence": {"base_reduction": 4}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    effects = excluded.effects;

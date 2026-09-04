@@ -1382,6 +1382,7 @@ def _compute_player_influence(
 @tool
 def resolve_global_event(
     player_id: str, event_id: str, target_card_id: str | None = None, effect_choice: int | None = None,
+    discard_card_ids: list[str] | None = None,
 ) -> dict:
     """
     Resuelve el efecto de la carta "Current Global Event" (expansion
@@ -1409,6 +1410,10 @@ def resolve_global_event(
         effect_choice: OBLIGATORIO si `effects` tiene "choice" (ej.
             Corrosive Rain: elegir entre perder floaters o 10 M€). None si
             el evento no tiene eleccion.
+        discard_card_ids: OBLIGATORIO (con ese largo exacto) si `effects`
+            tiene "discard_cards" (ej. Paradigm Breakdown: "Discard 2
+            cards from hand") -- los card_ids de la mano a descartar.
+            None si el evento no descarta cartas.
 
     Returns:
         dict con el estado actualizado del jugador/parametros globales y
@@ -1428,7 +1433,7 @@ def resolve_global_event(
 
     new_player, new_globals = engine.apply_card_effect(
         player, globals_, event.get("effects") or {}, effect_choice=effect_choice,
-        target_card_id=target_card_id, influence=influence,
+        target_card_id=target_card_id, influence=influence, discard_card_ids=discard_card_ids,
     )
 
     _save_player(player_id, new_player)
