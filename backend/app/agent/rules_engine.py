@@ -580,6 +580,28 @@ def _apply_production_floor(key: str, value: int) -> int:
     return max(MC_PRODUCTION_FLOOR if key == "mc_production" else 0, value)
 
 
+def is_blue_card(is_event: bool, effects: dict | None) -> bool:
+    """
+    True si la carta es AZUL segun la clasificacion de colores del juego.
+    En Terraforming Mars las cartas de proyecto son verdes (efecto inmediato
+    de una sola vez), azules (efecto ONGOING: accion repetible y/o efecto
+    pasivo permanente, quedan en juego frente al jugador) o rojas (eventos).
+
+    El color no esta guardado como columna: se deriva de lo que el catalogo
+    ya sabe -- `cards.is_event` y las claves `becomes_active`/`passive` de
+    `cards.effects`. Regla verificada contra 6 scans reales de cada
+    categoria, incluido el caso dificil (una carta azul con `passive` pero
+    SIN accion ni recursos propios, ej. Spin-Off Department) -- ver
+    CARDS_LOG.md, entrada de Solarnet Shutdown. Funcion pura: recibe los dos
+    campos del catalogo ya leidos, no accede a la base (eso lo hace
+    tools._count_blue_cards_played).
+    """
+    if is_event:
+        return False
+    effects = effects or {}
+    return "becomes_active" in effects or "passive" in effects
+
+
 def _resolve_capped_counter(counter: str, player: dict, globals_: dict) -> int:
     """
     Fuente del contador SIN capar (el cap de 5 y el ajuste por Influencia se
@@ -602,6 +624,18 @@ def _resolve_capped_counter(counter: str, player: dict, globals_: dict) -> int:
         Health Problems: "Lose 3 M€ for each colony").
       - "hand_size": cartas en la mano del jugador (ej. Scientific
         Community: "Gain 1 M€ for each card in hand").
+      - "board_tiles_adjacent_to_ocean": CASO ESPECIAL -- no lo resuelve
+        esta funcion sino que viene PRECALCULADO por el caller en el
+        parametro `board_tiles_adjacent_to_ocean` de apply_card_effect
+        (mismo desacople que `influence`: rules_engine.py no importa
+        board.py). Ver board.count_tiles_adjacent_to_ocean (ej. Mud
+        Slides).
+      - "blue_cards_played": CASO ESPECIAL igual que el anterior -- viene
+        precalculado en el parametro `blue_cards_played` de
+        apply_card_effect, porque contar cartas azules exige cruzar
+        `player["played_cards"]` contra el catalogo `cards` (acceso a
+        base, prohibido en el motor puro). Ver is_blue_card y
+        tools._count_blue_cards_played (ej. Solarnet Shutdown).
       - "<recurso>_production": la produccion propia de ese recurso (ej.
         Successful Organisms: "Gain 1 plant per plant production" ->
         counter="plant_production").
@@ -856,6 +890,8 @@ def apply_card_effect(
     discard_card_id: str | None = None,
     influence: int = 0,
     discard_card_ids: list[str] | None = None,
+    board_tiles_adjacent_to_ocean: int = 0,
+    blue_cards_played: int = 0,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
@@ -899,6 +935,13 @@ def apply_card_effect(
         opponent draws 1" del texto real se omite -- no afecta el estado del
         propio jugador en single-player, no hace falta modelarla.
       - "place_oceans": N -- coloca N tiles de oceano (+N TR) (ej. Comet: 1).
+      - "place_oceans_without_tr": N -- igual pero SIN otorgar TR, y sin
+        error si ya se colocaron los 9 (simplemente no coloca mas). Los
+        pasivos "on_ocean_placed" (ej. Arctic Algae) SI se disparan. Para
+        Global Events que colocan oceano sin premiar al jugador (ej.
+        Aquifer Released by Public Council: "the first player places an
+        ocean tile, but no player gets any TR or placement bonuses" --
+        FAQ oficial).
       - "place_city_tiles": N -- suma N al contador global de ciudades, sin
         TR (ej. Capital: 1).
       - "tr_delta": N -- sube el TR directo, sin pasar por un parametro
@@ -952,7 +995,9 @@ def apply_card_effect(
         tag a la vez (ej. Gyropolis: +1 produccion de MC por cada tag venus
         Y +1 por cada tag earth, en la misma carta).
       - "production_delta_per_colony": {"production": "<recurso>_production",
-        "per_colony": N (default 1)} -- suma N por cada colonia que el
+        "per_colony": N (default 1), "cap": N (opcional, sin tope por
+        defecto -- ej. Jovian Tax Rights, cuya ERRATA oficial agrega
+        "(max 5)" al texto impreso)} -- suma N por cada colonia que el
         jugador ya construyo (`player["colonies_owned"]`, expansion
         Colonies, ver colonies.py) (ej. Ecology Research: +1 produccion de
         plantas por cada colonia propia).
@@ -995,6 +1040,12 @@ def apply_card_effect(
         Influence counts as unique tags" -> threshold=9, resource="mc",
         amount=10). Sin tope de 5 -- es un umbral booleano, no un
         contador que se multiplica.
+      - "resource_delta_per_influence_choice": {"options": ["<recurso>",
+        ...], "per_unit": N (default 1)} -- el jugador ELIGE uno de los
+        recursos de `options` (via `effect_choice`, indice 0-based) y gana
+        `influencia * per_unit` de ese recurso (ej. Dry Deserts: "Gain 1
+        standard resource per influence" -- los 6 recursos basicos, segun
+        el FAQ oficial: MC, acero, titanio, plantas, energia o calor).
       - "production_delta_per_influence": {"<recurso>_production": per_unit,
         ...} -- analogo de produccion a resource_delta_per_influence, sin
         tope (ej. Volcanic Eruptions: "+1 heat production per influence";
@@ -1195,6 +1246,8 @@ def apply_card_effect(
         spec = effects["production_delta_per_colony"]
         key = spec["production"]
         count = len(player["colonies_owned"])
+        if spec.get("cap") is not None:
+            count = min(count, spec["cap"])
         new_player[key] = _apply_production_floor(key, new_player[key] + count * spec.get("per_colony", 1))
 
     if "resource_delta_per_colony" in effects:
@@ -1205,7 +1258,12 @@ def apply_card_effect(
 
     if "resource_delta_per_capped_counter" in effects:
         spec = effects["resource_delta_per_capped_counter"]
-        raw_count = _resolve_capped_counter(spec["counter"], new_player, new_globals)
+        if spec["counter"] == "board_tiles_adjacent_to_ocean":
+            raw_count = board_tiles_adjacent_to_ocean
+        elif spec["counter"] == "blue_cards_played":
+            raw_count = blue_cards_played
+        else:
+            raw_count = _resolve_capped_counter(spec["counter"], new_player, new_globals)
         cap = spec.get("cap", 5)
         capped = raw_count if cap is None else min(raw_count, cap)
         direction = spec.get("influence_direction", "add")
@@ -1218,6 +1276,16 @@ def apply_card_effect(
         for key, per_unit in effects["resource_delta_per_influence"].items():
             new_player[key] = max(0, new_player[key] + influence * per_unit)
 
+    if "resource_delta_per_influence_choice" in effects:
+        spec = effects["resource_delta_per_influence_choice"]
+        options = spec["options"]
+        if effect_choice is None or not (0 <= effect_choice < len(options)):
+            raise CardEffectError(
+                f"Este efecto requiere effect_choice entre 0 y {len(options) - 1} (recurso elegido)"
+            )
+        key = options[effect_choice]
+        new_player[key] = max(0, new_player[key] + influence * spec.get("per_unit", 1))
+
     if "production_delta_per_influence" in effects:
         for key, per_unit in effects["production_delta_per_influence"].items():
             new_player[key] = _apply_production_floor(key, new_player[key] + influence * per_unit)
@@ -1227,12 +1295,14 @@ def apply_card_effect(
         steps = max(0, spec["base_reduction"] - influence)
         new_player["tr"] = new_player["tr"] - steps
 
-    if "lower_temperature_steps" in effects:
-        after = max(
+    if "lower_temperature_steps" in effects and new_globals["temperature"] < TEMPERATURE_MAX:
+        # Si la temperatura ya esta en su maximo, este efecto NO se aplica: un
+        # parametro global maximizado no vuelve a ser afectado en toda la
+        # partida (FAQ oficial, entrada de Snow Cover).
+        new_globals["temperature"] = max(
             TEMPERATURE_MIN,
             new_globals["temperature"] - effects["lower_temperature_steps"] * TEMPERATURE_STEP,
         )
-        new_globals["temperature"] = after
 
     if "add_resource_to_all_cards_with_resources" in effects:
         amount = effects["add_resource_to_all_cards_with_resources"]["amount"]
@@ -1252,7 +1322,12 @@ def apply_card_effect(
 
     if "resource_delta_if_tag_diversity" in effects:
         spec = effects["resource_delta_if_tag_diversity"]
-        unique_tags = sum(1 for count in player["tags_played"].values() if count > 0)
+        # El tag comodin "wild" NO cuenta en los Global Events: solo vale como
+        # tag durante la fase de accion del jugador, no en la fase Turmoil
+        # (FAQ oficial, entrada del wild tag / Research Network).
+        unique_tags = sum(
+            1 for tag, count in player["tags_played"].items() if count > 0 and tag != "wild"
+        )
         if unique_tags + influence >= spec["threshold"]:
             key = spec["resource"]
             new_player[key] = max(0, new_player[key] + spec["amount"])
@@ -1376,6 +1451,14 @@ def apply_card_effect(
         for _ in range(effects["place_oceans"]):
             p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
             new_player, new_globals = dict(p2), dict(g2)
+
+    if "place_oceans_without_tr" in effects:
+        for _ in range(effects["place_oceans_without_tr"]):
+            if new_globals["oceans_placed"] >= OCEANS_MAX:
+                break
+            p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
+            new_player, new_globals = dict(p2), dict(g2)
+            new_player["tr"] = new_player["tr"] - 1  # el TR se revierte: este oceano no lo otorga
 
     if "place_city_tiles" in effects:
         for _ in range(effects["place_city_tiles"]):

@@ -521,18 +521,49 @@ contadores `colonies_owned`, `hand_size`, `<recurso>_production` y `tr_sets_of_5
 `add_resource_to_all_cards_with_resources`, `discard_cards` (+ parámetro `discard_card_ids` en
 `apply_card_effect` y `tools.resolve_global_event`).
 
-**Cola de revisión: 0 filas sin revisar.** Las 36 cartas del mazo están leídas; 33 cargadas y
-**3 pendientes por mecánica** (marcadas `reviewed = true` con `event_id = null`):
-- **Dry Deserts** (bloque 4) — ver arriba.
-- **Mud Slides** — "Lose 4 M€ for each tile adjacent to ocean (max 5, then reduced by
-  influence)". Necesita contar tiles del mapa hexagonal adyacentes a océano: el tablero
-  (`board.py`) no está conectado a `resolve_global_event`. Mismo bloqueo que Dry Deserts.
-- **Solarnet Shutdown** — "Lose 3 M€ for each blue card (max 5, then reduced by influence)". El
-  catálogo no clasifica cartas por color: solo hay `is_event: bool`, y `active_cards` NO equivale
-  a "carta azul" (una azul sin acción repetible ni recursos propios no entra ahí). Cargarla con
-  `len(active_cards)` sería inventar una definición distinta a la real. Falta agregar un
-  `card_type` al catálogo, verificado carta por carta — retrofit de ~300 cartas, no una pieza
-  chica de motor.
+### Bloque 6 (2026-09-04): las 3 pendientes por mecánica — mazo COMPLETO
+
+Segunda tanda multi-agente, esta vez de DISEÑO (no de lectura de scans): 3 agentes, uno por
+carta, cada uno investigando su problema a fondo y proponiendo implementación concreta, sin
+tocar el repo.
+
+| Agente | Carta | Aporte |
+|---|---|---|
+| **1** | Dry Deserts | Encontró un ruling del diseñador (BGG) confirmando que el océano removido vuelve a la reserva y puede volver a colocarse. Diseñó `board.remove_ocean_tile` + el effect `remove_ocean_tile` y la pieza de elección de recurso |
+| **2** | Mud Slides | Diseñó `board.count_tiles_adjacent_to_ocean` y — evaluando dos alternativas — recomendó pasar el conteo ya calculado como `int` al motor, igual que `influence`, para no romper el desacople `rules_engine` ↔ `board`. Marcó honestamente que no pudo confirmar "cada tile una vez" (BGG le devolvía 403) |
+| **3** | Solarnet Shutdown | **Refutó con datos el diagnóstico anterior.** El color de carta SÍ es derivable de `is_event` + `becomes_active`/`passive`: no hacía falta columna nueva ni retrofit de ~300 cartas. Validó la regla contra 6 scans reales (6/6), incluido el caso difícil (azul con solo `passive`) |
+
+**Lo que aportó la revisión (además de integrar):** al buscar fuente para la duda de Dry Deserts
+apareció el **Comprehensive FAQ v1.7** (compilado por Jeffrey Anchan, con fuentes citadas), que
+tiene una tabla de aclaraciones de Global Events. Leerla completa resolvió las dudas abiertas de
+los agentes Y **destapó 4 bugs en cartas ya cargadas en bloques anteriores**:
+
+| Carta | Bug | Corrección |
+|---|---|---|
+| Aquifer Released by Public Council | Se cargó con `place_oceans` (que otorga +1 TR), pero el FAQ dice "no player gets any TR or placement bonuses" | Pieza nueva `place_oceans_without_tr` |
+| Jovian Tax Rights | **Errata oficial**: el texto impreso omitió "(max 5)" en el conteo de colonias | `cap: 5` en `production_delta_per_colony` |
+| Snow Cover | Bajaba la temperatura aun estando en el máximo; un parámetro maximizado no vuelve a ser afectado | Guarda contra `TEMPERATURE_MAX` |
+| Diversity | Contaba el tag comodín "wild" como tag distinto; el FAQ aclara que el wild NO cuenta al resolver Global Events (solo en la fase de acción) | Se excluye "wild" del conteo |
+
+También confirmó las dudas abiertas: **Mud Slides** — "Each tile is only counted once, even if
+next to multiple ocean tiles" (la interpretación del agente 2 era correcta); **Dry Deserts** —
+ningún jugador pierde TR, y **si los 9 océanos ya están colocados esta parte del evento NO tiene
+efecto** (regla que el agente 1 no había detectado); y los 6 recursos estándar exactos.
+
+**Piezas nuevas del bloque 6:** `board.remove_ocean_tile`, `board.count_tiles_adjacent_to_ocean`,
+effect `remove_ocean_tile` (+ parámetro `remove_ocean_hex_id` en `tools.resolve_global_event`),
+contadores `board_tiles_adjacent_to_ocean` y `blue_cards_played` (ambos precalculados por
+`tools.py`, mismo desacople que `influence`), `resource_delta_per_influence_choice`,
+`place_oceans_without_tr`, `cap` opcional en `production_delta_per_colony`, y el clasificador
+puro `rules_engine.is_blue_card`.
+
+**Estado final del mazo: 36 de 36 cargadas, 0 pendientes.**
+
+| id | Nombre | Efecto |
+|---|---|---|
+| `dry_deserts` | Dry Deserts | Saca 1 océano del mapa: el tile vuelve a la reserva, el hex queda libre y NADIE pierde TR. Si los 9 océanos ya están colocados, esa parte no tiene efecto. Gana 1 recurso básico A ELECCIÓN por Influencia |
+| `mud_slides` | Mud Slides | -4 M€ por cada tile del mapa adyacente a océano, contando cada tile UNA vez (tope 5) − Influencia |
+| `solarnet_shutdown` | Solarnet Shutdown | -3 M€ por cada carta AZUL jugada (tope 5) − Influencia. El color se deriva del catálogo, sin columna nueva |
 
 **Alcance no resuelto todavía, documentado para cuando aparezca en una carta real:** el reparto
 de delegados neutrales al revelar la carta (Distant → Coming → Current) y el ciclo de

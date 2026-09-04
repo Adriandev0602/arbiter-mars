@@ -8,6 +8,7 @@ import pytest
 from app.agent.rules_engine import (
     TR_START,
     TEMPERATURE_MIN,
+    TEMPERATURE_MAX,
     TEMPERATURE_STEP,
     InsufficientResourcesError,
     GlobalParameterMaxedError,
@@ -68,6 +69,7 @@ from app.agent.rules_engine import (
     apply_any_tag_played_choice,
     spend_active_card_resource,
     sum_card_resources_by_type,
+    is_blue_card,
 )
 
 
@@ -4766,16 +4768,18 @@ def test_resource_delta_per_capped_counter_events_played_source():
     assert new_player["mc"] == 6
 
 
-def test_aquifer_released_places_ocean_and_gains_per_influence():
+def test_aquifer_released_places_ocean_without_granting_tr():
+    # FAQ oficial: "the first player places an ocean tile, but NO player gets
+    # any TR or placement bonuses for the ocean placement".
     effects = {
-        "place_oceans": 1,
+        "place_oceans_without_tr": 1,
         "resource_delta_per_influence": {"plants": 1, "steel": 1},
     }
     new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), effects, influence=3)
     assert new_globals["oceans_placed"] == 1
     assert new_player["plants"] == 3
     assert new_player["steel"] == 3
-    assert new_player["tr"] == TR_START + 1  # place_oceans ya suma TR
+    assert new_player["tr"] == TR_START  # sin TR, a diferencia de place_oceans
 
 
 def test_diversity_grants_mc_when_tag_diversity_meets_threshold():
@@ -5054,3 +5058,89 @@ def test_sabotage_lowers_two_productions_and_gains_steel_per_influence():
     assert new_player["steel_production"] == 1
     assert new_player["energy_production"] == 0
     assert new_player["steel"] == 3
+
+
+# --- Correcciones por FAQ oficial (revision de cartas ya cargadas) ---------
+
+def test_place_oceans_without_tr_stops_at_max_without_error():
+    globals_ = {**new_global_parameters(), "oceans_placed": 9}
+    new_player, new_globals = apply_card_effect(
+        new_player_state(), globals_, {"place_oceans_without_tr": 1},
+    )
+    assert new_globals["oceans_placed"] == 9  # ya maximizado, no coloca mas
+    assert new_player["tr"] == TR_START
+
+
+def test_jovian_tax_rights_colony_production_capped_at_5():
+    # ERRATA oficial: el texto impreso omitio el "(max 5)"
+    player = {**new_player_state(), "colonies_owned": ["a", "b", "c", "d", "e", "f", "g"]}
+    effects = {"production_delta_per_colony": {"production": "mc_production", "per_colony": 1, "cap": 5}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 5  # 7 colonias, capadas a 5
+
+
+def test_snow_cover_has_no_effect_when_temperature_is_maxed():
+    # FAQ oficial: un parametro global maximizado no vuelve a ser afectado
+    globals_ = {**new_global_parameters(), "temperature": TEMPERATURE_MAX}
+    _, new_globals = apply_card_effect(
+        new_player_state(), globals_, {"lower_temperature_steps": 2},
+    )
+    assert new_globals["temperature"] == TEMPERATURE_MAX
+
+
+def test_diversity_does_not_count_the_wild_tag():
+    # FAQ oficial: el wild tag solo cuenta durante la fase de accion del
+    # jugador, NO al resolver Global Events.
+    tags = {t: 1 for t in ["science", "power", "earth", "space", "building", "venus", "jovian", "plant"]}
+    player = {**new_player_state(), "tags_played": {**tags, "wild": 1}}
+    effects = {"resource_delta_if_tag_diversity": {"threshold": 9, "resource": "mc", "amount": 10}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=0)
+    assert new_player["mc"] == 0  # 8 tags reales + wild ignorado = 8, no llega a 9
+
+
+def test_mud_slides_uses_precomputed_board_counter():
+    player = {**new_player_state(), "mc": 100}
+    effects = {"resource_delta_per_capped_counter": {"counter": "board_tiles_adjacent_to_ocean", "resource": "mc", "per_unit": -4, "influence_direction": "subtract"}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), effects, influence=1, board_tiles_adjacent_to_ocean=7,
+    )
+    assert new_player["mc"] == 100 - 4 * 4  # min(7,5) - 1 influencia = 4
+
+
+def test_dry_deserts_resource_choice_per_influence():
+    effects = {"resource_delta_per_influence_choice": {"options": ["mc", "steel", "titanium", "plants", "energy", "heat"], "per_unit": 1}}
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects, effect_choice=1, influence=3)
+    assert new_player["steel"] == 3
+    assert new_player["mc"] == 0
+
+    new_player2, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects, effect_choice=4, influence=2)
+    assert new_player2["energy"] == 2
+
+    with pytest.raises(CardEffectError):
+        apply_card_effect(new_player_state(), new_global_parameters(), effects, influence=3)
+
+
+def test_is_blue_card_classification_rule():
+    # rojo: evento (aunque tenga passive/becomes_active)
+    assert is_blue_card(True, {"passive": {"card_cost_discount_mc": 2}}) is False
+    # azul por accion repetible
+    assert is_blue_card(False, {"becomes_active": True, "action": {}}) is True
+    # azul por pasivo solo, SIN accion ni recursos propios (caso dificil,
+    # verificado contra el scan de Spin-Off Department)
+    assert is_blue_card(False, {"production_deltas": {"mc_production": 2}, "passive": {"x": 1}}) is True
+    # verde: efecto inmediato y nada ongoing
+    assert is_blue_card(False, {"production_deltas": {"mc_production": 2}}) is False
+    assert is_blue_card(False, None) is False
+
+
+def test_solarnet_shutdown_capped_and_reduced_by_influence():
+    effects = {"resource_delta_per_capped_counter": {"counter": "blue_cards_played", "resource": "mc", "per_unit": -3, "influence_direction": "subtract"}}
+    player = {**new_player_state(), "mc": 30}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, blue_cards_played=3)
+    assert new_player["mc"] == 30 - 9
+
+    new_player2, _ = apply_card_effect(player, new_global_parameters(), effects, blue_cards_played=9)
+    assert new_player2["mc"] == 30 - 15  # tope de 5
+
+    new_player3, _ = apply_card_effect(player, new_global_parameters(), effects, blue_cards_played=5, influence=2)
+    assert new_player3["mc"] == 30 - 9  # 5 capadas - 2 influencia = 3

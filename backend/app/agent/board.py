@@ -236,6 +236,41 @@ def count_adjacent_owned_by(board: Board, hex_id: str, player_id: str) -> int:
     return sum(1 for tile in get_adjacent_tiles(board, hex_id) if tile["owner"] == player_id)
 
 
+def count_tiles_adjacent_to_ocean(board: Board) -> int:
+    """
+    Cuenta los tiles del mapa (de CUALQUIER dueno, oceanos incluidos) que
+    son adyacentes a por lo menos un tile de oceano. Cada tile se cuenta UNA
+    SOLA VEZ, sin importar a cuantos oceanos este pegado -- confirmado por el
+    FAQ oficial de la comunidad (entrada de Mud Slides: "Each tile is only
+    counted once, even if next to multiple ocean tiles"). Distinto de
+    resolve_ocean_adjacency_bonus, que paga 2 MC POR CADA oceano adyacente.
+
+    Usada por el Global Event Mud Slides ("Lose 4 M€ for each tile adjacent
+    to ocean") -- el tope de 5 y el ajuste por Influencia los aplica el
+    caller, no esta funcion.
+    """
+    return sum(1 for hex_id in board if count_adjacent_oceans(board, hex_id) > 0)
+
+
+def remove_ocean_tile(board: Board, hex_id: str) -> Board:
+    """
+    Saca un tile de oceano del mapa y libera el hexagono (Global Event Dry
+    Deserts). Segun el FAQ oficial, el tile "goes back to its designated area
+    and can be placed again later" y NINGUN jugador pierde TR por la
+    remocion -- el caller (tools.resolve_global_event) es quien baja
+    `globals_["oceans_placed"]` en 1, esta funcion solo toca el tablero.
+
+    Lanza UnknownHexError si el hexagono no tiene tile, o
+    InvalidPlacementError si el tile que tiene no es un oceano.
+    """
+    tile = board.get(hex_id)
+    if tile is None:
+        raise UnknownHexError(f"Hexagono '{hex_id}' no tiene ningun tile para remover")
+    if tile["tile_type"] != "ocean":
+        raise InvalidPlacementError(f"Hexagono '{hex_id}' tiene '{tile['tile_type']}', no un oceano")
+    return {hid: t for hid, t in board.items() if hid != hex_id}
+
+
 def count_tiles_of_type(board: Board, tile_type: TileType, owner: str | None = None) -> int:
     matches = (tile for tile in board.values() if tile["tile_type"] == tile_type)
     if owner is not None:
