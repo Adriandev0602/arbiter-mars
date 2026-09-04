@@ -138,12 +138,25 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta)
+### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild)
 
-**Progreso:** catálogo en **306 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-30 y la mecánica de colonias/comercio, Lava Flows (140). `card_review_queue` tiene
-206 filas `reviewed = true` y **101 sin revisar** — el próximo bloque (31) son las filas #1-10
-de `select * from card_review_queue where reviewed = false order by id limit 10`.
+**Progreso:** catálogo en **307 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140) y la pieza de pago con
+recurso de carta. `card_review_queue` tiene 207 filas `reviewed = true` y **101 sin revisar** —
+el próximo bloque (31) son las filas #1-10 de `select * from card_review_queue where reviewed =
+false order by id limit 10`.
+
+**Tag comodín "wild", implementado (2026-09-04).** Resolvió Research Coordination (P40,
+Prelude) -- pendiente desde el bloque 30. El texto impreso ("the wild tag counts as any tag of
+your choice when performing an action") se acotó al único lugar del catálogo cargado donde tiene
+sentido real: `check_card_requirements` → `min_tag_count` (requisito para JUGAR otra carta, ej.
+Mass Converter: 5 tags de ciencia). No hace falta campo nuevo ni pasivo registrado -- basta con
+que la carta tenga tag `"wild"` (`tags_played` ya lo cuenta solo). Pieza nueva: parámetro
+`wild_tag_choice` en `check_card_requirements`/`tools.play_card` -- si coincide con el tag del
+requisito, suma los tags "wild" en juego a ese conteo para ese chequeo puntual (no altera
+`tags_played`, se re-declara cada vez). Ver sección dedicada "Tag comodín 'wild'" en
+`CARDS_LOG.md`. Queda pendiente: Colonial Envoys/Representation (P70/P71, dependen de Turmoil --
+sin construir, ver abajo).
 
 **Pago con recurso de carta, implementado (2026-09-04).** Resolvió Dirigibles (222, Venus Next)
 y Psychrophiles (P39, Prelude) -- pendientes desde los bloques 20-30. Pieza nueva `passive:
@@ -153,9 +166,7 @@ uno -- tercera moneda de pago cuyo stock vive en una carta, no en el jugador. `t
 suma el parámetro `card_resource_to_pay`, resuelve solo (por tag) qué carta activa habilita el
 pago; `rules_engine.spend_active_card_resource` descuenta el recurso. `use_card_action` suma
 `target_card_resource_delta_allow_self` (Dirigibles: "add floater to ANY card", incluida ella
-misma). Ver sección dedicada "Pago con recurso de carta" en `CARDS_LOG.md`. Quedan pendientes:
-Research Coordination (P40, tag wild -- refactor de conteo de tags) y Colonial Envoys/
-Representation (P70/P71, dependen de Turmoil -- sin construir, ver abajo).
+misma). Ver sección dedicada "Pago con recurso de carta" en `CARDS_LOG.md`.
 
 **Bloque 30 (2026-09-03):** 6 de 10 cargadas — Lava Tube Settlement, Martian Survey, SF
 Memorial, Space Hotels (Prelude), Ceres Tech Market, Cloud Tourism (Venus Next promo). Piezas de
@@ -246,9 +257,6 @@ pieza de mecánica ya diagnosticada pero no implementada:**
   alcance"). `active_cards[card_id]["resources"]` no distingue tipo de recurso hoy -- necesita
   etiquetar el tipo por carta activa más un requirement/cost nuevo que sume sobre las que
   matcheen. Cuatro casos ya esperando -- sube de prioridad para una sesión dedicada.
-- **Research Coordination** (P40, bloque 30): tag "wild" que cuenta como cualquier tag elegido
-  -- requiere refactor del subsistema de conteo de tags (hoy strings exactos), no una extensión
-  chica.
 - **Colonial Envoys** (P70) y **Colonial Representation** (P71, bloque 30, Prelude 2): dependen
   de la mecánica de **Turmoil** (delegados, partidos, influencia, chairman) -- expansión entera
   sin construir, del mismo tamaño que Colonies. Pendiente de decisión explícita de alcance del

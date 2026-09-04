@@ -337,6 +337,7 @@ def play_card(
     colony_id_increase: str | None = None,
     colony_id_decrease: str | None = None,
     card_resource_to_pay: int = 0,
+    wild_tag_choice: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -458,6 +459,12 @@ def play_card(
             (segun sus tags) -- lanza ValueError si ninguna matchea o
             InsufficientResourcesError si esa carta no tiene suficiente
             recurso guardado. 0 si no se usa esta forma de pago.
+        wild_tag_choice: OPCIONAL -- si la carta que se esta jugando tiene
+            `requirements.min_tag_count` y el jugador tiene tags "wild" en
+            juego (ej. Research Coordination), el tag que el jugador elige
+            que esos tags "wild" representen para este chequeo puntual (ej.
+            "science" para cubrir un requisito de Mass Converter). None si
+            no aplica.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -485,7 +492,7 @@ def play_card(
     played_from_reserve = card_id in player["reserved_cards"]
     if not played_from_reserve and card_id not in player["hand"]:
         raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano ni reservada")
-    engine.check_card_requirements(card.get("requirements"), globals_, player)
+    engine.check_card_requirements(card.get("requirements"), globals_, player, wild_tag_choice=wild_tag_choice)
 
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:
         raise engine.InsufficientResourcesError("El jugador no tiene el stock declarado")
