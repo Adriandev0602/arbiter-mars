@@ -296,6 +296,30 @@ create table if not exists global_event_review_queue (
     discovered_at timestamptz not null default now()
 );
 
+-- Catalogo de cartas PRELUDE (la categoria propia de la expansion: las que
+-- se reparten 2 gratis en el setup, sin costo en MC). Son un mazo aparte de
+-- las cartas de proyecto -- ver CARDS_LOG.md, seccion "Prelude: mazo propio".
+-- Mismo criterio que `cards` y `global_events`: arranca vacia, se carga a
+-- mano contra el scan de cada carta.
+create table if not exists prelude_cards (
+    id text primary key,
+    name text not null,
+    tags text[] not null default '{}',
+    effects jsonb not null default '{}'::jsonb
+);
+
+-- Cola de revision de las cartas Prelude, mismo patron que card_review_queue.
+create table if not exists prelude_review_queue (
+    id serial primary key,
+    scan_number text not null unique,
+    name text not null,
+    expansion text not null,
+    image_url text not null,
+    reviewed boolean not null default false,
+    prelude_id text references prelude_cards(id),
+    discovered_at timestamptz not null default now()
+);
+
 create table if not exists transactions (
     id uuid primary key default gen_random_uuid(),
     player_id uuid references players(id) on delete cascade,

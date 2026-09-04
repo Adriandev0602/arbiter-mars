@@ -140,13 +140,20 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 
 ### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events + floaters por carta activa)
 
-**Progreso:** catálogo en **340 cartas** cargadas en `cards` y **36 Global Events** (mazo
-completo). `card_review_queue` tiene **71 filas sin revisar**. El bloque 31 se hizo en dos
-tandas multi-agente: la primera revisó 30 cartas (16 cargadas), la segunda cerró las que habían
-quedado colgando (12 cargadas más). Solo quedan **2 cartas pendientes por mecánica**: P88 Venus
-Orbital Survey (revelar/filtrar el tope del mazo, hay diseño propuesto) y P91 WG Project
-(sub-mazo Prelude + jugar gratis una carta arbitraria -- evaluado como feature del tamaño de
-`reserved_cards`, conviene cargar antes las ~9 cartas Prelude que faltan).
+**Progreso:** catálogo en **340 cartas de proyecto**, **36 Global Events** (mazo completo) y
+**22 cartas Prelude** (tabla nueva `prelude_cards`). Colas: 71 cartas de proyecto y 46 preludes
+sin revisar.
+
+**Hueco de alcance descubierto (2026-09-04):** `enqueue_card_review_queue.py` filtra
+`cat != "Project"`, así que tres categorías enteras del índice del sitio nunca entraron al
+pipeline: **Prelude (70)**, **Corporation (48)** y **Automa (78)**. Las Prelude ya tienen su
+tabla, su cola y su tool (`play_prelude`) -- ver "Prelude: mazo propio" en `CARDS_LOG.md`. Las
+**corporaciones son el próximo hueco grande** y todavía no están modeladas en ningún lado (varias
+cartas ya cargadas las mencionan).
+
+**Mecánica pendiente con 3 cartas esperándola:** "jugar otra carta de la mano como parte de este
+efecto" -- Ecology Experts (P10), Eccentric Sponsor (P11) y WG Project (P91). El FAQ ya tiene las
+reglas exactas documentadas en `CARDS_LOG.md`.
 
 **Aprendizajes de las tandas multi-agente (aplicar en las próximas):**
 - Los agentes confunden el recuadro de **requisito** (arriba a la izquierda, junto al costo) con
