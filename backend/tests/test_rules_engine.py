@@ -5144,3 +5144,67 @@ def test_solarnet_shutdown_capped_and_reduced_by_influence():
 
     new_player3, _ = apply_card_effect(player, new_global_parameters(), effects, blue_cards_played=5, influence=2)
     assert new_player3["mc"] == 30 - 9  # 5 capadas - 2 influencia = 3
+
+
+# --- Bloque 31: piezas nuevas -------------------------------------------
+
+def test_resource_delta_per_tag_list_with_include_this():
+    player = {**new_player_state(), "tags_played": {"venus": 2, "plant": 1}}
+    effects = {"resource_delta_per_tag": [
+        {"tag": "venus", "resource": "plants", "per_tag": 1},
+        {"tag": "plant", "resource": "plants", "per_tag": 1, "include_this": True},
+    ]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["plants"] == 2 + 2  # 2 venus + (1 plant + esta misma)
+
+
+def test_resource_delta_per_card_resource_type_ghg_shipment():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=3, resource_type="floater")
+    effects = {"resource_delta_per_card_resource_type": {"resource_type": "floater", "resource": "heat", "per_unit": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["heat"] == 3
+
+
+def test_is_chairman_requirement():
+    turmoil = {"parties": {}, "dominant_party": None, "ruling_party": "greens", "chairman": "p1"}
+    check_card_requirements({"is_chairman": True}, new_global_parameters(), turmoil=turmoil, player_id="p1")
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"is_chairman": True}, new_global_parameters(), turmoil=turmoil, player_id="p2")
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"is_chairman": True}, new_global_parameters())
+
+
+def test_unexpected_application_discards_without_drawing():
+    player = {**new_player_state(), "hand": ["a", "b"], "deck": ["c"]}
+    effects = {"discard_card_then_draw": {"draw": 0}, "raise_venus_steps": 1}
+    new_player, new_globals = apply_card_effect(
+        player, new_global_parameters(), effects, discard_card_id="a",
+    )
+    assert new_player["hand"] == ["b"]  # descarta 1, no roba nada
+    assert new_globals["venus"] == 2
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_summit_logistics_planet_tags_plus_colonies():
+    player = {**new_player_state(), "tags_played": {"jovian": 2, "earth": 1}, "colonies_owned": ["callisto"], "deck": ["x", "y"]}
+    effects = {
+        "resource_delta_per_tag": [
+            {"tag": "jovian", "resource": "mc", "per_tag": 1},
+            {"tag": "earth", "resource": "mc", "per_tag": 1},
+            {"tag": "venus", "resource": "mc", "per_tag": 1},
+        ],
+        "resource_delta_per_colony": {"resource": "mc", "per_colony": 1},
+        "draw_cards": 2,
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc"] == 2 + 1 + 0 + 1
+    assert new_player["hand"] == ["x", "y"]
+
+
+def test_venus_allies_raises_venus_and_mc_per_colony():
+    player = {**new_player_state(), "colonies_owned": ["callisto", "titan"]}
+    effects = {"raise_venus_steps": 2, "resource_delta_per_colony": {"resource": "mc", "per_colony": 4}}
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_globals["venus"] == 4
+    assert new_player["mc"] == 8
+    assert new_player["tr"] == TR_START + 2

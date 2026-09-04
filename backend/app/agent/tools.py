@@ -353,6 +353,7 @@ def play_card(
     card_resource_to_pay: int = 0,
     wild_tag_choice: str | None = None,
     delegate_party_choices: list[str] | None = None,
+    removal_party: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -705,23 +706,44 @@ def play_card(
         delta = len(colonies_in_play) * production_per_colony_spec.get("per_colony", 1)
         new_player = {**new_player, key: engine._apply_production_floor(key, new_player[key] + delta)}
 
+    # Dos formas de colocar delegados desde una carta: 1 por colonia propia
+    # (place_delegates_per_colony) o una cantidad FIJA (place_delegates). Las
+    # dos gastan de la Reserva y exigen `delegate_party_choices` con el largo
+    # exacto -- las parties pueden repetirse (ej. Cultural Metropolis: "place
+    # 2 delegates in 1 party").
+    num_delegates = 0
     if effects.get("place_delegates_per_colony"):
-        num_colonies = len(new_player["colonies_owned"])
+        num_delegates = len(new_player["colonies_owned"])
+    elif effects.get("place_delegates"):
+        num_delegates = effects["place_delegates"]
+    if num_delegates:
         chosen_parties = delegate_party_choices or []
-        if len(chosen_parties) != num_colonies:
+        if len(chosen_parties) != num_delegates:
             raise ValueError(
-                f"Esta carta coloca {num_colonies} delegado(s) (1 por colonia propia); "
+                f"Esta carta coloca {num_delegates} delegado(s); "
                 f"se recibieron {len(chosen_parties)} party(s)"
             )
-        if new_player["reserve_delegates"] < num_colonies:
+        if new_player["reserve_delegates"] < num_delegates:
             raise engine.InsufficientResourcesError(
-                f"El jugador tiene {new_player['reserve_delegates']} delegados en la Reserva, se necesitan {num_colonies}"
+                f"El jugador tiene {new_player['reserve_delegates']} delegados en la Reserva, se necesitan {num_delegates}"
             )
         turmoil = turmoil if turmoil is not None else _load_turmoil()
         for party in chosen_parties:
             turmoil = turmoillib.place_delegate(turmoil, party, player_id)
-        new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] - num_colonies}
+        new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] - num_delegates}
         _save_turmoil(turmoil)
+
+    if effects.get("remove_own_delegate"):
+        if removal_party is None:
+            raise ValueError(f"La carta '{card_id}' requiere removal_party")
+        turmoil = turmoil if turmoil is not None else _load_turmoil()
+        turmoil = turmoillib.remove_delegate(turmoil, removal_party, player_id)
+        new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] + 1}
+        _save_turmoil(turmoil)
+
+    draw_tag_spec = effects.get("draw_cards_matching_tag")
+    if draw_tag_spec is not None:
+        new_player = _draw_cards_matching_tag(new_player, draw_tag_spec["tag"], draw_tag_spec["n"])
 
     greenery_spec = effects.get("place_greenery")
     if greenery_spec is not None:
@@ -1248,6 +1270,9 @@ def use_trade_fleet(player_id: str, colony_id: str, payment: str, bump_track_fir
 
     new_player: dict = {**player, payment: player[payment] - cost, "trade_fleets_used": player["trade_fleets_used"] + 1}
     new_player[income_type] = new_player[income_type] + income_amount
+    # Pasivos que premian el acto de comerciar (ej. Venus Trade Hub: +3 MC)
+    for effect in player["passive_effects"]:
+        new_player["mc"] = new_player["mc"] + effect.get("mc_delta_on_trade", 0)
     if player_id in new_colonies[colony_id]["owners"]:
         for key, delta in colony_bonus.items():
             new_player[key] = new_player[key] + delta
@@ -1370,6 +1395,29 @@ def get_turmoil_state(player_id: str) -> dict:
     turmoil = _load_turmoil()
     influence = _compute_player_influence(player, turmoil, player_id)
     return {"turmoil": dict(turmoil), "influence": influence}
+
+
+def _draw_cards_matching_tag(player: dict, tag: str, n: int) -> dict:
+    """
+    Roba las primeras `n` cartas del mazo que tengan `tag`, salteando (sin
+    descartar ni reordenar) las que no matcheen -- las no elegidas quedan en
+    el mazo, en su orden original. Necesita el catalogo `cards` para conocer
+    los tags, por eso vive en tools.py y no en el motor puro (mismo criterio
+    que duplicate_production / on_card_played_cost_threshold_draw). Si el
+    mazo no tiene `n` cartas con ese tag, roba las que haya (igual que
+    draw_cards_to_hand con mazo corto). Ej. Ishtar Expedition: "draw 2 Venus
+    cards".
+    """
+    deck = list(player["deck"])
+    if not deck:
+        return player
+    res = supabase.table("cards").select("id,tags").in_("id", deck).execute()
+    tagged = {row["id"] for row in (res.data or []) if tag in (row["tags"] or [])}
+    drawn = [cid for cid in deck if cid in tagged][:n]
+    if not drawn:
+        return player
+    remaining = [cid for cid in deck if cid not in drawn]
+    return {**player, "deck": remaining, "hand": [*player["hand"], *drawn]}
 
 
 def _count_blue_cards_played(played_card_ids: list[str]) -> int:

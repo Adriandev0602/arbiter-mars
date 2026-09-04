@@ -1649,3 +1649,110 @@ where id in (
     'jet_stream_microscrappers', 'local_shading', 'jupiter_floating_station',
     'titan_floating_launch_pad'
 );
+
+-- Bloque de revision 31 (2026-09-04): 16 de 30 cargadas, analizadas en
+-- paralelo por 4 agentes (grupos A/B/C/D). Los TAGS de los grupos A y B se
+-- re-verificaron uno por uno contra los scans durante la revision: varios
+-- venian mal (se habia confundido el recuadro de REQUISITO, arriba a la
+-- izquierda, con los tags propios de la carta, arriba a la derecha). Los
+-- valores de abajo son los verificados. Piezas nuevas: "place_delegates" (N
+-- fijo), "remove_own_delegate" (+ turmoil.remove_delegate), requirement
+-- "is_chairman", "resource_delta_per_tag" (lista, analogo de stock a
+-- production_delta_per_tag), "resource_delta_per_card_resource_type",
+-- "draw_cards_matching_tag" (resuelto en tools.py, necesita el catalogo) y
+-- el pasivo "mc_delta_on_trade".
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'envoys_from_venus', 'Envoys from Venus', 1, '{venus}',
+        '{"min_tag_count": {"tag": "venus", "count": 3}}'::jsonb,
+        '{"place_delegates": 2}'::jsonb
+    ),
+    (
+        'ghg_shipment', 'GHG Shipment', 3, '{space}',
+        '{"ruling_or_delegates": {"party": "kelvinists", "min_delegates": 2}}'::jsonb,
+        '{"production_deltas": {"heat_production": 1},
+          "resource_delta_per_card_resource_type": {"resource_type": "floater", "resource": "heat", "per_unit": 1}}'::jsonb
+    ),
+    (
+        'ishtar_expedition', 'Ishtar Expedition', 6, '{venus}',
+        '{"min_venus": 10}'::jsonb,
+        '{"resource_deltas": {"titanium": 3}, "draw_cards_matching_tag": {"tag": "venus", "n": 2}}'::jsonb
+    ),
+    (
+        'jovian_envoys', 'Jovian Envoys', 2, '{}',
+        '{"min_tag_count": {"tag": "jovian", "count": 2}}'::jsonb,
+        '{"place_delegates": 2}'::jsonb
+    ),
+    (
+        'microgravity_nutrition', 'Microgravity Nutrition', 11, '{microbe,plant}', null,
+        '{"production_delta_per_colony": {"production": "mc_production", "per_colony": 1}}'::jsonb
+    ),
+    (
+        'soil_studies', 'Soil Studies', 13, '{microbe,plant}',
+        '{"max_temperature": -4}'::jsonb,
+        '{"resource_delta_per_tag": [{"tag": "venus", "resource": "plants", "per_tag": 1},
+                                     {"tag": "plant", "resource": "plants", "per_tag": 1, "include_this": true}],
+          "resource_delta_per_colony": {"resource": "plants", "per_colony": 1}}'::jsonb
+    ),
+    (
+        'special_permit', 'Special Permit', 5, '{plant}',
+        '{"ruling_or_delegates": {"party": "greens", "min_delegates": 2}}'::jsonb,
+        '{}'::jsonb
+    ),
+    (
+        'sponsoring_nation', 'Sponsoring Nation', 21, '{earth}',
+        '{"min_tag_count": {"tag": "earth", "count": 4}}'::jsonb,
+        '{"tr_delta": 3, "place_delegates": 2}'::jsonb
+    ),
+    (
+        'stratospheric_expedition', 'Stratospheric Expedition', 12, '{venus,space}', null,
+        '{"target_card_resource_delta_typed": {"resource_type": "floater", "amount": 2},
+          "draw_cards_matching_tag": {"tag": "venus", "n": 2}}'::jsonb
+    ),
+    (
+        'summit_logistics', 'Summit Logistics', 10, '{building,space}',
+        '{"ruling_or_delegates": {"party": "scientists", "min_delegates": 2}}'::jsonb,
+        '{"resource_delta_per_tag": [{"tag": "jovian", "resource": "mc", "per_tag": 1},
+                                     {"tag": "earth", "resource": "mc", "per_tag": 1},
+                                     {"tag": "venus", "resource": "mc", "per_tag": 1}],
+          "resource_delta_per_colony": {"resource": "mc", "per_colony": 1},
+          "draw_cards": 2}'::jsonb
+    ),
+    (
+        'unexpected_application', 'Unexpected Application', 4, '{venus}', null,
+        '{"discard_card_then_draw": {"draw": 0}, "raise_venus_steps": 1}'::jsonb
+    ),
+    (
+        'venus_allies', 'Venus Allies', 30, '{venus}', null,
+        '{"raise_venus_steps": 2, "resource_delta_per_colony": {"resource": "mc", "per_colony": 4}}'::jsonb
+    ),
+    (
+        'venus_trade_hub', 'Venus Trade Hub', 12, '{venus,venus}',
+        '{"min_tag_count": {"tag": "venus", "count": 2}}'::jsonb,
+        '{"passive": {"mc_delta_on_trade": 3}}'::jsonb
+    ),
+    (
+        'aerial_lenses', 'Aerial Lenses', 2, '{power}',
+        '{"ruling_or_delegates": {"party": "kelvinists", "min_delegates": 2}}'::jsonb,
+        '{"production_deltas": {"heat_production": 2}}'::jsonb
+    ),
+    (
+        'banned_delegate', 'Banned Delegate', 0, '{}',
+        '{"is_chairman": true}'::jsonb,
+        '{"remove_own_delegate": true}'::jsonb
+    ),
+    (
+        'cultural_metropolis', 'Cultural Metropolis', 20, '{city,building}',
+        '{"ruling_or_delegates": {"party": "unity", "min_delegates": 2}}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 3},
+          "place_city_tiles": 1, "place_delegates": 2}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in (
+    'envoys_from_venus', 'ghg_shipment', 'ishtar_expedition', 'jovian_envoys',
+    'soil_studies', 'special_permit', 'stratospheric_expedition',
+    'unexpected_application', 'banned_delegate'
+);

@@ -17,6 +17,7 @@ from app.agent.turmoil import (
     can_play_party_gated_card,
     compute_influence,
     resolve_new_government,
+    remove_delegate,
 )
 
 
@@ -162,3 +163,23 @@ def test_resolve_new_government_recomputes_dominant_among_remaining_parties():
     new_t, _ = resolve_new_government(t, "p1")
     assert new_t["ruling_party"] == "unity"
     assert new_t["dominant_party"] == "greens"  # el unico partido con delegados restante
+
+
+def test_remove_delegate_returns_to_reserve_and_recomputes_dominant():
+    t = new_turmoil()
+    t = place_delegate(t, "unity", "p1")   # p1 lider en unity
+    t = place_delegate(t, "greens", "p2")
+    t = place_delegate(t, "greens", "p1")  # p1 no-lider en greens (p2 llego primero)
+    assert t["parties"]["greens"]["leader"] == "p2"
+    new_t = remove_delegate(t, "greens", "p1")
+    assert "p1" not in new_t["parties"]["greens"]["delegates"]
+    assert new_t["parties"]["greens"]["delegates"] == {"p2": 1}
+
+
+def test_remove_delegate_rejects_leader_and_missing_delegate():
+    t = new_turmoil()
+    t = place_delegate(t, "unity", "p1")  # p1 queda lider
+    with pytest.raises(UnknownPartyError):
+        remove_delegate(t, "unity", "p1")   # es el lider, no se puede
+    with pytest.raises(UnknownPartyError):
+        remove_delegate(t, "reds", "p1")    # no tiene delegados ahi

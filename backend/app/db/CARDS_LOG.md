@@ -331,6 +331,23 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `airliners` | Airliners | C01 | 11 MC | Sin tags, expansión **Colonies**. Requiere 3 floaters guardados. +2 producción MC. +2 floaters a OTRA carta que coleccione floaters (pieza nueva `target_card_resource_delta_typed`) |
 | `floater_leasing` | Floater Leasing | C10 | 3 MC | Sin tags, expansión **Colonies**. +1 producción MC por cada 3 floaters guardados entre todas las cartas activas (pieza nueva `production_delta_per_card_resource_type`) |
 
+| `envoys_from_venus` | Envoys from Venus | P72 | 1 MC | Tag venus, evento, **Prelude 2**. Requiere 3 tags venus. Coloca 2 delegados en 1 partido (pieza nueva `place_delegates`) |
+| `ghg_shipment` | GHG Shipment | P75 | 3 MC | Tag space, evento, **Prelude 2**. Requiere Kelvinists gobernando o 2 delegados propios ahí. +1 producción calor, +1 calor por cada floater guardado en cualquier carta activa (pieza nueva `resource_delta_per_card_resource_type`) |
+| `ishtar_expedition` | Ishtar Expedition | P76 | 6 MC | Tag venus, evento, **Venus Next**. Requiere Venus ≥10%. +3 titanio, roba 2 cartas con tag venus (pieza nueva `draw_cards_matching_tag`) |
+| `jovian_envoys` | Jovian Envoys | P77 | 2 MC | Sin tags, evento, **Prelude 2**. Requiere 2 tags jovian. Coloca 2 delegados en 1 partido |
+| `microgravity_nutrition` | Microgravity Nutrition | P79 | 11 MC | Tags microbe+plant, **Prelude 2**. +1 producción MC por cada colonia propia |
+| `soil_studies` | Soil Studies | P81 | 13 MC | Tags microbe+plant, evento, **Venus Next**. Requiere temperatura ≤-4°C. +1 planta por cada tag venus, por cada tag plant (incluida esta) y por cada colonia (pieza nueva `resource_delta_per_tag`) |
+| `special_permit` | Special Permit | P82 | 5 MC | Tag plant, evento, **Prelude 2**. Requiere Greens gobernando o 2 delegados ahí. "Steal 4 plants from any player" → se omite entera en un solo jugador, `effects: {}` |
+| `sponsoring_nation` | Sponsoring Nation | P83 | 21 MC | Tag earth, **Prelude 2**. Requiere 4 tags earth. +3 TR y coloca 2 delegados |
+| `stratospheric_expedition` | Stratospheric Expedition | P84 | 12 MC | Tags venus+space, evento, **Venus Next**. +2 floaters a cualquier carta que coleccione floaters, roba 2 cartas venus |
+| `summit_logistics` | Summit Logistics | P85 | 10 MC | Tags building+space, **Prelude 2**. Requiere Scientists gobernando o 2 delegados ahí. +1 MC por cada tag "de planeta" (jovian/earth/venus) y por cada colonia. Roba 2 cartas |
+| `unexpected_application` | Unexpected Application | P86 | 4 MC | Tag venus, evento, **Venus Next**. Descarta 1 carta para subir Venus 1 paso (`discard_card_then_draw` con `draw: 0`) |
+| `venus_allies` | Venus Allies | P87 | 30 MC | Tag venus, **Venus Next**. +2 pasos de Venus, +4 MC por cada colonia propia |
+| `venus_trade_hub` | Venus Trade Hub | P90 | 12 MC | Tags venus+venus, **Venus Next**. Requiere 2 tags venus. Pasivo: +3 MC cada vez que comercia (pieza nueva `mc_delta_on_trade`) |
+| `aerial_lenses` | Aerial Lenses | T01 | 2 MC | Tag power, **Turmoil**. Requiere Kelvinists gobernando o 2 delegados ahí. +2 producción calor (la cláusula "remove up to 2 plants from any player" se omite por diseño) |
+| `banned_delegate` | Banned Delegate | T02 | 0 MC | Sin tags, evento, **Turmoil**. Requiere ser Chairman (requirement nuevo `is_chairman`). Remueve 1 delegado propio NO-líder, que vuelve a la Reserva (pieza nueva `turmoil.remove_delegate`; el FAQ confirma que puede cambiar el partido Dominante al instante) |
+| `cultural_metropolis` | Cultural Metropolis | T03 | 20 MC | Tags city+building, **Turmoil**. Requiere Unity gobernando o 2 delegados ahí. -1 producción energía, +3 producción MC, coloca 1 ciudad y 2 delegados en 1 partido |
+
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
 Estas NO son descartes definitivos — son casos donde ya se identificó qué falta agregar al
@@ -377,6 +394,55 @@ no en `rules_engine.py` — mismo criterio de desacople que `free_trade`), effec
 Esto desbloqueó **Colonial Envoys** (P70, Prelude 2) y **Colonial Representation** (P71,
 Prelude 2), las 2 cartas pendientes que dependían de esto. Tests: `test_turmoil.py` (mecanismo
 completo) y los tests de las 2 cartas en `test_rules_engine.py`.
+
+### Bloque 31 (2026-09-04): multi-agente, y por qué la revisión importa
+
+Segunda tanda de revisión de catálogo con 4 agentes en paralelo (30 cartas). **Hallazgo central
+de la revisión: dos de los cuatro agentes leyeron mal los TAGS de varias cartas.** Confundieron
+el recuadro de **requisito** (arriba a la izquierda, pegado al costo, dentro de una cajita) con
+los **tags propios** de la carta (arriba a la derecha, íconos sueltos). Ejemplos reales:
+
+| Carta | Reportado por el agente | Verificado contra el scan |
+|---|---|---|
+| P72 Envoys from Venus | `venus × 3` | **`venus` × 1** (el "VVV" era el requisito "3 tags venus") |
+| P77 Jovian Envoys | `jovian × 2` | **sin tags** (los 2 Júpiter eran el requisito) |
+| P78 L1 Trade Terminal | sin tags | **`space`** |
+| P75 GHG Shipment | `power` | **`space`** |
+| P83 Sponsoring Nation | `earth × 3` | **`earth` × 1** (los 3 íconos eran el "+3 TR" del efecto) |
+| P85 Summit Logistics | `science, building, space` | **`building, space`** (el matraz era el requisito del partido Scientists) |
+| P82 Special Permit | sin tags | **`plant`** |
+
+Los tags no son cosméticos: alimentan requisitos (`min_tag_count`), descuentos por tag y el
+conteo de otras cartas. Cargarlos mal habría roto silenciosamente varias interacciones. **Por eso
+los tags de los grupos A y B se re-verificaron uno por uno contra los scans antes de cargar** —
+los valores en `seed_cards.sql` son los verificados, no los reportados. El grupo C, en cambio,
+distinguió correctamente los íconos de partido de los tags en todas sus cartas (verificado por
+muestreo).
+
+**Lección para próximas tandas:** el prompt del agente debe explicitar la diferencia entre el
+recuadro de requisito y los tags, y pedir que reporte ambos por separado.
+
+**Resultado: 16 de 30 cargadas.** 7 revisadas pero pendientes por mecánica (ver abajo) y 7
+(T04-T10) sin analizar — el agente que las tenía asignadas se cortó por límite de sesión, quedan
+en la cola con `reviewed = false`.
+
+**Pendientes por mecánica de este bloque** (marcadas `reviewed = true` con `card_id = null`):
+- **P73 Floating Refinery** — necesita dos piezas: recursos iniciales de carta activa escalados
+  por tag (`active_card_starting_resources` hoy es un N fijo), y un costo de acción que gaste
+  recursos de CUALQUIER carta activa, no solo de la propia.
+- **P74 Frontier Town** — "gain the printed placement bonus 2 additional times": exige un
+  multiplicador de bonus en `board.place_city_tile`, no una extensión de `effects`.
+- **P78 L1 Trade Terminal** — necesita `trade_bump_track_first` parametrizable a N pasos (hoy es
+  booleano y sube 1 fijo; retrofit menor sobre Trade Envoys/Trading Colony) y poder apuntar a 3
+  cartas objetivo distintas (hoy el máximo es 2).
+- **P80 Red Appeasement** — el costo de su acción es gastar 2 delegados propios; falta integrar
+  el estado de Turmoil a `use_card_action` (hoy solo `check_card_requirements` lo recibe).
+- **P88 Venus Orbital Survey** — revelar el tope del mazo, quedarse gratis con las que tengan tag
+  venus y comprar/descartar el resto.
+- **P89 Venus Shuttles** — costo de acción reducido por cada tag venus (costo dinámico, hoy los
+  costos de acción son fijos).
+- **P91 WG Project** — requiere ser Chairman (ya resuelto), pero además un sub-mazo de Prelude
+  separado y un mecanismo para jugar gratis una carta arbitraria revelada.
 
 ### Recursos tipados por carta activa (floaters entre cartas)
 

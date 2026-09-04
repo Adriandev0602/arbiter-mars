@@ -140,26 +140,18 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 
 ### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events + floaters por carta activa)
 
-**Progreso:** catálogo en **312 cartas** cargadas en `cards`, 8 Global Events en `global_events`.
-`main` tiene mergeados los bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140),
-pago con recurso de carta, tag wild y el núcleo político de Turmoil. `card_review_queue` tiene
-212 filas `reviewed = true` y **101 sin revisar** — el próximo bloque de cartas de proyecto (31)
-son las filas #1-10 de `select * from card_review_queue where reviewed = false order by id
-limit 10`.
+**Progreso:** catálogo en **328 cartas** cargadas en `cards` y **36 Global Events** (mazo
+completo). `card_review_queue` tiene **78 filas sin revisar**. El bloque 31 (2026-09-04) revisó
+30 cartas con 4 agentes en paralelo: 16 cargadas, 7 pendientes por mecánica y 7 (T04-T10, todas
+Turmoil) **sin analizar** porque el agente asignado se cortó por límite de sesión -- siguen en la
+cola con `reviewed = false`, son lo primero a retomar.
 
-**Recursos tipados por carta activa, implementado (2026-09-04).** Resolvió las últimas 5 cartas
-pendientes por esta pieza: Aerosport Tournament, Airliners, Floater Leasing (catálogo normal) +
-Cloud Societies, Corrosive Rain (Global Events). `active_cards[card_id]` suma la clave
-`resource_type` (parámetro nuevo en `register_active_card`, viene de
-`effects.active_card_resource_type`) -- permite `sum_card_resources_by_type` sumar "solo los
-floaters" entre TODAS las cartas activas del jugador. Piezas nuevas: requirement
-`min_total_card_resources`; effects `target_card_resource_delta_typed` (con
-`amount`/`amount_per_influence`), `add_resource_to_all_matching_type`,
-`production_delta_per_card_resource_type`, `draw_cards_per_influence`. **Retrofit**: 16 cartas
-ya cargadas que guardan floaters en su propia caja (Dirigibles, Titan Shuttles, etc.) se
-actualizaron con `active_card_resource_type: "floater"` -- sin esto las 5 cartas nuevas nunca
-serían satisfacibles de verdad contra el resto del catálogo. Ver sección dedicada "Recursos
-tipados por carta activa" en `CARDS_LOG.md`.
+**Aprendizaje del bloque 31 (importante para próximas tandas multi-agente):** 2 de los 4 agentes
+leyeron mal los TAGS de varias cartas, confundiendo el recuadro de REQUISITO (arriba a la
+izquierda, junto al costo) con los tags propios (arriba a la derecha). Se re-verificaron uno por
+uno contra los scans antes de cargar. **El prompt del agente debe explicitar esa diferencia y
+pedir los dos datos por separado.** Ver la tabla de errores concretos en `CARDS_LOG.md`, sección
+"Bloque 31".
 
 **Turmoil: Global Events, COMPLETO (2026-09-04).** Mazo APARTE de 36 cartas, catalogado en el
 índice del sitio (`hadronikle`, categoría `"GlobalEvent"`) en tabla propia `global_events` +
