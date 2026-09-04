@@ -166,6 +166,26 @@ def trade_with_colony(colonies: Colonies, colony_id: str) -> tuple[Colonies, str
     return {**colonies, colony_id: new_tile}, cdef["income_type"], income_amount, dict(cdef["colony_bonus"])
 
 
+def adjust_colony_track(colonies: Colonies, colony_id: str, delta: int) -> Colonies:
+    """
+    Sube o baja el marcador blanco de `colony_id` `delta` pasos directo
+    (positivo o negativo), sin pasar por build_colony/trade_with_colony
+    (ej. Market Manipulation: +1 a una colonia, -1 a otra). Clampeado entre
+    0 y el tope del track -- no lanza error si el delta se pasa de rango,
+    simplemente lo clampea (igual que run_colony_production con el tope).
+    """
+    if colony_id not in COLONY_DEFS:
+        raise UnknownColonyError(f"Colonia '{colony_id}' no esta cargada en COLONY_DEFS")
+    if colony_id not in colonies:
+        raise UnknownColonyError(f"Colonia '{colony_id}' no esta en juego esta partida")
+    tile = colonies[colony_id]
+    max_pos = len(COLONY_DEFS[colony_id]["track"]) - 1
+    new_position = max(0, min(max_pos, tile["track_position"] + delta))
+    return {**colonies, colony_id: ColonyTileState(
+        track_position=new_position, owners=tile["owners"], trade_fleet_present=tile["trade_fleet_present"],
+    )}
+
+
 def run_colony_production(colonies: Colonies) -> Colonies:
     """
     Fase solar, paso 3 (ver rulebook): sube el marcador blanco 1 paso en

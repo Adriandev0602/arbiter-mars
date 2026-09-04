@@ -1272,3 +1272,65 @@ on conflict (id) do update set
 
 update cards set is_event = true where id in
     ('floater_prototypes', 'impactor_swarm', 'interplanetary_colony_ship');
+
+-- Bloque de revision 27 (Colonies). Las 10 resueltas. Piezas nuevas chicas:
+-- "adjust_colony_tracks" (sube el track de una colonia, baja el de otra,
+-- ver colonies.adjust_colony_track), "gain_all_colony_bonuses" (aplica el
+-- colony_bonus de cada colonia propia una vez), "mc_per_colony_in_play"
+-- (MC por cada colonia en juego de CUALQUIER jugador), y el requirement
+-- "max_colonies_owned".
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'lunar_exports', 'Lunar Exports', 19, '{power,earth}', null,
+        '{"choice": [
+            {"production_deltas": {"plant_production": 2}},
+            {"production_deltas": {"mc_production": 5}}
+        ]}'::jsonb
+    ),
+    (
+        'lunar_mining', 'Lunar Mining', 11, '{earth}', null,
+        '{"production_delta_per_tag": {"tag": "earth", "production": "titanium_production", "tags_per_step": 2, "per_step": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'market_manipulation', 'Market Manipulation', 1, '{earth}', null,
+        '{"adjust_colony_tracks": true}'::jsonb
+    ),
+    (
+        'martian_zoo', 'Martian Zoo', 12, '{animal,building}', '{"min_city_tiles": 2}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0,
+          "passive": {"on_tag_played_add_resource": {"matching_tags": ["earth"], "resource_delta": 1}},
+          "action": {"cost": {}, "gains": {"mc_per_card_resource": {}}}}'::jsonb
+    ),
+    (
+        'mining_colony', 'Mining Colony', 20, '{power}', null,
+        '{"production_deltas": {"titanium_production": 1}, "build_colony": true}'::jsonb
+    ),
+    (
+        'minority_refuge', 'Minority Refuge', 5, '{power}', null,
+        '{"production_deltas": {"mc_production": -2}, "build_colony": true}'::jsonb
+    ),
+    (
+        'molecular_printing', 'Molecular Printing', 11, '{science}', null,
+        '{"resource_delta_per_counter": {"resource": "mc", "counter": "city_tiles_placed", "per_counter": 1},
+          "mc_per_colony_in_play": true}'::jsonb
+    ),
+    (
+        'nitrogen_from_titan', 'Nitrogen from Titan', 25, '{jovian,power}', null,
+        '{"tr_delta": 2, "target_card_resource_delta": 2}'::jsonb
+    ),
+    (
+        'pioneer_settlement', 'Pioneer Settlement', 13, '{power}', '{"max_colonies_owned": 1}'::jsonb,
+        '{"production_deltas": {"mc_production": -2}, "build_colony": true}'::jsonb
+    ),
+    (
+        'productive_outpost', 'Productive Outpost', 0, '{}', null,
+        '{"gain_all_colony_bonuses": true}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
+
+update cards set is_event = true where id in ('market_manipulation');

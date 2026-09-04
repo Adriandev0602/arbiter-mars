@@ -21,6 +21,7 @@ from app.agent.colonies import (
     build_colony,
     trade_with_colony,
     run_colony_production,
+    adjust_colony_track,
 )
 
 
@@ -132,3 +133,19 @@ def test_run_colony_production_caps_at_top_of_track():
     colonies = {**colonies, "callisto": {**colonies["callisto"], "track_position": 6}}  # tope del track (len 7)
     new_state = run_colony_production(colonies)
     assert new_state["callisto"]["track_position"] == 6  # no se pasa del tope
+
+
+def test_adjust_colony_track_clamps_between_0_and_top():
+    colonies = new_colonies(["callisto"])  # arranca en 1
+    colonies = adjust_colony_track(colonies, "callisto", 4)
+    assert colonies["callisto"]["track_position"] == 5
+    colonies = adjust_colony_track(colonies, "callisto", 5)  # se pasaria de 6 (tope)
+    assert colonies["callisto"]["track_position"] == 6
+    colonies = adjust_colony_track(colonies, "callisto", -100)
+    assert colonies["callisto"]["track_position"] == 0
+
+
+def test_adjust_colony_track_unknown_colony_raises():
+    colonies = new_colonies(["callisto"])
+    with pytest.raises(UnknownColonyError):
+        adjust_colony_track(colonies, "ganymede", 1)

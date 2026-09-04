@@ -4132,3 +4132,87 @@ def test_luna_governor_requires_3_earth_tags_mc_production():
         check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"earth": 2}})
     new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 2}})
     assert new_player["mc_production"] == 3
+
+
+# --- Pieza nueva de motor (bloque 27): max_colonies_owned --------------------
+
+def test_max_colonies_owned_requirement():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"max_colonies_owned": 1}, new_global_parameters(),
+            player={**new_player_state(), "colonies_owned": ["callisto", "ganymede"]},
+        )
+    check_card_requirements(
+        {"max_colonies_owned": 1}, new_global_parameters(),
+        player={**new_player_state(), "colonies_owned": ["callisto"]},
+    )
+
+
+# --- Bloque de revision 27 (Colonies) ----------------------------------------
+
+def test_lunar_exports_choice_plant_or_mc_production():
+    effects = {"choice": [
+        {"production_deltas": {"plant_production": 2}},
+        {"production_deltas": {"mc_production": 5}},
+    ]}
+    p1, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects, effect_choice=0)
+    assert p1["plant_production"] == 3
+    p2, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects, effect_choice=1)
+    assert p2["mc_production"] == 6
+
+
+def test_lunar_mining_titanium_production_per_2_earth_tags_including_this():
+    player = {**new_player_state(), "tags_played": {"earth": 3}}
+    effects = {"production_delta_per_tag": {"tag": "earth", "production": "titanium_production", "tags_per_step": 2, "per_step": 1, "include_this": True}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["titanium_production"] == 1 + 2  # (3+1)//2 = 2 pasos
+
+
+def test_martian_zoo_requires_2_city_tiles_passive_and_action():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_city_tiles": 2}, {**new_global_parameters(), "city_tiles_placed": 1})
+
+    player = register_active_card(new_player_state(), "martian_zoo", initial_resources=3)
+    action_spec = {"cost": {}, "gains": {"mc_per_card_resource": {}}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "martian_zoo", action_spec)
+    assert new_player["mc"] == 3
+    assert new_player["active_cards"]["martian_zoo"]["resources"] == 3  # no se gasta
+
+
+def test_mining_colony_titanium_production_and_builds_colony_flag():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"titanium_production": 1}})
+    assert new_player["titanium_production"] == 2
+
+
+def test_minority_refuge_decreases_mc_production():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": -2}})
+    assert new_player["mc_production"] == -1
+
+
+def test_molecular_printing_mc_per_city_tile_counter():
+    globals_ = {**new_global_parameters(), "city_tiles_placed": 4}
+    new_player, _ = apply_card_effect(
+        new_player_state(), globals_,
+        {"resource_delta_per_counter": {"resource": "mc", "counter": "city_tiles_placed", "per_counter": 1}},
+    )
+    assert new_player["mc"] == 4
+
+
+def test_nitrogen_from_titan_tr_and_targets_jovian_card():
+    player = register_active_card(new_player_state(), "nitrogen_from_titan")
+    player = register_active_card(player, "aerial_mappers")
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"tr_delta": 2, "target_card_resource_delta": 2}, target_card_id="aerial_mappers",
+    )
+    assert new_player["tr"] == 22
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+
+
+def test_pioneer_settlement_requires_at_most_1_colony():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"max_colonies_owned": 1}, new_global_parameters(),
+            player={**new_player_state(), "colonies_owned": ["callisto", "ganymede"]},
+        )
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": -2}})
+    assert new_player["mc_production"] == -1

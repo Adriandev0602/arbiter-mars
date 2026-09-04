@@ -589,6 +589,9 @@ def check_card_requirements(
         oceano colocados (ej. Dust Seals: maximo 3).
       - "min_tr": Terraform Rating minimo del jugador (ej. Terraforming
         Contract: 25). Requiere pasar `player`.
+      - "max_colonies_owned": N -- maximo de colonias que el jugador puede
+        tener ya construidas (`player["colonies_owned"]`, expansion
+        Colonies, ej. Pioneer Settlement: maximo 1). Requiere pasar `player`.
       - "min_venus" / "max_venus": Venus scale minimo/maximo en % (expansion
         Venus Next, ej. cartas que piden Venus >= 8%).
       - "min_city_tiles": cantidad minima de tiles de ciudad colocados en el
@@ -679,6 +682,14 @@ def check_card_requirements(
             raise CardRequirementNotMetError("Este requisito necesita el estado del jugador (TR)")
         if player["tr"] < requirements["min_tr"]:
             raise CardRequirementNotMetError(f"Requiere TR >= {requirements['min_tr']}, hay {player['tr']}")
+    if "max_colonies_owned" in requirements:
+        if player is None:
+            raise CardRequirementNotMetError("Este requisito necesita el estado del jugador (colonias)")
+        have = len(player["colonies_owned"])
+        if have > requirements["max_colonies_owned"]:
+            raise CardRequirementNotMetError(
+                f"Requiere maximo {requirements['max_colonies_owned']} colonias propias, hay {have}"
+            )
     if "min_venus" in requirements:
         threshold = requirements["min_venus"] - venus_tolerance
         if globals_["venus"] < threshold:
