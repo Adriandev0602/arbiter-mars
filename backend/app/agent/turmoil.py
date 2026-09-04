@@ -149,6 +149,42 @@ def place_delegate(turmoil: TurmoilState, party: str, player_id: str) -> Turmoil
     )
 
 
+def remove_delegate(turmoil: TurmoilState, party: str, player_id: str) -> TurmoilState:
+    """
+    Saca 1 delegado propio de `party` y lo devuelve a la Reserva del jugador
+    (el caller es quien suma a `player["reserve_delegates"]`). Solo se pueden
+    remover delegados NO-lider: si `player_id` es el Party Leader de ese
+    partido, se rechaza (Banned Delegate dice "remove any NON-LEADER
+    delegate"). Recalcula el partido Dominante despues de sacarlo -- el FAQ
+    oficial confirma que la remocion puede cambiar el Dominante AL INSTANTE,
+    con el mismo desempate horario de _recompute_dominant.
+
+    En modo un jugador solo tiene sentido remover delegados PROPIOS (no se
+    simulan neutrales ni de otros jugadores) -- mismo alcance que el resto
+    del modulo.
+    """
+    if party not in turmoil["parties"]:
+        raise UnknownPartyError(f"Partido '{party}' no existe")
+    p = turmoil["parties"][party]
+    if p["delegates"].get(player_id, 0) < 1:
+        raise UnknownPartyError(f"El jugador no tiene delegados en '{party}'")
+    if p["leader"] == player_id:
+        raise UnknownPartyError(
+            f"El delegado de '{player_id}' en '{party}' es el Party Leader: solo se pueden remover NO-lideres"
+        )
+    new_delegates = {**p["delegates"], player_id: p["delegates"][player_id] - 1}
+    if new_delegates[player_id] == 0:
+        del new_delegates[player_id]
+    new_parties = {**turmoil["parties"], party: PartyState(delegates=new_delegates, leader=p["leader"])}
+    from_party = turmoil["dominant_party"] or party
+    return TurmoilState(
+        parties=new_parties,
+        dominant_party=_recompute_dominant(new_parties, from_party),
+        ruling_party=turmoil["ruling_party"],
+        chairman=turmoil["chairman"],
+    )
+
+
 def can_play_party_gated_card(turmoil: TurmoilState, party: str, player_id: str, min_delegates: int = 2) -> bool:
     """
     Vocabulario de requirement "ruling_or_delegates" (ver

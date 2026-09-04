@@ -711,6 +711,10 @@ def check_card_requirements(
         que el jugador ya tenga esa produccion en al menos N (ej. Great
         Escarpment Consortium: requiere tener produccion de steel >= 1).
         Requiere pasar `player`.
+      - "is_chairman": true -- expansion Turmoil, requiere que el jugador
+        sea el Chairman (`turmoil["chairman"] == player_id`, ver
+        turmoil.py). Requiere pasar `turmoil` y `player_id` (ej. Banned
+        Delegate).
       - "min_total_card_resources": {"resource_type": "<tipo>", "count": N}
         -- requiere al menos N recursos de ese TIPO sumados entre TODAS
         las cartas activas del jugador (ej. Aerosport Tournament: 5
@@ -786,6 +790,14 @@ def check_card_requirements(
             raise CardRequirementNotMetError(
                 f"Requiere que '{party}' este gobernando o tener {min_delegates} delegados ahi, hay {own_delegates}"
             )
+
+    if requirements.get("is_chairman"):
+        if turmoil is None or player_id is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado de Turmoil y el player_id"
+            )
+        if turmoil["chairman"] != player_id:
+            raise CardRequirementNotMetError("Requiere ser el Chairman")
 
     if "min_total_card_resources" in requirements:
         spec = requirements["min_total_card_resources"]
@@ -1005,6 +1017,13 @@ def apply_card_effect(
         N (default 1)} -- igual que production_delta_per_colony pero suma
         al STOCK del recurso en vez de a su produccion (ej. Ceres Tech
         Market: +2 MC de stock por cada colonia propia).
+      - "resource_delta_per_tag": {"tag": "<tag>", "resource": "<recurso>",
+        "per_tag": N (default 1), "include_this": bool} o una LISTA de
+        specs -- analogo de STOCK a production_delta_per_tag: suma al
+        recurso segun cuantos tags de ese tipo jugo el jugador (ej. Soil
+        Studies: 1 planta por cada tag venus y por cada tag plant
+        incluyendo esta; Summit Logistics: 1 M€ por cada tag jovian/earth/
+        venus).
       - "resource_delta_per_capped_counter": {"counter": "<ver
         _resolve_capped_counter>", "resource": "<recurso>", "per_unit": N,
         "cap": 5 (default, `null` = sin tope cuando la carta dice
@@ -1163,6 +1182,13 @@ def apply_card_effect(
         jugador que tengan ese `resource_type`, sin elegir una en
         particular (ej. Cloud Societies, expansion Turmoil Global Events:
         "Add a floater to each card that can collect floaters").
+      - "resource_delta_per_card_resource_type": {"resource_type":
+        "<tipo>", "resource": "<recurso>", "divisor": N (default 1),
+        "per_unit": N (default 1)} -- analogo de STOCK a
+        production_delta_per_card_resource_type: suma al recurso segun
+        cuantos recursos de ese tipo tiene el jugador sumados entre TODAS
+        sus cartas activas (ej. GHG Shipment: "gain 1 heat for each
+        floater you have").
       - "production_delta_per_card_resource_type": {"resource_type":
         "<tipo>", "production": "<recurso>_production", "divisor": N
         (default 1), "per_unit": N (default 1)} -- suma produccion segun
@@ -1255,6 +1281,17 @@ def apply_card_effect(
         key = spec["resource"]
         count = len(player["colonies_owned"])
         new_player[key] = max(0, new_player[key] + count * spec.get("per_colony", 1))
+
+    if "resource_delta_per_tag" in effects:
+        specs = effects["resource_delta_per_tag"]
+        if isinstance(specs, dict):
+            specs = [specs]
+        for spec in specs:
+            count = player["tags_played"].get(spec["tag"], 0)
+            if spec.get("include_this"):
+                count += 1
+            key = spec["resource"]
+            new_player[key] = max(0, new_player[key] + count * spec.get("per_tag", 1))
 
     if "resource_delta_per_capped_counter" in effects:
         spec = effects["resource_delta_per_capped_counter"]
@@ -1549,6 +1586,13 @@ def apply_card_effect(
             if c.get("resource_type") == spec["resource_type"]:
                 new_active_cards[cid] = {**c, "resources": max(0, c["resources"] + spec["amount"])}
         new_player["active_cards"] = new_active_cards
+
+    if "resource_delta_per_card_resource_type" in effects:
+        spec = effects["resource_delta_per_card_resource_type"]
+        total = sum_card_resources_by_type(PlayerState(**new_player), spec["resource_type"])  # type: ignore[typeddict-item]
+        units = total // spec.get("divisor", 1)
+        key = spec["resource"]
+        new_player[key] = max(0, new_player[key] + units * spec.get("per_unit", 1))
 
     if "production_delta_per_card_resource_type" in effects:
         spec = effects["production_delta_per_card_resource_type"]
@@ -2079,6 +2123,11 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
         es quien tiene el costo impreso de la carta -- no hay funcion en
         rules_engine.py para este pasivo especifico.
+      - "mc_delta_on_trade": N -- suma N MC cada vez que el jugador
+        comercia (ej. Venus Trade Hub: "when you trade, gain 3 M€").
+        Aplicado en tools.use_trade_fleet junto al trade income --
+        distinto de "trade_cost_discount", que abarata el costo en vez de
+        premiar.
       - "influence_bonus": N -- expansion Turmoil, suma N fijo a la
         Influencia calculada del jugador (ej. Colonial Representation:
         N=1, "you have influence +1"). Ver turmoil.compute_influence
