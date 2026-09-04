@@ -73,3 +73,35 @@ insert into global_events (id, name, effects) values
 on conflict (id) do update set
     name = excluded.name,
     effects = excluded.effects;
+
+-- Bloque 4 (2026-09-04): 5 de 6 cargadas -- Dry Deserts queda pendiente
+-- (necesita decidir la semantica de "remove 1 ocean tile" sin tablero
+-- hexagonal wireado a Global Events, mas un mecanismo de "recurso estandar
+-- a eleccion" -- ver CARDS_LOG.md). Piezas nuevas:
+-- resource_delta_clamp_to_capped_max, resource_set_to_zero,
+-- tr_delta_by_threshold, production_delta_per_tag_plus_influence.
+insert into global_events (id, name, effects) values
+    (
+        'eco_sabotage', 'Eco Sabotage',
+        '{"resource_delta_clamp_to_capped_max": {"resource": "plants", "base_max": 3}}'::jsonb
+    ),
+    (
+        'election', 'Election',
+        '{"tr_delta_by_threshold": {"score_tags": ["building"], "score_counters": ["city_tiles_placed"], "thresholds": [[10, 2], [5, 1]]}}'::jsonb
+    ),
+    (
+        'global_dust_storm', 'Global Dust Storm',
+        '{"resource_set_to_zero": ["heat"],
+          "resource_delta_per_capped_counter": {"counter": "tag:building", "resource": "mc", "per_unit": -2, "influence_direction": "subtract"}}'::jsonb
+    ),
+    (
+        'homeworld_support', 'Homeworld Support',
+        '{"resource_delta_per_capped_counter": {"counter": "tag:earth", "resource": "mc", "per_unit": 2, "influence_direction": "add"}}'::jsonb
+    ),
+    (
+        'improved_energy_templates', 'Improved Energy Templates',
+        '{"production_delta_per_tag_plus_influence": {"tag": "power", "production": "energy_production", "divisor": 2, "per_unit": 1}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    effects = excluded.effects;

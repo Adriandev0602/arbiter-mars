@@ -4877,3 +4877,52 @@ def test_target_card_resource_delta_typed_amount_per_influence():
     effects = {"target_card_resource_delta_typed": {"resource_type": "floater", "amount_per_influence": True}}
     new_player, _ = apply_card_effect(player, new_global_parameters(), effects, target_card_id="dirigibles", influence=3)
     assert new_player["active_cards"]["dirigibles"]["resources"] == 3
+
+
+# --- Global Events, bloque 4 --------------------------------------------
+
+def test_eco_sabotage_clamps_plants_to_base_max_plus_influence():
+    player = {**new_player_state(), "plants": 20}
+    effects = {"resource_delta_clamp_to_capped_max": {"resource": "plants", "base_max": 3}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=2)
+    assert new_player["plants"] == 5
+
+    player_low = {**new_player_state(), "plants": 2}
+    new_player2, _ = apply_card_effect(player_low, new_global_parameters(), effects, influence=2)
+    assert new_player2["plants"] == 2  # ya estaba por debajo del tope, no sube
+
+
+def test_global_dust_storm_zeroes_heat_and_capped_counter_loss():
+    player = {**new_player_state(), "heat": 15, "mc": 100, "tags_played": {"building": 7}}
+    effects = {
+        "resource_set_to_zero": ["heat"],
+        "resource_delta_per_capped_counter": {
+            "counter": "tag:building", "resource": "mc", "per_unit": -2, "influence_direction": "subtract",
+        },
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=1)
+    assert new_player["heat"] == 0
+    assert new_player["mc"] == 100 - 2 * 4  # min(7,5) - 1 influencia = 4
+
+
+def test_election_tr_threshold_uses_score_from_tags_counters_and_influence():
+    player = {**new_player_state(), "tags_played": {"building": 6}}
+    globals_ = {**new_global_parameters(), "city_tiles_placed": 2}
+    effects = {"tr_delta_by_threshold": {"score_tags": ["building"], "score_counters": ["city_tiles_placed"], "thresholds": [[10, 2], [5, 1]]}}
+    # score = 1 (influencia) + 6 + 2 = 9 -> segundo umbral (>=5)
+    new_player, _ = apply_card_effect(player, globals_, effects, influence=1)
+    assert new_player["tr"] == TR_START + 1
+
+    new_player2, _ = apply_card_effect(player, globals_, effects, influence=2)
+    # score = 2 + 6 + 2 = 10 -> primer umbral
+    assert new_player2["tr"] == TR_START + 2
+
+    new_player3, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects, influence=0)
+    assert new_player3["tr"] == TR_START  # score 0, ningun umbral
+
+
+def test_production_delta_per_tag_plus_influence_no_cap():
+    player = {**new_player_state(), "tags_played": {"power": 9}}
+    effects = {"production_delta_per_tag_plus_influence": {"tag": "power", "production": "energy_production", "divisor": 2, "per_unit": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=3)
+    assert new_player["energy_production"] == 1 + (9 + 3) // 2  # sin tope de 5
