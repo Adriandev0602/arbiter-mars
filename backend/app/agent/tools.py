@@ -1372,6 +1372,23 @@ def get_turmoil_state(player_id: str) -> dict:
     return {"turmoil": dict(turmoil), "influence": influence}
 
 
+def _count_blue_cards_played(played_card_ids: list[str]) -> int:
+    """
+    Cuenta cuantas de las cartas ya jugadas por el jugador son AZULES,
+    cruzando su historial (`player["played_cards"]`) contra el catalogo.
+    La clasificacion de color vive en engine.is_blue_card (funcion pura);
+    aca solo se hace el acceso a base, respetando que rules_engine.py no
+    consulta Supabase. Usado por el Global Event Solarnet Shutdown.
+    """
+    if not played_card_ids:
+        return 0
+    res = supabase.table("cards").select("id,is_event,effects").in_("id", played_card_ids).execute()
+    return sum(
+        1 for row in (res.data or [])
+        if engine.is_blue_card(row["is_event"], row.get("effects"))
+    )
+
+
 def _compute_player_influence(
     player: engine.PlayerState, turmoil: turmoillib.TurmoilState, player_id: str
 ) -> int:
@@ -1382,7 +1399,7 @@ def _compute_player_influence(
 @tool
 def resolve_global_event(
     player_id: str, event_id: str, target_card_id: str | None = None, effect_choice: int | None = None,
-    discard_card_ids: list[str] | None = None,
+    discard_card_ids: list[str] | None = None, remove_ocean_hex_id: str | None = None,
 ) -> dict:
     """
     Resuelve el efecto de la carta "Current Global Event" (expansion
@@ -1414,6 +1431,11 @@ def resolve_global_event(
             tiene "discard_cards" (ej. Paradigm Breakdown: "Discard 2
             cards from hand") -- los card_ids de la mano a descartar.
             None si el evento no descarta cartas.
+        remove_ocean_hex_id: OBLIGATORIO si `effects` tiene
+            "remove_ocean_tile" (ej. Dry Deserts) -- el hex_id del oceano
+            a sacar del mapa. Se ignora si los 9 oceanos ya estan
+            colocados: con el parametro global maximizado el efecto NO se
+            aplica (FAQ oficial). None si el evento no remueve oceanos.
 
     Returns:
         dict con el estado actualizado del jugador/parametros globales y
@@ -1426,20 +1448,46 @@ def resolve_global_event(
     if event is None:
         raise ValueError(f"Global Event '{event_id}' no encontrado en el catalogo")
 
+    effects = event.get("effects") or {}
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
     turmoil = _load_turmoil()
     influence = _compute_player_influence(player, turmoil, player_id)
 
+    # El tablero se carga una sola vez y sirve para los dos casos que lo
+    # necesitan: leerlo (Mud Slides) y mutarlo (Dry Deserts).
+    board = _load_board()
+    new_board = None
+    resolved_globals = globals_
+    if effects.get("remove_ocean_tile"):
+        if globals_["oceans_placed"] >= engine.OCEANS_MAX:
+            # Parametro global maximizado: esta parte del evento no se aplica
+            # (FAQ oficial, entrada de Dry Deserts).
+            pass
+        elif remove_ocean_hex_id is None:
+            raise ValueError(f"El evento '{event_id}' requiere remove_ocean_hex_id")
+        else:
+            new_board = boardlib.remove_ocean_tile(board, remove_ocean_hex_id)
+            # El tile vuelve a la reserva y puede colocarse de nuevo; nadie
+            # pierde TR por la remocion (FAQ oficial).
+            resolved_globals = {**globals_, "oceans_placed": globals_["oceans_placed"] - 1}
+
     new_player, new_globals = engine.apply_card_effect(
-        player, globals_, event.get("effects") or {}, effect_choice=effect_choice,
+        player, resolved_globals, effects, effect_choice=effect_choice,
         target_card_id=target_card_id, influence=influence, discard_card_ids=discard_card_ids,
+        board_tiles_adjacent_to_ocean=boardlib.count_tiles_adjacent_to_ocean(board),
+        blue_cards_played=_count_blue_cards_played(player["played_cards"]),
     )
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
-    _log_transaction(player_id, "resolve_global_event", {"event_id": event_id, "influence": influence})
+    if new_board is not None:
+        _save_board(new_board)
+    _log_transaction(
+        player_id, "resolve_global_event",
+        {"event_id": event_id, "influence": influence, "remove_ocean_hex_id": remove_ocean_hex_id},
+    )
 
     return {"player": dict(new_player), "globals": dict(new_globals), "influence": influence}
 
