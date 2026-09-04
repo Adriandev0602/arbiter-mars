@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 
 from app.agent import board as boardlib
 from app.agent import colonies as colonieslib
+from app.agent import turmoil as turmoillib
 from app.agent import rules_engine as engine
 from app.db.supabase_client import supabase
 
@@ -36,6 +37,8 @@ def _load_player(player_id: str) -> engine.PlayerState:
         colonies_owned=row.get("colonies_owned") or [],
         trade_fleets=row.get("trade_fleets") if row.get("trade_fleets") is not None else 1,
         trade_fleets_used=row.get("trade_fleets_used") or 0,
+        lobby_delegates=row.get("lobby_delegates") if row.get("lobby_delegates") is not None else 1,
+        reserve_delegates=row.get("reserve_delegates") if row.get("reserve_delegates") is not None else 6,
     )
 
 
@@ -82,6 +85,17 @@ def _load_colonies(game_id: str = "default") -> colonieslib.Colonies:
 
 def _save_colonies(colonies: colonieslib.Colonies, game_id: str = "default") -> None:
     supabase.table("global_parameters").update({"colonies": colonies}).eq("game_id", game_id).execute()
+
+
+def _load_turmoil(game_id: str = "default") -> turmoillib.TurmoilState:
+    """Trae el estado mutable de Turmoil (partidos/delegados/dominante/chairman)."""
+    res = supabase.table("global_parameters").select("turmoil").eq("game_id", game_id).single().execute()
+    stored = res.data.get("turmoil")
+    return stored if stored else turmoillib.new_turmoil()
+
+
+def _save_turmoil(turmoil: turmoillib.TurmoilState, game_id: str = "default") -> None:
+    supabase.table("global_parameters").update({"turmoil": dict(turmoil)}).eq("game_id", game_id).execute()
 
 
 def _apply_hex_bonus(player: engine.PlayerState, hex_bonus: list[tuple[str, int]]) -> engine.PlayerState:
@@ -338,6 +352,7 @@ def play_card(
     colony_id_decrease: str | None = None,
     card_resource_to_pay: int = 0,
     wild_tag_choice: str | None = None,
+    delegate_party_choices: list[str] | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -465,6 +480,14 @@ def play_card(
             que esos tags "wild" representen para este chequeo puntual (ej.
             "science" para cubrir un requisito de Mass Converter). None si
             no aplica.
+        delegate_party_choices: OBLIGATORIO (con esa cantidad exacta) si
+            `effects.place_delegates_per_colony` esta definido (expansion
+            Turmoil, ej. Colonial Envoys: "Place 1 delegate for each
+            colony you have. You may place them in separate parties.") --
+            lista de `turmoil.PARTY_NAMES`, uno por delegado a colocar (1
+            por colonia propia), pueden repetirse. Sale de la Reserva del
+            jugador (`player.reserve_delegates`), no del Lobby. None si la
+            carta no tiene esta mecanica.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -492,7 +515,11 @@ def play_card(
     played_from_reserve = card_id in player["reserved_cards"]
     if not played_from_reserve and card_id not in player["hand"]:
         raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano ni reservada")
-    engine.check_card_requirements(card.get("requirements"), globals_, player, wild_tag_choice=wild_tag_choice)
+    requirements = card.get("requirements") or {}
+    turmoil = _load_turmoil() if "ruling_or_delegates" in requirements else None
+    engine.check_card_requirements(
+        requirements, globals_, player, wild_tag_choice=wild_tag_choice, turmoil=turmoil, player_id=player_id,
+    )
 
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:
         raise engine.InsufficientResourcesError("El jugador no tiene el stock declarado")
@@ -675,6 +702,24 @@ def play_card(
         key = production_per_colony_spec["production"]
         delta = len(colonies_in_play) * production_per_colony_spec.get("per_colony", 1)
         new_player = {**new_player, key: engine._apply_production_floor(key, new_player[key] + delta)}
+
+    if effects.get("place_delegates_per_colony"):
+        num_colonies = len(new_player["colonies_owned"])
+        chosen_parties = delegate_party_choices or []
+        if len(chosen_parties) != num_colonies:
+            raise ValueError(
+                f"Esta carta coloca {num_colonies} delegado(s) (1 por colonia propia); "
+                f"se recibieron {len(chosen_parties)} party(s)"
+            )
+        if new_player["reserve_delegates"] < num_colonies:
+            raise engine.InsufficientResourcesError(
+                f"El jugador tiene {new_player['reserve_delegates']} delegados en la Reserva, se necesitan {num_colonies}"
+            )
+        turmoil = turmoil if turmoil is not None else _load_turmoil()
+        for party in chosen_parties:
+            turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+        new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] - num_colonies}
+        _save_turmoil(turmoil)
 
     greenery_spec = effects.get("place_greenery")
     if greenery_spec is not None:
@@ -1219,10 +1264,118 @@ def use_trade_fleet(player_id: str, colony_id: str, payment: str, bump_track_fir
     }
 
 
+@tool
+def lobby(player_id: str, party: str, from_reserve: bool = False) -> dict:
+    """
+    Accion "Lobbying" de la expansion Turmoil (ver turmoil.py para el
+    mecanismo completo) -- NO es un proyecto estandar, se puede usar
+    cualquier cantidad de veces por generacion. Mueve 1 delegado del
+    jugador al area de `party`: gratis desde el Lobby (`from_reserve=False`,
+    consume `player.lobby_delegates`, que arranca en 1 y se rellena en
+    tools.resolve_new_government) o pagando 5 MC desde la Reserva
+    (`from_reserve=True`, consume `player.reserve_delegates`).
+
+    Args:
+        player_id: id del jugador.
+        party: uno de turmoil.PARTY_NAMES (ej. "unity").
+        from_reserve: False (default) usa el delegado gratis del Lobby;
+            True paga 5 MC y usa uno de la Reserva.
+
+    Returns:
+        dict con el estado actualizado del jugador y de Turmoil.
+
+    Lanza turmoil.UnknownPartyError si `party` no existe,
+    InsufficientResourcesError si no hay delegado disponible en el origen
+    elegido (Lobby vacio, o Reserva vacia/MC insuficiente).
+    """
+    player = _load_player(player_id)
+    if from_reserve:
+        if player["reserve_delegates"] < 1:
+            raise engine.InsufficientResourcesError("El jugador no tiene delegados en la Reserva")
+        if player["mc"] < turmoillib.LOBBY_FROM_RESERVE_COST_MC:
+            raise engine.InsufficientResourcesError(
+                f"Se necesitan {turmoillib.LOBBY_FROM_RESERVE_COST_MC} MC para colocar desde la Reserva"
+            )
+        new_player: dict = {
+            **player,
+            "reserve_delegates": player["reserve_delegates"] - 1,
+            "mc": player["mc"] - turmoillib.LOBBY_FROM_RESERVE_COST_MC,
+        }
+    else:
+        if player["lobby_delegates"] < 1:
+            raise engine.InsufficientResourcesError("El jugador no tiene delegados en el Lobby")
+        new_player = {**player, "lobby_delegates": player["lobby_delegates"] - 1}
+
+    turmoil = _load_turmoil()
+    new_turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+
+    _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
+    _save_turmoil(new_turmoil)
+    _log_transaction(player_id, "lobby", {"party": party, "from_reserve": from_reserve})
+
+    return {"player": new_player, "turmoil": dict(new_turmoil)}
+
+
+@tool
+def resolve_new_government(player_id: str) -> dict:
+    """
+    Paso "New Government" de la expansion Turmoil, ACOTADO a un solo
+    jugador (modo un jugador de este proyecto -- ver turmoil.py, seccion
+    "Alcance de esta primera pasada"). El partido Dominante pasa a ser el
+    Ruling; si `player_id` era su Party Leader, se vuelve el nuevo
+    Chairman; el resto de sus delegados propios ahi (mas su delegado de
+    Chairman anterior si lo tenia) vuelven a su Reserva. Tambien rellena
+    el Lobby del jugador (1 delegado, tomado de la Reserva si hay).
+
+    NO aplica Ruling Bonus/Ruling Policy ni la revision de TR (-1 a todos
+    los jugadores) -- fuera de alcance de esta primera pasada, ver
+    turmoil.py.
+
+    Args:
+        player_id: id del jugador.
+
+    Returns:
+        dict con el estado actualizado del jugador y de Turmoil. No hace
+        nada si todavia no hay partido Dominante (delegados_devueltos=0).
+    """
+    player = _load_player(player_id)
+    turmoil = _load_turmoil()
+    new_turmoil, returned = turmoillib.resolve_new_government(turmoil, player_id)
+
+    new_reserve = player["reserve_delegates"] + returned
+    new_lobby = player["lobby_delegates"]
+    if new_lobby < turmoillib.STARTING_LOBBY_DELEGATES and new_reserve > 0:
+        new_lobby += 1
+        new_reserve -= 1
+    new_player = {**player, "reserve_delegates": new_reserve, "lobby_delegates": new_lobby}
+
+    _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
+    _save_turmoil(new_turmoil)
+    _log_transaction(player_id, "resolve_new_government", {"delegates_returned": returned})
+
+    return {"player": new_player, "turmoil": dict(new_turmoil), "delegates_returned": returned}
+
+
+@tool
+def get_turmoil_state(player_id: str) -> dict:
+    """
+    Devuelve el estado actual de Turmoil (partidos, delegados, partido
+    Dominante/Ruling, Chairman) mas la Influencia calculada de
+    `player_id` (formula oficial + bonus de cartas como Colonial
+    Representation, ver turmoil.compute_influence).
+    """
+    player = _load_player(player_id)
+    turmoil = _load_turmoil()
+    bonus = sum(effect.get("influence_bonus", 0) for effect in player["passive_effects"])
+    influence = turmoillib.compute_influence(turmoil, player_id, bonus=bonus)
+    return {"turmoil": dict(turmoil), "influence": influence}
+
+
 # Lista de tools que se bindean al LLM en graph.py
 ALL_TOOLS = [
     use_standard_project, convert_resources, run_production_phase,
     play_card, use_card_action, get_player_state, get_board_state,
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
+    lobby, resolve_new_government, get_turmoil_state,
 ]

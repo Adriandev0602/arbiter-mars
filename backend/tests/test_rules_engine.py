@@ -4619,3 +4619,66 @@ def test_research_coordination_no_immediate_effect_just_wild_tag():
     new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {})
     new_player = increment_tags_played(new_player, ("wild",))
     assert new_player["tags_played"]["wild"] == 1
+
+
+# --- Nucleo politico de Turmoil (requirement ruling_or_delegates) -----------
+
+def _turmoil_stub(ruling_party="greens", unity_delegates=None):
+    return {
+        "parties": {
+            "unity": {"delegates": unity_delegates or {}, "leader": None},
+            "greens": {"delegates": {}, "leader": None},
+        },
+        "dominant_party": None,
+        "ruling_party": ruling_party,
+        "chairman": None,
+    }
+
+
+def test_ruling_or_delegates_passes_when_party_is_ruling():
+    check_card_requirements(
+        {"ruling_or_delegates": {"party": "unity", "min_delegates": 2}},
+        new_global_parameters(),
+        turmoil=_turmoil_stub(ruling_party="unity"),
+        player_id="p1",
+    )
+
+
+def test_ruling_or_delegates_passes_with_enough_own_delegates():
+    check_card_requirements(
+        {"ruling_or_delegates": {"party": "unity", "min_delegates": 2}},
+        new_global_parameters(),
+        turmoil=_turmoil_stub(unity_delegates={"p1": 2}),
+        player_id="p1",
+    )
+
+
+def test_ruling_or_delegates_fails_otherwise():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"ruling_or_delegates": {"party": "unity", "min_delegates": 2}},
+            new_global_parameters(),
+            turmoil=_turmoil_stub(unity_delegates={"p1": 1}),
+            player_id="p1",
+        )
+
+
+def test_ruling_or_delegates_requires_turmoil_and_player_id():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"ruling_or_delegates": {"party": "unity"}}, new_global_parameters(),
+        )
+
+
+def test_influence_bonus_passive_stored():
+    player = register_passive_effect(new_player_state(), "colonial_representation", {"influence_bonus": 1})
+    match = next(p for p in player["passive_effects"] if "influence_bonus" in p)
+    assert match["influence_bonus"] == 1
+
+
+def test_colonial_representation_mc_per_colony():
+    player = {**new_player_state(), "colonies_owned": ["callisto"]}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"resource_delta_per_colony": {"resource": "mc", "per_colony": 3}},
+    )
+    assert new_player["mc"] == 3

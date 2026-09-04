@@ -1572,3 +1572,32 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Pendientes resueltos: nucleo politico de Turmoil (Colonial Envoys,
+-- Colonial Representation) -- ver backend/app/agent/turmoil.py para el
+-- mecanismo completo (partidos, delegados, Lobbying, Party Leader/
+-- Dominante/Chairman, Influencia), verificado contra el rulebook oficial
+-- (TM_TURMOIL_ENG_RULES, 8 paginas, leido completo). Piezas nuevas:
+-- requirement "ruling_or_delegates" en check_card_requirements, pasivo
+-- "influence_bonus" en register_passive_effect, effect
+-- "place_delegates_per_colony" resuelto en tools.play_card (parametro
+-- nuevo delegate_party_choices). Alcance: solo el nucleo politico, sin
+-- Ruling Bonus/Policy de los 6 partidos ni el mazo de 31 Global Events --
+-- ver CARDS_LOG.md, seccion "Turmoil: nucleo politico".
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'colonial_envoys', 'Colonial Envoys', 4, '{}',
+        '{"ruling_or_delegates": {"party": "unity", "min_delegates": 2}}'::jsonb,
+        '{"place_delegates_per_colony": true}'::jsonb
+    ),
+    (
+        'colonial_representation', 'Colonial Representation', 10, '{}', null,
+        '{"resource_delta_per_colony": {"resource": "mc", "per_colony": 3},
+          "passive": {"influence_bonus": 1}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
