@@ -153,11 +153,16 @@ seguir cargando), catalogado en el mismo índice del sitio (`hadronikle`, catego
 patrón que `card_review_queue`, sin `scan_number`). Los Global Events REUSAN
 `rules_engine.apply_card_effect` (mismo `effects` jsonb que las cartas) -- pieza nueva:
 `resource_delta_per_capped_counter` (tope 5 + ajuste por Influencia, regla del rulebook página
-5). Tool nueva: `resolve_global_event(player_id, event_id)`. **2 de 36 cargadas** (Generous
-Funding, Riots), verificadas contra el rulebook oficial (texto + ejemplo numérico resuelto,
-más fuerte que un scan individual) -- **34 pendientes** en la cola. Ver sección dedicada
-"Turmoil: Global Events" en `CARDS_LOG.md` para la lista completa y el flujo para seguir
-cargando de a bloques.
+5). Tool nueva: `resolve_global_event(player_id, event_id)`. **6 de 36 cargadas**: Generous
+Funding y Riots (bloque 1, verificadas contra el rulebook oficial -- texto + ejemplo numérico
+resuelto, más fuerte que un scan individual); Aquifer Released by Public Council, Asteroid
+Mining, Celebrity Leaders, Diversity (bloque 2, 2026-09-04, verificadas contra su scan real --
+piezas nuevas `resource_delta_per_influence` sin tope y `resource_delta_if_tag_diversity`,
+umbral booleano sin tope). 2 pendientes del bloque 2 (Cloud Societies, Corrosive Rain) necesitan
+la misma pieza de "floaters por carta activa" ya pendiente por Aerosport Tournament -- ahora son
+6 cartas esperando esa pieza. **28 pendientes** en la cola. Ver sección dedicada "Turmoil:
+Global Events" en `CARDS_LOG.md` para la lista completa y el flujo para seguir cargando de a
+bloques.
 
 **Turmoil: núcleo político, implementado (2026-09-04, decisión explícita del usuario).**
 Resolvió las últimas 2 cartas pendientes del catálogo normal: Colonial Envoys y Colonial
