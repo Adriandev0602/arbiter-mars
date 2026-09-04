@@ -357,8 +357,8 @@ delegados propios), Influencia (Chairman +1, líder del Dominante +1, o 1+ deleg
 feature aparte** (mismo criterio que "solo Callisto cargada" en Colonies):
 - Las Ruling Bonus / Ruling Policy de los 6 partidos (12 efectos distintos sobre recursos de
   TODOS los jugadores, ej. Reds: "Lose 3 M€ for each step your TR is raised").
-- El mazo de 31 Global Event cards (afectan a todos los jugadores cada generación, usan
-  Influencia para escalar contadores con tope 5).
+- El mazo de Global Event cards -- EN PROGRESO desde 2026-09-04, ver sección dedicada
+  "Turmoil: Global Events" abajo (2 de 36 cargadas).
 - La revisión de TR (-1 a TODOS los jugadores cada generación).
 - `resolve_new_government` está ACOTADO a un solo jugador (modo un jugador de este proyecto,
   ver sección 7 de `CLAUDE.md`) — no itera sobre otros jugadores ni aplica el TR gratis del
@@ -377,6 +377,62 @@ no en `rules_engine.py` — mismo criterio de desacople que `free_trade`), effec
 Esto desbloqueó **Colonial Envoys** (P70, Prelude 2) y **Colonial Representation** (P71,
 Prelude 2), las 2 cartas pendientes que dependían de esto. Tests: `test_turmoil.py` (mecanismo
 completo) y los tests de las 2 cartas en `test_rules_engine.py`.
+
+### Turmoil: Global Events (mazo separado, EN PROGRESO)
+
+**Fuente de datos:** a diferencia del catálogo normal de cartas de proyecto (`card_review_queue`,
+scans de tm.hadronikle.com), los Global Events son un mazo APARTE de la expansión Turmoil. El
+mismo sitio los cataloga bajo la categoría `"GlobalEvent"` en su índice cacheado
+(`https://raw.githubusercontent.com/hadronikle/Complete-Terraforming-Mars-Card-Database/main/index.html`,
+array `const CARDS = [...]`), con imágenes en `https://cards.hadronikle.com/global-events/<...>.png`.
+Ese índice trae **36 Global Events** con tag `"GlobalEvent"` bajo expansión Turmoil — el rulebook
+oficial dice "31 Global Event cards" en la lista de componentes (página 8), así que hay una
+diferencia de 5 sin explicar todavía (posibles variantes/erratas de ediciones distintas
+incluidas en el mismo índice) — **no bloquea empezar a cargarlas**: se verifica carta por carta
+igual que el catálogo normal, y si alguna resulta ser una variante/duplicado se documenta acá al
+encontrarla. Tabla nueva `global_event_review_queue` (mismo patrón que `card_review_queue`, sin
+`scan_number` porque el sitio no numera esta categoría — el nombre es la clave única) tiene las
+36 filas cargadas: 2 `reviewed = true`, 34 pendientes.
+
+**Mecanismo de motor (2026-09-04):** los Global Events reusan el mismo `effects` jsonb y la
+misma función `rules_engine.apply_card_effect` que las cartas de proyecto — no hace falta un
+motor aparte, solo una tabla `global_events` (id, name, effects) distinta de `cards` porque no
+tienen costo/tags/requirements. Pieza nueva de vocabulario: `resource_delta_per_capped_counter`
+(ver `rules_engine.apply_card_effect`, docstring completo) -- implementa la regla del rulebook
+(página 5): "Any Global Event that counts something... can only count up to a maximum of 5. This
+number can then be modified up or down (even beyond 5) by your influence." El contador se resuelve
+con `_resolve_capped_counter` (fuentes soportadas hoy: `city_tiles_placed`,
+`tr_sets_of_5_over_15` — se agregan fuentes nuevas a medida que aparecen en cartas reales, no de
+antemano). `tools.resolve_global_event(player_id, event_id)` calcula la Influencia del jugador
+(`turmoil.compute_influence`) y se la pasa al motor como un entero simple (parámetro `influence`)
+-- `rules_engine.py` NO importa `turmoil.py`, mismo desacople que el resto de las piezas de
+Turmoil ya resueltas.
+
+**2 de 36 cargadas**, ambas verificadas contra el rulebook oficial (más fuerte que un scan
+individual: trae el texto impreso Y un ejemplo numérico resuelto paso a paso, página 5):
+
+| id | Nombre | Efecto |
+|---|---|---|
+| `generous_funding` | Generous Funding | +2 M€ por cada set de 5 TR sobre 15 (tope 5 sets) + Influencia SUMA sets. Ejemplo del rulebook: TR 42 (5 sets) + 2 Influencia = 7 × 2 = 14 M€ |
+| `riots` | Riots | -4 M€ por cada ciudad en el mapa (tope 5 ciudades) − Influencia RESTA ciudades contadas. Ejemplo del rulebook: 7 ciudades (capa a 5) − 1 Influencia = 4 × 4 = 16 M€ perdidos |
+
+**34 pendientes** en `global_event_review_queue` (`reviewed = false`) — misma dinámica de
+bloques que el catálogo de cartas: leer el scan real (`cards.hadronikle.com/global-events/...`),
+decidir vocabulario (reusar `apply_card_effect` primero, extender `_resolve_capped_counter` o
+agregar una pieza nueva si hace falta), cargar en `seed_global_events.sql`, marcar la fila con
+`event_id`. Nombres pendientes: Aquifer Released by Public Council, Asteroid Mining, Celebrity
+Leaders, Cloud Societies, Corrosive Rain, Diversity, Dry Deserts, Eco Sabotage, Election, Global
+Dust Storm, Homeworld Support, Improved Energy Templates, Interplanetary Trade, Jovian Tax
+Rights, Microgravity Health Problems, Miners on Strike, Mud Slides, Pandemic, Paradigm
+Breakdown, Productivity, Red Influence, Revolution, Sabotage, Scientific Community, Snow Cover,
+Solar Flare, Solarnet Shutdown, Spin-off Products, Sponsored Projects, Strong Society,
+Successful Organisms, Venus Infrastructure, Volcanic Eruptions, War on Earth.
+
+**Alcance no resuelto todavía, documentado para cuando aparezca en una carta real:** el reparto
+de delegados neutrales al revelar la carta (Distant → Coming → Current) y el ciclo de
+generaciones no están automatizados (`resolve_global_event` es de disparo manual, no forma parte
+de un `run_production_phase`/fase Turmoil todavía) — mismo criterio de alcance que
+`resolve_new_government`.
 
 ### Tag comodín "wild" (Research Coordination)
 

@@ -1366,9 +1366,65 @@ def get_turmoil_state(player_id: str) -> dict:
     """
     player = _load_player(player_id)
     turmoil = _load_turmoil()
-    bonus = sum(effect.get("influence_bonus", 0) for effect in player["passive_effects"])
-    influence = turmoillib.compute_influence(turmoil, player_id, bonus=bonus)
+    influence = _compute_player_influence(player, turmoil, player_id)
     return {"turmoil": dict(turmoil), "influence": influence}
+
+
+def _compute_player_influence(
+    player: engine.PlayerState, turmoil: turmoillib.TurmoilState, player_id: str
+) -> int:
+    bonus = sum(effect.get("influence_bonus", 0) for effect in player["passive_effects"])
+    return turmoillib.compute_influence(turmoil, player_id, bonus=bonus)
+
+
+@tool
+def resolve_global_event(player_id: str, event_id: str) -> dict:
+    """
+    Resuelve el efecto de la carta "Current Global Event" (expansion
+    Turmoil, mazo separado de las cartas de proyecto -- ver
+    `global_events`, tabla nueva, y CARDS_LOG.md seccion "Turmoil: Global
+    Events"). Calcula la Influencia de `player_id` (ver
+    turmoil.compute_influence) y aplica `event.effects` con
+    rules_engine.apply_card_effect (mismo motor que las cartas de
+    proyecto -- reusa su vocabulario, mas la pieza nueva
+    "resource_delta_per_capped_counter" especifica de Global Events).
+
+    ALCANCE (ver turmoil.py): NO simula el reparto de delegados neutrales
+    al revelar la carta, ni el avance Distant -> Coming -> Current del
+    mazo (single-player, no hay ciclo de generaciones automatizado). El
+    LLM/usuario elige que Global Event resolver segun el contexto de la
+    partida que este llevando afuera del motor.
+
+    Args:
+        player_id: id del jugador.
+        event_id: id de `global_events` (ej. "generous_funding", "riots").
+
+    Returns:
+        dict con el estado actualizado del jugador/parametros globales y
+        la Influencia usada para el calculo.
+
+    Lanza ValueError si `event_id` no existe en el catalogo.
+    """
+    event_res = supabase.table("global_events").select("*").eq("id", event_id).single().execute()
+    event = event_res.data
+    if event is None:
+        raise ValueError(f"Global Event '{event_id}' no encontrado en el catalogo")
+
+    player = _load_player(player_id)
+    globals_ = _load_global_parameters()
+    turmoil = _load_turmoil()
+    influence = _compute_player_influence(player, turmoil, player_id)
+
+    new_player, new_globals = engine.apply_card_effect(
+        player, globals_, event.get("effects") or {}, influence=influence,
+    )
+
+    _save_player(player_id, new_player)
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
+    _log_transaction(player_id, "resolve_global_event", {"event_id": event_id, "influence": influence})
+
+    return {"player": dict(new_player), "globals": dict(new_globals), "influence": influence}
 
 
 # Lista de tools que se bindean al LLM en graph.py
@@ -1377,5 +1433,5 @@ ALL_TOOLS = [
     play_card, use_card_action, get_player_state, get_board_state,
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
-    lobby, resolve_new_government, get_turmoil_state,
+    lobby, resolve_new_government, get_turmoil_state, resolve_global_event,
 ]

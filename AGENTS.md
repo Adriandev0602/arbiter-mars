@@ -138,28 +138,41 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo)
+### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events)
 
 **Progreso:** catálogo en **309 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140), pago con recurso de carta y
-tag wild. `card_review_queue` tiene 209 filas `reviewed = true` y **101 sin revisar** — el
-próximo bloque (31) son las filas #1-10 de `select * from card_review_queue where reviewed =
-false order by id limit 10`.
+bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140), pago con recurso de carta,
+tag wild y el núcleo político de Turmoil. `card_review_queue` tiene 209 filas `reviewed = true`
+y **101 sin revisar** — el próximo bloque de cartas de proyecto (31) son las filas #1-10 de
+`select * from card_review_queue where reviewed = false order by id limit 10`.
+
+**Turmoil: Global Events, EN PROGRESO (empezado 2026-09-04).** Mazo APARTE de 36 cartas (el
+rulebook dice 31 en su lista de componentes -- diferencia sin explicar todavía, no bloquea
+seguir cargando), catalogado en el mismo índice del sitio (`hadronikle`, categoría
+`"GlobalEvent"`) pero en tabla nueva `global_events` + cola `global_event_review_queue` (mismo
+patrón que `card_review_queue`, sin `scan_number`). Los Global Events REUSAN
+`rules_engine.apply_card_effect` (mismo `effects` jsonb que las cartas) -- pieza nueva:
+`resource_delta_per_capped_counter` (tope 5 + ajuste por Influencia, regla del rulebook página
+5). Tool nueva: `resolve_global_event(player_id, event_id)`. **2 de 36 cargadas** (Generous
+Funding, Riots), verificadas contra el rulebook oficial (texto + ejemplo numérico resuelto,
+más fuerte que un scan individual) -- **34 pendientes** en la cola. Ver sección dedicada
+"Turmoil: Global Events" en `CARDS_LOG.md` para la lista completa y el flujo para seguir
+cargando de a bloques.
 
 **Turmoil: núcleo político, implementado (2026-09-04, decisión explícita del usuario).**
-Resolvió las últimas 2 cartas pendientes: Colonial Envoys y Colonial Representation (P70/P71,
-Prelude 2). Módulo nuevo `backend/app/agent/turmoil.py` (mismo estilo que `colonies.py`),
-verificado contra el rulebook oficial (TM_TURMOIL_ENG_RULES.pdf, 8 páginas, leído completo): 6
-partidos, delegados (7 por jugador: 1 Lobby + 6 Reserva), acción Lobbying, Party Leader/partido
-Dominante (se actualiza al instante), requisitos `ruling_or_delegates` (Ruling O 2+ delegados
-propios), Influencia (Chairman/líder del Dominante/delegado no-líder ahí, +1 cada uno, +bonus de
-carta), "New Government" (ACOTADO a un solo jugador, modo un jugador de este proyecto). Campos
-nuevos en `PlayerState`: `lobby_delegates`, `reserve_delegates`; estado compartido nuevo:
-`turmoil` en `GlobalParameters`. Tools nuevas: `lobby`, `resolve_new_government`,
+Resolvió las últimas 2 cartas pendientes del catálogo normal: Colonial Envoys y Colonial
+Representation (P70/P71, Prelude 2). Módulo nuevo `backend/app/agent/turmoil.py` (mismo estilo
+que `colonies.py`), verificado contra el rulebook oficial (TM_TURMOIL_ENG_RULES.pdf, 8 páginas,
+leído completo): 6 partidos, delegados (7 por jugador: 1 Lobby + 6 Reserva), acción Lobbying,
+Party Leader/partido Dominante (se actualiza al instante), requisitos `ruling_or_delegates`
+(Ruling O 2+ delegados propios), Influencia (Chairman/líder del Dominante/delegado no-líder ahí,
++1 cada uno, +bonus de carta), "New Government" (ACOTADO a un solo jugador, modo un jugador de
+este proyecto). Campos nuevos en `PlayerState`: `lobby_delegates`, `reserve_delegates`; estado
+compartido nuevo: `turmoil` en `GlobalParameters`. Tools nuevas: `lobby`, `resolve_new_government`,
 `get_turmoil_state`. **Quedan explícitamente pendientes**, cada uno del tamaño de una feature
-aparte: las Ruling Bonus/Ruling Policy de los 6 partidos (12 efectos), el mazo de 31 Global
-Event cards, y la revisión de TR (-1 a todos cada generación) -- ver sección dedicada "Turmoil:
-núcleo político" en `CARDS_LOG.md`. Tests: `test_turmoil.py`.
+aparte: las Ruling Bonus/Ruling Policy de los 6 partidos (12 efectos), y la revisión de TR (-1 a
+todos cada generación) -- ver sección dedicada "Turmoil: núcleo político" en `CARDS_LOG.md`.
+Tests: `test_turmoil.py`.
 
 **Tag comodín "wild", implementado (2026-09-04).** Resolvió Research Coordination (P40,
 Prelude) -- pendiente desde el bloque 30. El texto impreso ("the wild tag counts as any tag of
@@ -452,6 +465,11 @@ Ver `backend/app/db/schema.sql`. Tablas:
 - `cards`: catálogo de cartas (id, name, cost, tags, requirements, effects, is_event).
 - `card_review_queue`: cola de revisión del catálogo (ver sección 4) — reemplaza el manifiesto
   markdown viejo.
+- `global_events`: catálogo de Global Event cards de la expansión Turmoil (id, name, effects —
+  mismo `effects` jsonb que `cards`, sin costo/tags/requirements). Ver
+  `backend/app/agent/turmoil.py` y "Turmoil: Global Events" en `CARDS_LOG.md`.
+- `global_event_review_queue`: cola de revisión de Global Events, mismo patrón que
+  `card_review_queue` pero sin `scan_number` (el nombre es la clave única).
 - `transactions`: log de cada jugada resuelta, para auditar.
 
 ## 10. Convenciones
