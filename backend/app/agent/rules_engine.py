@@ -592,6 +592,9 @@ def check_card_requirements(
       - "max_colonies_owned": N -- maximo de colonias que el jugador puede
         tener ya construidas (`player["colonies_owned"]`, expansion
         Colonies, ej. Pioneer Settlement: maximo 1). Requiere pasar `player`.
+      - "min_colonies_owned": N -- minimo de colonias que el jugador ya
+        tiene construidas (ej. Space Port: requiere 1). Requiere pasar
+        `player`.
       - "min_venus" / "max_venus": Venus scale minimo/maximo en % (expansion
         Venus Next, ej. cartas que piden Venus >= 8%).
       - "min_city_tiles": cantidad minima de tiles de ciudad colocados en el
@@ -690,6 +693,14 @@ def check_card_requirements(
             raise CardRequirementNotMetError(
                 f"Requiere maximo {requirements['max_colonies_owned']} colonias propias, hay {have}"
             )
+    if "min_colonies_owned" in requirements:
+        if player is None:
+            raise CardRequirementNotMetError("Este requisito necesita el estado del jugador (colonias)")
+        have = len(player["colonies_owned"])
+        if have < requirements["min_colonies_owned"]:
+            raise CardRequirementNotMetError(
+                f"Requiere al menos {requirements['min_colonies_owned']} colonias propias, hay {have}"
+            )
     if "min_venus" in requirements:
         threshold = requirements["min_venus"] - venus_tolerance
         if globals_["venus"] < threshold:
@@ -759,6 +770,14 @@ def apply_card_effect(
       - "raise_oxygen_steps": N -- sube el oxigeno N pasos (+N TR).
       - "raise_venus_steps": N -- sube el Venus scale N pasos (+N TR, mas los
         bonus de umbral, ver raise_venus). Expansion Venus Next.
+      - "trade_fleet_delta": N -- suma N a `player["trade_fleets"]` (expansion
+        Colonies, ej. Sky Docks, Space Port: +1 flota de comercio).
+      - "draw_cards_per_tag": {"tag": "<tag>", "tags_per_step": N (default 1),
+        "cards_per_step": N (default 1), "include_this": bool} -- roba tantas
+        cartas como pasos de `tags_per_step` tags ya jugados (division
+        entera, igual que production_delta_per_tag pero para robar cartas
+        en vez de subir produccion) (ej. Solar Probe: 1 carta cada 3 tags
+        de ciencia, incluida esta).
       - "discard_card_then_draw": {"draw": N} -- descarta `discard_card_id`
         (OBLIGATORIO, debe estar en la mano) y roba N cartas del mazo (ej.
         Sponsored Academies: descartar 1, robar 3). La clausula "each
@@ -1000,6 +1019,18 @@ def apply_card_effect(
             steps=effects["raise_venus_steps"],
         )
         new_player, new_globals = dict(p2), dict(g2)
+
+    if "trade_fleet_delta" in effects:
+        new_player["trade_fleets"] = new_player["trade_fleets"] + effects["trade_fleet_delta"]
+
+    if "draw_cards_per_tag" in effects:
+        spec = effects["draw_cards_per_tag"]
+        count = player["tags_played"].get(spec["tag"], 0)
+        if spec.get("include_this"):
+            count += 1
+        tags_per_step = spec.get("tags_per_step", 1)
+        cards = (count // tags_per_step) * spec.get("cards_per_step", 1)
+        new_player = dict(draw_cards_to_hand(PlayerState(**new_player), cards))  # type: ignore[typeddict-item]
 
     if "place_oceans" in effects:
         for _ in range(effects["place_oceans"]):

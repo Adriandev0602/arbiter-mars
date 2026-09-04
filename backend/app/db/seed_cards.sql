@@ -1334,3 +1334,65 @@ on conflict (id) do update set
     effects = excluded.effects;
 
 update cards set is_event = true where id in ('market_manipulation');
+
+-- Bloque de revision 28 (Colonies). Las 10 resueltas. Piezas nuevas chicas:
+-- "production_delta_per_colony_in_play", "trade_fleet_delta",
+-- "draw_cards_per_tag", requirement "min_colonies_owned", y
+-- build_colony:{"allow_duplicate": true} (ignora la restriccion de 1
+-- colonia por jugador por tile, ver colonies.build_colony).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'quantum_communications', 'Quantum Communications', 8, '{science}',
+        '{"min_tag_count": {"tag": "science", "count": 4}}'::jsonb,
+        '{"production_delta_per_colony_in_play": {"production": "mc_production", "per_colony": 1}}'::jsonb
+    ),
+    (
+        'red_spot_observatory', 'Red Spot Observatory', 17, '{science,jovian}',
+        '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
+        '{"draw_cards": 2, "becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"draw_cards": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'refugee_camps', 'Refugee Camps', 10, '{earth}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0,
+          "action": {"cost": {}, "gains": {"production_deltas": {"mc_production": -1}, "card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'research_colony', 'Research Colony', 20, '{science,power}', null,
+        '{"build_colony": {"allow_duplicate": true}}'::jsonb
+    ),
+    (
+        'rim_freighters', 'Rim Freighters', 4, '{power}', null,
+        '{"passive": {"trade_cost_discount": 1}}'::jsonb
+    ),
+    (
+        'sky_docks', 'Sky Docks', 18, '{earth,power}',
+        '{"min_tag_count": {"tag": "earth", "count": 2}}'::jsonb,
+        '{"trade_fleet_delta": 1}'::jsonb
+    ),
+    (
+        'solar_probe', 'Solar Probe', 9, '{power}', null,
+        '{"draw_cards_per_tag": {"tag": "science", "tags_per_step": 3, "cards_per_step": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'solar_reflectors', 'Solar Reflectors', 23, '{power}', null,
+        '{"production_deltas": {"heat_production": 5}}'::jsonb
+    ),
+    (
+        'space_port', 'Space Port', 22, '{city,building}', '{"min_colonies_owned": 1}'::jsonb,
+        '{"trade_fleet_delta": 1, "place_city_tiles": 1, "production_deltas": {"energy_production": -1, "mc_production": 4}}'::jsonb
+    ),
+    (
+        'space_port_colony', 'Space Port Colony', 27, '{power}', '{"min_colonies_owned": 1}'::jsonb,
+        '{"build_colony": {"allow_duplicate": true}, "trade_fleet_delta": 1}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
+
+update cards set is_event = true where id in ('solar_probe');

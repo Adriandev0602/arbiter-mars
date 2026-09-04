@@ -4216,3 +4216,90 @@ def test_pioneer_settlement_requires_at_most_1_colony():
         )
     new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": -2}})
     assert new_player["mc_production"] == -1
+
+
+# --- Piezas nuevas de motor (bloque 28) --------------------------------------
+
+def test_min_colonies_owned_requirement():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_colonies_owned": 1}, new_global_parameters(), player=new_player_state())
+    check_card_requirements(
+        {"min_colonies_owned": 1}, new_global_parameters(),
+        player={**new_player_state(), "colonies_owned": ["callisto"]},
+    )
+
+
+def test_trade_fleet_delta_effect():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"trade_fleet_delta": 1})
+    assert new_player["trade_fleets"] == 2  # arranca en 1
+
+
+def test_draw_cards_per_tag_scales_and_includes_this():
+    player = {**new_player_state(), "tags_played": {"science": 2}, "deck": ["a"]}
+    effects = {"draw_cards_per_tag": {"tag": "science", "tags_per_step": 3, "cards_per_step": 1, "include_this": True}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["hand"] == ["a"]  # (2+1)//3 = 1 carta
+
+
+def test_draw_cards_per_tag_below_threshold_draws_nothing():
+    player = {**new_player_state(), "tags_played": {"science": 1}, "deck": ["a"]}
+    effects = {"draw_cards_per_tag": {"tag": "science", "tags_per_step": 3, "cards_per_step": 1, "include_this": True}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["hand"] == []
+
+
+# --- Bloque de revision 28 (Colonies) ----------------------------------------
+
+def test_red_spot_observatory_requires_3_science_draws_2_action_choice():
+    req = {"min_tag_count": {"tag": "science", "count": 3}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 2}})
+
+    player = {**new_player_state(), "deck": ["a", "b"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
+    assert new_player["hand"] == ["a", "b"]
+
+    globals_ = new_global_parameters()
+    active_player = register_active_card(new_player_state(), "red_spot_observatory")
+    action_spec = {"choice": [{"gains": {"card_resource_delta": 1}}, {"cost": {"card_resource": 1}, "gains": {"draw_cards": 1}}]}
+    p1, _ = use_card_action(active_player, globals_, "red_spot_observatory", action_spec, effect_choice=0)
+    assert p1["active_cards"]["red_spot_observatory"]["resources"] == 1
+
+
+def test_refugee_camps_action_swaps_mc_production_for_card_resource():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "refugee_camps")
+    action_spec = {"cost": {}, "gains": {"production_deltas": {"mc_production": -1}, "card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "refugee_camps", action_spec)
+    assert new_player["mc_production"] == 0
+    assert new_player["active_cards"]["refugee_camps"]["resources"] == 1
+
+
+def test_rim_freighters_passive_trade_discount():
+    player = register_passive_effect(new_player_state(), "rim_freighters", {"trade_cost_discount": 1})
+    assert compute_trade_cost_discount(player) == 1
+
+
+def test_sky_docks_requires_2_earth_tags_gains_trade_fleet():
+    req = {"min_tag_count": {"tag": "earth", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"earth": 1}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"trade_fleet_delta": 1})
+    assert new_player["trade_fleets"] == 2
+
+
+def test_solar_reflectors_heat_production():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"heat_production": 5}})
+    assert new_player["heat_production"] == 6  # base 1 + 5
+
+
+def test_space_port_requires_1_colony_gains_trade_fleet_city_and_production():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_colonies_owned": 1}, new_global_parameters(), player=new_player_state())
+
+    effects = {"trade_fleet_delta": 1, "place_city_tiles": 1, "production_deltas": {"energy_production": -1, "mc_production": 4}}
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), effects)
+    assert new_player["trade_fleets"] == 2
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 5
+    assert new_globals["city_tiles_placed"] == 1

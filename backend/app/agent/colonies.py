@@ -109,13 +109,22 @@ def new_colonies(colony_ids: list[str]) -> Colonies:
     return {cid: ColonyTileState(track_position=1, owners=[], trade_fleet_present=False) for cid in colony_ids}
 
 
-def build_colony(colonies: Colonies, colony_id: str, player_id: str) -> tuple[Colonies, dict]:
+def build_colony(
+    colonies: Colonies, colony_id: str, player_id: str, allow_duplicate: bool = False
+) -> tuple[Colonies, dict]:
     """
     Coloca el marcador del jugador en el slot mas bajo libre de `colony_id`
-    (maximo 3 duenos por colonia, 1 por jugador). Si el marcador blanco
-    esta en o por debajo de la nueva cantidad de duenos, sube 1 paso para
-    dejarle lugar. NO cobra los 17 MC (eso lo hace el caller, ver
-    tools.build_colony, junto con calculate_card_payment-style stock check).
+    (maximo 3 duenos por colonia, 1 por jugador salvo `allow_duplicate`).
+    Si el marcador blanco esta en o por debajo de la nueva cantidad de
+    duenos, sube 1 paso para dejarle lugar. NO cobra los 17 MC (eso lo hace
+    el caller, ver tools.build_colony, junto con calculate_card_payment-style
+    stock check).
+
+    allow_duplicate: True para cartas que EXPLICITAMENTE ignoran la regla
+    de "1 colonia por jugador por tile" (ej. Research Colony, Space Port
+    Colony: "may be placed where you already have a colony") -- el jugador
+    puede terminar con 2 de los 3 slots totales de esa colonia. Sigue
+    respetando el maximo de 3 duenos en total.
 
     Devuelve (colonias actualizadas, placement_bonus a aplicar una vez).
     Lanza UnknownColonyError / ColonyFullError.
@@ -125,7 +134,7 @@ def build_colony(colonies: Colonies, colony_id: str, player_id: str) -> tuple[Co
     if colony_id not in colonies:
         raise UnknownColonyError(f"Colonia '{colony_id}' no esta en juego esta partida")
     tile = colonies[colony_id]
-    if player_id in tile["owners"]:
+    if not allow_duplicate and player_id in tile["owners"]:
         raise ColonyFullError(f"El jugador ya tiene una colonia en '{colony_id}'")
     if len(tile["owners"]) >= MAX_COLONISTS_PER_TILE:
         raise ColonyFullError(f"'{colony_id}' ya tiene el maximo de {MAX_COLONISTS_PER_TILE} colonias")

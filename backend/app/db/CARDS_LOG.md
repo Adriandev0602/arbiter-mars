@@ -296,6 +296,16 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `nitrogen_from_titan` | Nitrogen from Titan | C28 | 25 MC | Tags jovian+power. +2 TR, +2 floaters a una carta Jovian activa elegida |
 | `pioneer_settlement` | Pioneer Settlement | C29 | 13 MC | Tag power. Requiere máximo 1 colonia propia (pieza nueva `max_colonies_owned`). -2 producción MC, construye 1 colonia |
 | `productive_outpost` | Productive Outpost | C30 | 0 MC | Sin tags propios. Aplica el colony bonus de cada colonia propia una vez (pieza nueva `gain_all_colony_bonuses`) |
+| `quantum_communications` | Quantum Communications | C31 | 8 MC | Tag science. Requiere 4 tags de ciencia. +1 producción MC por cada colonia en juego (pieza nueva `production_delta_per_colony_in_play`) |
+| `red_spot_observatory` | Red Spot Observatory | C32 | 17 MC | Tags science+jovian. Requiere 3 tags de ciencia. Roba 2 cartas; acción con elección: +1 floater a sí misma, O gastar 1 floater propio → roba 1 carta |
+| `refugee_camps` | Refugee Camps | C33 | 10 MC | Tag earth. Acción repetible sin costo de stock: -1 producción MC → +1 recurso en la carta |
+| `research_colony` | Research Colony | C34 | 20 MC | Tags science+power. Construye 1 colonia, puede repetirse en una donde ya tiene (pieza nueva `build_colony.allow_duplicate`) |
+| `rim_freighters` | Rim Freighters | C35 | 4 MC | Tag power. Pasivo: comerciar cuesta 1 recurso menos (mismo patrón de Cryo-Sleep) |
+| `sky_docks` | Sky Docks | C36 | 18 MC | Tags earth+power. Requiere 2 tags earth jugados. +1 flota de comercio (pieza nueva `trade_fleet_delta`) |
+| `solar_probe` | Solar Probe | C37 | 9 MC | Tag power, evento. Roba 1 carta cada 3 tags de ciencia, incluida esta (pieza nueva `draw_cards_per_tag`) |
+| `solar_reflectors` | Solar Reflectors | C38 | 23 MC | Tag power. +5 producción calor |
+| `space_port` | Space Port | C39 | 22 MC | Tags city+building. Requiere 1 colonia propia (pieza nueva `min_colonies_owned`). +1 flota de comercio, +1 ciudad, -1 producción energía, +4 producción MC |
+| `space_port_colony` | Space Port Colony | C40 | 27 MC | Tag power. Requiere 1 colonia propia. Construye 1 colonia (puede repetirse en una donde ya tiene), +1 flota de comercio |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
