@@ -1520,3 +1520,32 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Pendientes resueltos: "pago con recurso de carta" (Dirigibles, Psychrophiles)
+-- -- pieza nueva de motor: pasivo "card_resource_payment" en
+-- register_passive_effect (rules_engine.py) + parametro nuevo
+-- card_resource_to_pay en tools.play_card (busca automaticamente, entre los
+-- pasivos activos del jugador, cual carta habilita pagar segun el tag de la
+-- carta jugada) + rules_engine.spend_active_card_resource. Tambien
+-- "target_card_resource_delta_allow_self" en use_card_action (Dirigibles:
+-- "Add 1 floater to ANY card", incluida ella misma, a diferencia de
+-- target_card_resource_delta que exige otra carta).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'dirigibles', 'Dirigibles', 11, '{venus}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0,
+          "passive": {"card_resource_payment": {"required_tag": "venus", "value_mc": 3}},
+          "action": {"cost": {}, "gains": {"target_card_resource_delta_allow_self": 1}}}'::jsonb
+    ),
+    (
+        'psychrophiles', 'Psychrophiles', 2, '{microbe}', '{"max_temperature": -20}'::jsonb,
+        '{"becomes_active": true, "active_card_starting_resources": 0,
+          "passive": {"card_resource_payment": {"required_tag": "plant", "value_mc": 2}},
+          "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;

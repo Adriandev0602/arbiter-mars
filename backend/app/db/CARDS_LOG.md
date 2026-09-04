@@ -322,6 +322,8 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `space_hotels` | Space Hotels | P42 | 12 MC | Tags earth+earth. Requiere 2 tags earth jugados. +4 producción MC |
 | `ceres_tech_market` | Ceres Tech Market | P68 | 12 MC | Tags science+power, expansión **Venus Next** (promo). +2 MC por cada colonia propia (pieza nueva `resource_delta_per_colony`, análogo stock de `production_delta_per_colony`). Acción repetible sin costo: descartar N cartas → +2 MC por cada una (pieza nueva `mc_per_discarded_card`, mismo criterio de confianza en `effect_amount` que `standard_project_sell_patents` — no valida IDs puntuales de mano) |
 | `cloud_tourism` | Cloud Tourism | P69 | 11 MC | Tags jovian+venus, expansión **Venus Next** (promo). +1 producción MC por cada par de tags earth+venus jugados (pieza nueva `production_delta_per_tag_pair`, usa el mínimo de ambos conteos). Acción repetible sin costo: +1 floater a sí misma |
+| `dirigibles` | Dirigibles | 222 | 11 MC | Tag venus. Pasivo: floaters guardados en esta carta valen 3 M€ cada uno para pagar cartas con tag venus (pieza nueva `card_resource_payment`, resuelta 2026-09-04 — ver sección dedicada abajo). Acción repetible sin costo: +1 floater a CUALQUIER carta activa elegida, incluida ella misma (pieza nueva `target_card_resource_delta_allow_self`) |
+| `psychrophiles` | Psychrophiles | P39 | 2 MC | Tag microbe, expansión **Prelude**. Requiere temperatura ≤-20°C. Pasivo: microbios guardados en esta carta valen 2 M€ cada uno para pagar cartas con tag plant (mismo `card_resource_payment` que Dirigibles). Acción repetible sin costo: +1 microbio a sí misma |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -331,13 +333,44 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | # scan | Nombre | Qué falta |
 |---|---|---|
 | 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). **Actualización bloque 25:** ya son 4 cartas las que necesitan esta pieza (ver Airliners y Floater Leasing abajo) — sube de prioridad para una sesión dedicada. |
-| 222 | Dirigibles | Pasivo: "when playing a Venus tag, floaters [guardados en ESTA carta] may be used as payment, and are worth 3 M€ each" — los floaters acumulados en una carta activa funcionan como una TERCERA moneda de pago (como acero/titanio, pero el stock vive en una carta, no en el jugador, y solo aplica a cartas con tag Venus). `calculate_card_payment`/`compute_conversion_rates` solo conocen mc/steel/titanium del jugador — necesitaría un parámetro nuevo tipo `floater_card_id`+`floaters_to_pay` en `tools.play_card`, validar que esa carta tenga tag Venus el objetivo, y sumar `floaters_to_pay * 3` al pago igual que steel/titanium. Pieza real de pago, no de efecto — misma categoría que Self-Replicating Robots (mecánica de pago no trivial), pospuesta para abordarla con foco dedicado en vez de forzarla en un bloque de revisión normal. Mismo patrón se repetirá en más cartas Venus Next que usan floaters como pago (verificar cuando aparezcan). |
 | C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
 | C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
-| P39 | Psychrophiles | Pasivo: "when paying for a plant card, microbes here may be used as 2 M€ each" — TERCERA moneda de pago cuyo stock vive en una carta activa (los microbios guardados en Psychrophiles), aplicable solo a cartas con tag plant. Misma pieza pendiente que **Dirigibles** (222, arriba) — ya son 2 cartas que necesitan exactamente esto (una con floaters/tag venus, otra con microbios/tag plant), mismo patrón general: `floater_card_id`/`microbe_card_id` + cantidad a pagar, validado contra el tag de la carta objetivo. Sube de prioridad para la sesión dedicada de "mecánica de pago no trivial" (junto con Self-Replicating Robots). |
 | P40 | Research Coordination | Pasivo: "the wild tag counts as any tag of your choice when performing an action" — la carta imprime un tag "wild" (ícono "?"). Los tags hoy son strings planos y todo el sistema de conteo (`tags_played`, `increment_tags_played`, cualquier requirement `min_tag_count`) asume coincidencia exacta de string. Modelar un tag comodín requiere tocar el subsistema de conteo de tags en varios puntos a la vez (no una extensión chica de vocabulario) — pospuesta como refactor propio, no como pieza aislada. |
 | P70 | Colonial Envoys | Prelude 2. Depende de la mecánica de **Turmoil** (delegados, partidos, "Unity ruling", chairman, influencia) — expansión entera sin construir todavía, del mismo tamaño/alcance que Colonies cuando se decidió construirla. No se puede cargar parcialmente sin la pieza de "influencia". Igual que Colonial Representation (P71) abajo, queda pendiente de una decisión explícita de alcance del usuario antes de construir nada de Turmoil (a diferencia de Colonies, que sí se aprobó explícitamente en el bloque 25). |
 | P71 | Colonial Representation | Prelude 2. "+3 MC por cada colonia propia" es técnicamente cargable ya con la pieza existente `resource_delta_per_colony` (la misma que usa Ceres Tech Market, bloque 30) — pero el resto de la carta es "+1 influencia" de forma OBLIGATORIA (no "hasta N", no opcional), y el motor no tiene ningún concepto de influencia/Turmoil todavía. Cargar solo la mitad de la carta sería deshonesto respecto al efecto real impreso. Misma dependencia de Turmoil que Colonial Envoys (P70) — pendiente de la misma decisión de alcance. |
+
+### Pago con recurso de carta (Dirigibles, Psychrophiles)
+
+**Resuelto (2026-09-04):** pieza nueva de motor que desbloqueó las 2 cartas que quedaban
+pendientes por esto desde los bloques 20-24/30. Un recurso guardado en una carta activa
+(floaters en Dirigibles, microbios en Psychrophiles) funciona como TERCERA moneda de pago —
+como acero/titanio, pero el stock vive en una carta puntual del jugador, no en su stock general,
+y solo cubre cartas con un tag específico.
+
+- `rules_engine.register_passive_effect` suma la pieza `"card_resource_payment": {"required_tag":
+  "<tag>", "value_mc": N (default 3)}` al vocabulario de `passive` (ej. Dirigibles: tag "venus",
+  3 M€ por floater; Psychrophiles: tag "plant", 2 M€ por microbio).
+- `rules_engine.spend_active_card_resource(player, card_id, amount)`: función nueva, descuenta
+  recursos de una carta activa (lanza `InsufficientResourcesError` si no alcanza) — distinta de
+  `move_from_target_card_resource_delta` (esa mueve recursos entre dos cartas activas, no los
+  gasta como pago).
+- `tools.play_card` suma el parámetro `card_resource_to_pay: int`. Busca automáticamente, entre
+  `player["passive_effects"]`, cuál carta activa tiene un `card_resource_payment` cuyo
+  `required_tag` esté en los tags de la carta que se está jugando — no hace falta que el LLM/
+  usuario indique de qué carta sale el recurso, el motor lo resuelve por el tag. Si no hay match,
+  `ValueError`. El valor (`card_resource_to_pay * value_mc`) se resta del costo efectivo igual
+  que cualquier otro descuento (mismo lugar que `compute_card_cost_discount`/
+  `pending_mc_discount`/`compute_reserved_card_discount`), sin reembolso por sobrepago (mismo
+  criterio que el resto del pago de cartas).
+- `use_card_action` suma `"target_card_resource_delta_allow_self": N` al vocabulario de `gains`
+  -- igual que `target_card_resource_delta` pero el destino puede ser CUALQUIER carta activa,
+  incluida la propia (`target_card_id` opcional, default = la propia carta) — necesario porque
+  la acción de Dirigibles es "Add 1 floater to ANY card", a diferencia de otras cartas Jovian que
+  siempre exigen "OTRA carta".
+
+Mismo patrón se aplicará a futuras cartas Venus Next/Prelude que usen floaters/microbios/otro
+recurso de carta como pago — solo hace falta declarar el pasivo `card_resource_payment` en su
+`effects`, sin tocar código nuevo.
 
 ### Colonies: mecánica de colonias/comercio
 
