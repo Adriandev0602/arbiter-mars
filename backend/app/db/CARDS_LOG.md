@@ -348,6 +348,19 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `banned_delegate` | Banned Delegate | T02 | 0 MC | Sin tags, evento, **Turmoil**. Requiere ser Chairman (requirement nuevo `is_chairman`). Remueve 1 delegado propio NO-líder, que vuelve a la Reserva (pieza nueva `turmoil.remove_delegate`; el FAQ confirma que puede cambiar el partido Dominante al instante) |
 | `cultural_metropolis` | Cultural Metropolis | T03 | 20 MC | Tags city+building, **Turmoil**. Requiere Unity gobernando o 2 delegados ahí. -1 producción energía, +3 producción MC, coloca 1 ciudad y 2 delegados en 1 partido |
 
+| `diaspora_movement` | Diaspora Movement | T04 | 7 MC | Tag jovian, **Turmoil**. Requiere Reds gobernando o 2 delegados ahí. +1 MC por cada tag jovian en juego (incluido el propio) |
+| `event_analysts` | Event Analysts | T05 | 5 MC | Tag science, **Turmoil**. Requiere Scientists gobernando o 2 delegados ahí. Pasivo: +1 Influencia (`influence_bonus`) |
+| `gmo_contract` | GMO Contract | T06 | 3 MC | Tags microbe+science, **Turmoil**. Requiere Greens gobernando o 2 delegados ahí. Pasivo: +2 MC cada vez que juega un tag plant/animal/microbe — el FAQ aclara que cada tag distinto de la misma carta dispara por separado (pieza nueva `on_tag_played_mc_delta`) |
+| `martian_media_center` | Martian Media Center | T07 | 7 MC | Tag building, **Turmoil**. Requiere Mars First gobernando o 2 delegados ahí. +2 producción MC. Acción: pagar 3 MC para colocar 1 delegado en el partido que elija (pieza nueva: `place_delegates` como *gain* de acción) |
+| `parliament_hall` | Parliament Hall | T08 | 8 MC | Tag building, **Turmoil**. Requiere Mars First gobernando o 2 delegados ahí. +1 producción MC por cada 3 tags building, incluido el propio |
+| `pr_office` | PR Office | T09 | 7 MC | Tag earth, **Turmoil**. Requiere Unity gobernando o 2 delegados ahí. +1 TR y +1 MC por cada tag earth, incluido el propio |
+| `public_celebrations` | Public Celebrations | T10 | 8 MC | Sin tags, evento, **Turmoil**. Requiere ser Chairman. Su único beneficio son 2 VP, que este motor no modela → `effects: {}` (mismo criterio que Interstellar Colony Ship) |
+| `frontier_town` | Frontier Town | P74 | 11 MC | Tags city+building, **Prelude 2**. Requiere Mars First gobernando o 2 delegados ahí. -1 producción energía, coloca 1 ciudad y cobra el bonus de colocación 3 veces (pieza nueva `city_placement_bonus_multiplier`) |
+| `l1_trade_terminal` | L1 Trade Terminal | P78 | 25 MC | Tag space, **Venus Next**. Pasivo: al comerciar puede subir el track 2 pasos (`trade_bump_track_first` ahora es cantidad, no booleano). +1 recurso a 3 cartas activas distintas (pieza nueva `target_card_resource_delta_3`) |
+| `floating_refinery` | Floating Refinery | P73 | 7 MC | Tag venus, **Venus Next**. Arranca con 1 floater por cada tag venus, incluido el propio (pieza nueva `active_card_starting_resources_per_tag`). Acción con elección: +1 floater a sí misma, O gastar 2 floaters de CUALQUIER carta → +1 titanio y +2 MC (pieza nueva de costo `any_card_resource`) |
+| `venus_shuttles` | Venus Shuttles | P89 | 9 MC | Tag venus, **Venus Next**. +2 floaters a una carta que coleccione floaters. Acción: subir Venus 1 paso pagando 12 MC menos 1 por cada tag venus (pieza nueva de costo `mc_reduced_by_tag`) |
+| `red_appeasement` | Red Appeasement | P80 | 0 MC | Sin tags, **Prelude 2**. Acción con requisito propio (Reds gobernando o 2 delegados ahí, pieza nueva `effects.action.requirements`): gasta 2 delegados propios → +2 producción MC (pieza nueva de costo `remove_own_delegates`). Las cláusulas "no other player has passed" y "this counts as passing" se omiten: en un solo jugador no son observables |
+
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
 Estas NO son descartes definitivos — son casos donde ya se identificó qué falta agregar al
@@ -394,6 +407,50 @@ no en `rules_engine.py` — mismo criterio de desacople que `free_trade`), effec
 Esto desbloqueó **Colonial Envoys** (P70, Prelude 2) y **Colonial Representation** (P71,
 Prelude 2), las 2 cartas pendientes que dependían de esto. Tests: `test_turmoil.py` (mecanismo
 completo) y los tests de las 2 cartas en `test_rules_engine.py`.
+
+### Bloque 31, segunda tanda: cerrando los pendientes
+
+Se relanzaron 4 agentes: uno terminó las 7 cartas Turmoil que habían quedado sin analizar
+(T04-T10) y tres diseñaron las piezas de las cartas pendientes por mecánica. **Resultado: 12
+cartas más cargadas** y solo 2 pendientes nuevas.
+
+**Errores que atrapó la revisión en esta tanda:**
+- **Public Celebrations (T10)**: el agente propuso `tr_delta: 2` leyendo el "2" del disco marrón
+  de abajo a la derecha. Ese número son **puntos de victoria**, no TR — la carta no tiene ningún
+  efecto sobre contadores del motor, así que va con `effects: {}` (mismo criterio que
+  Interstellar Colony Ship).
+- **Frontier Town (P74)**: reportada con un solo tag `building`; en el scan tiene **city +
+  building**.
+- El agente de T04-T10 usó nombres de campo que no existen en el motor (`megacredits`,
+  `resource_delta_per_counter`, `production_key`...). Los mapeé al vocabulario real; el agente
+  mismo había avisado que había que hacerlo.
+
+**Aporte de los agentes de diseño, con dos catches valiosos:**
+- El de Turmoil detectó que `remove_delegate` rechazaba remover al Party Leader — pero Red
+  Appeasement cuesta 2 delegados y, con exactamente 2 en un partido, uno es forzosamente el
+  líder. De ahí el parámetro `allow_leader` (default `False`, que preserva el comportamiento de
+  Banned Delegate).
+- El de tablero encontró en el FAQ (p.22) la categoría oficial "D. Placement bonuses", que
+  agrupa el bonus impreso del hexágono **y** los 2 MC por océano adyacente — por eso Frontier
+  Town multiplica ambos. Sin esa fuente habría sido una decisión a ciegas.
+
+**Piezas nuevas:** `on_tag_played_mc_delta`, `city_placement_bonus_multiplier`,
+`target_card_resource_delta_3`, `active_card_starting_resources_per_tag`, costos de acción
+`any_card_resource` / `mc_reduced_by_tag` / `remove_own_delegates`, `place_delegates` como *gain*
+de acción, requisito propio de acción (`effects.action.requirements`), `allow_leader` en
+`turmoil.remove_delegate`, y `trade_bump_track_first` parametrizable a N pasos (con retrofit de
+Trade Envoys y Trading Colony a `1`).
+
+**Siguen pendientes por mecánica (2):**
+- **P88 Venus Orbital Survey** — su acción revela el tope del mazo, deja quedarse gratis con las
+  cartas venus y manda el resto a compra/descarte. Hay un diseño concreto propuesto (3
+  primitivas puras nuevas + resolución en `tools.py`), no se implementó en esta tanda por
+  tamaño.
+- **P91 WG Project** — "roba 3 cartas Prelude y jugá 1 gratis". El agente lo evaluó como
+  **feature de tamaño comparable a `reserved_cards`**: hace falta un sub-mazo Prelude
+  identificable (hoy `deck` es indiferenciado; habría que mantener una lista a mano, estilo
+  `COLONY_DEFS`) más un mecanismo de "jugar gratis una carta arbitraria" en dos pasos. Además
+  solo hay ~15 de las ~24 cartas Prelude cargadas, así que conviene cargar el resto antes.
 
 ### Bloque 31 (2026-09-04): multi-agente, y por qué la revisión importa
 

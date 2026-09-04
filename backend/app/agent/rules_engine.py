@@ -899,6 +899,7 @@ def apply_card_effect(
     effect_choice: int | None = None,
     target_card_id: str | None = None,
     target_card_id_2: str | None = None,
+    target_card_id_3: str | None = None,
     discard_card_id: str | None = None,
     influence: int = 0,
     discard_card_ids: list[str] | None = None,
@@ -1604,6 +1605,20 @@ def apply_card_effect(
     if "draw_cards_per_influence" in effects and effects["draw_cards_per_influence"]:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), influence))  # type: ignore[typeddict-item]
 
+    if "target_card_resource_delta_3" in effects:
+        amount = effects["target_card_resource_delta_3"]
+        if target_card_id_3 is None:
+            raise CardEffectError("Esta carta requiere target_card_id_3")
+        active_cards = new_player["active_cards"]
+        if target_card_id_3 not in active_cards:
+            raise CardEffectError(f"La carta objetivo '{target_card_id_3}' no esta activa para este jugador")
+        new_active_cards = dict(active_cards)
+        new_active_cards[target_card_id_3] = {
+            **new_active_cards[target_card_id_3],
+            "resources": max(0, new_active_cards[target_card_id_3]["resources"] + amount),
+        }
+        new_player["active_cards"] = new_active_cards
+
     if "target_card_resource_delta_per_tag" in effects:
         spec = effects["target_card_resource_delta_per_tag"]
         count = player["tags_played"].get(spec["tag"], 0)
@@ -1682,6 +1697,24 @@ def sum_card_resources_by_type(player: PlayerState, resource_type: str) -> int:
     return sum(
         c["resources"] for c in player["active_cards"].values() if c.get("resource_type") == resource_type
     )
+
+
+def resolve_active_card_starting_resources(player: PlayerState, effects: dict) -> int:
+    """
+    Cuantos recursos arranca una carta activa recien jugada: el entero fijo de
+    `effects.active_card_starting_resources` (ej. Herbivores: 1) o, si esta
+    presente, `effects.active_card_starting_resources_per_tag`
+    ({"tag", "per_tag" (default 1), "include_this": bool}) -- escala segun los
+    tags ya jugados (ej. Floating Refinery: 1 floater por cada tag venus,
+    incluido el suyo). `include_this` hace falta porque tools.play_card
+    registra la carta activa ANTES de incrementar `tags_played`. Si estan las
+    dos claves gana la version per_tag (ninguna carta necesita sumarlas hoy).
+    """
+    spec = effects.get("active_card_starting_resources_per_tag")
+    if spec is not None:
+        count = player["tags_played"].get(spec["tag"], 0) + (1 if spec.get("include_this") else 0)
+        return count * spec.get("per_tag", 1)
+    return effects.get("active_card_starting_resources", 0)
 
 
 def spend_active_card_resource(player: PlayerState, card_id: str, amount: int) -> PlayerState:
@@ -1861,6 +1894,41 @@ def use_card_action(
                     f"'{card_id}' tiene {card_resources} recursos guardados, se necesitan {amount}"
                 )
             card_resources -= amount
+        elif key == "any_card_resource":
+            # Gasta (destruye) recursos guardados en CUALQUIER carta activa
+            # elegida con target_card_id -- por defecto la propia. Distinto de
+            # "card_resource" (solo la propia) y de
+            # move_from_target_card_resource_delta (que los MUEVE en vez de
+            # gastarlos). Ej. Floating Refinery: "remove 2 floaters from ANY
+            # CARD to gain 1 titanium and 2 M€".
+            needed = amount["amount"]
+            dest_id = target_card_id if target_card_id is not None else card_id
+            if dest_id != card_id and dest_id not in new_active_cards:
+                raise CardEffectError(f"La carta objetivo '{dest_id}' no esta activa para este jugador")
+            dest_resources = card_resources if dest_id == card_id else new_active_cards[dest_id]["resources"]
+            resource_type = amount.get("resource_type")
+            if resource_type is not None:
+                dest_type = new_active_cards[dest_id].get("resource_type")
+                if dest_type != resource_type:
+                    raise CardEffectError(f"'{dest_id}' no guarda recursos de tipo '{resource_type}'")
+            if dest_resources < needed:
+                raise InsufficientResourcesError(
+                    f"'{dest_id}' tiene {dest_resources} recursos guardados, se necesitan {needed}"
+                )
+            if dest_id == card_id:
+                card_resources -= needed
+            else:
+                new_active_cards[dest_id] = {
+                    **new_active_cards[dest_id], "resources": dest_resources - needed,
+                }
+        elif key == "mc_reduced_by_tag":
+            # Costo en MC que baja con cada tag jugado, sin tope salvo `min`
+            # (ej. Venus Shuttles: 12 MC, -1 por cada tag venus).
+            count = new_player["tags_played"].get(amount["tag"], 0)
+            mc_needed = max(amount.get("min", 0), amount["base"] - count * amount.get("reduction_per_tag", 1))
+            if new_player["mc"] < mc_needed:
+                raise InsufficientResourcesError(f"Se necesitan {mc_needed} MC, hay {new_player['mc']}")
+            new_player["mc"] -= mc_needed
         elif key == "mc_or_titanium":
             if titanium_to_pay < 0:
                 raise CardEffectError("titanium_to_pay no puede ser negativo")
@@ -2313,9 +2381,27 @@ def apply_tag_played_resource_bonuses(
                 "resources": current_res + matches * spec.get("resource_delta", 1),
             }
             changed = True
-    if not changed:
+
+    # Variante que premia con MC al JUGADOR en vez de sumar recursos a una
+    # carta activa (ej. GMO Contract: "each time you play a plant, animal or
+    # microbe tag, including this, gain 2 M€"). El FAQ aclara que cada tag
+    # distinto de la misma carta dispara por separado -- por eso se cuenta
+    # `matches`, no un booleano.
+    mc_delta = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_tag_played_mc_delta")
+        if spec is None:
+            continue
+        matching_tags = set(spec.get("matching_tags", []))
+        matches = sum(1 for t in played_card_tags if t in matching_tags)
+        mc_delta += matches * spec.get("mc_delta", 0)
+
+    if not changed and not mc_delta:
         return player
-    return {**player, "active_cards": new_active_cards}
+    new_player = {**player, "active_cards": new_active_cards}
+    if mc_delta:
+        new_player["mc"] = new_player["mc"] + mc_delta
+    return new_player
 
 
 def apply_greenery_placed_bonuses(player: PlayerState) -> PlayerState:

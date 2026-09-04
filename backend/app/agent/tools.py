@@ -133,7 +133,7 @@ def _place_ocean_and_apply_bonus(
 
 def _place_city_and_apply_bonus(
     board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str,
-    require_adjacent_cities: int | None = None,
+    require_adjacent_cities: int | None = None, placement_bonus_multiplier: int = 1,
 ) -> tuple[boardlib.Board, engine.PlayerState]:
     """
     require_adjacent_cities: para cartas como Urbanized Area, que EXIGEN
@@ -146,6 +146,13 @@ def _place_city_and_apply_bonus(
         )
     else:
         new_board, hex_bonus, ocean_bonus_mc = boardlib.place_city_tile(board, hex_id, owner_id)
+    if placement_bonus_multiplier != 1:
+        # Frontier Town: "gain the printed placement bonus 2 additional
+        # times". Multiplica el bonus impreso del hex Y el de 2 MC por
+        # oceano adyacente: el FAQ oficial (p.22) agrupa a los dos bajo la
+        # misma categoria "D. Placement bonuses", sin distinguirlos.
+        hex_bonus = [(resource, amount * placement_bonus_multiplier) for resource, amount in hex_bonus]
+        ocean_bonus_mc *= placement_bonus_multiplier
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     new_player = engine.apply_city_placed_bonuses(new_player)
@@ -354,6 +361,7 @@ def play_card(
     wild_tag_choice: str | None = None,
     delegate_party_choices: list[str] | None = None,
     removal_party: str | None = None,
+    target_card_id_3: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -588,7 +596,7 @@ def play_card(
     if effects.get("becomes_active"):
         paid_player = engine.register_active_card(
             paid_player, card_id,
-            initial_resources=effects.get("active_card_starting_resources", 0),
+            initial_resources=engine.resolve_active_card_starting_resources(paid_player, effects),
             resource_type=effects.get("active_card_resource_type"),
         )
     if effects.get("passive"):
@@ -597,7 +605,7 @@ def play_card(
     new_player, new_globals = engine.apply_card_effect(
         paid_player, globals_, effects, effect_amount, effect_choice,
         target_card_id=target_card_id, target_card_id_2=target_card_id_2,
-        discard_card_id=discard_card_id,
+        target_card_id_3=target_card_id_3, discard_card_id=discard_card_id,
     )
 
     # El efecto resuelto (incluso detras de choice/tag_count_choice) puede
@@ -640,7 +648,8 @@ def play_card(
             elif not boardlib.can_place_city(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hid}'")
             board, new_player = _place_city_and_apply_bonus(
-                board, new_player, hid, player_id, require_adjacent_cities=require_adjacent_cities
+                board, new_player, hid, player_id, require_adjacent_cities=require_adjacent_cities,
+                placement_bonus_multiplier=effects.get("city_placement_bonus_multiplier", 1),
             )
 
     special_tile_spec = effects.get("place_special_tile")
@@ -845,6 +854,8 @@ def use_card_action(
     reserved_card_id: str | None = None,
     titanium_to_pay: int = 0,
     trade_colony_id: str | None = None,
+    removal_parties: list[str] | None = None,
+    delegate_party_choices: list[str] | None = None,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -935,10 +946,74 @@ def use_card_action(
     if free_trade and trade_colony_id is None:
         raise ValueError(f"La accion de '{card_id}' requiere trade_colony_id")
 
+    # Algunas acciones tienen su PROPIO requisito, distinto del de jugar la
+    # carta (ej. Red Appeasement: la accion exige que Reds gobierne o tener 2
+    # delegados ahi). Se valida con la misma funcion del motor.
+    turmoil = None
+    action_requirements = resolved_spec.get("requirements")
+    if action_requirements:
+        turmoil = _load_turmoil()
+        engine.check_card_requirements(
+            action_requirements, globals_, player, turmoil=turmoil, player_id=player_id,
+        )
+
+    # Costo de accion pagado con delegados propios: se cobra ACA (tools.py),
+    # no en el motor puro, que no conoce Turmoil -- mismo criterio que
+    # free_trade y que remove_own_delegate en play_card.
+    remove_delegates_count = resolved_spec.get("cost", {}).get("remove_own_delegates", 0)
+    spec_for_engine = action_spec
+    if remove_delegates_count:
+        chosen_parties = removal_parties or []
+        if len(chosen_parties) != remove_delegates_count:
+            raise ValueError(
+                f"Esta accion cuesta {remove_delegates_count} delegado(s) propio(s); "
+                f"se recibieron {len(chosen_parties)} party(s)"
+            )
+        turmoil = turmoil if turmoil is not None else _load_turmoil()
+        for party in chosen_parties:
+            turmoil = turmoillib.remove_delegate(turmoil, party, player_id, allow_leader=True)
+        spec_for_engine = {
+            **resolved_spec,
+            "cost": {k: v for k, v in resolved_spec.get("cost", {}).items() if k != "remove_own_delegates"},
+        }
+
     new_player, new_globals = engine.use_card_action(
-        player, globals_, card_id, action_spec, effect_choice, target_card_id=target_card_id,
+        player, globals_, card_id, spec_for_engine,
+        None if remove_delegates_count else effect_choice, target_card_id=target_card_id,
         effect_amount=effect_amount, reserved_card_id=reserved_card_id, titanium_to_pay=titanium_to_pay,
     )
+    if remove_delegates_count:
+        new_player = {
+            **new_player,
+            "reserve_delegates": new_player["reserve_delegates"] + remove_delegates_count,
+        }
+        _save_turmoil(turmoil)
+
+    # Accion que COLOCA delegados (el costo en MC lo cobra el motor puro por
+    # la via normal, ej. Martian Media Center: "pay 3 M€ to add a delegate to
+    # any party"). Simetrico a remove_own_delegates: se resuelve aca porque
+    # rules_engine.py no conoce Turmoil.
+    place_delegates_count = resolved_spec.get("gains", {}).get("place_delegates", 0)
+    if place_delegates_count:
+        chosen_parties = delegate_party_choices or []
+        if len(chosen_parties) != place_delegates_count:
+            raise ValueError(
+                f"Esta accion coloca {place_delegates_count} delegado(s); "
+                f"se recibieron {len(chosen_parties)} party(s)"
+            )
+        if new_player["reserve_delegates"] < place_delegates_count:
+            raise engine.InsufficientResourcesError(
+                f"El jugador tiene {new_player['reserve_delegates']} delegados en la Reserva, "
+                f"se necesitan {place_delegates_count}"
+            )
+        turmoil = turmoil if turmoil is not None else _load_turmoil()
+        for party in chosen_parties:
+            turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+        new_player = {
+            **new_player,
+            "reserve_delegates": new_player["reserve_delegates"] - place_delegates_count,
+        }
+        _save_turmoil(turmoil)
 
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
     board = None
@@ -1262,10 +1337,15 @@ def use_trade_fleet(player_id: str, colony_id: str, payment: str, bump_track_fir
 
     colonies = _load_colonies()
     if bump_track_first:
-        has_passive = any(effect.get("trade_bump_track_first") for effect in player["passive_effects"])
-        if not has_passive:
+        bump_steps = next(
+            (e["trade_bump_track_first"] for e in player["passive_effects"] if e.get("trade_bump_track_first")),
+            None,
+        )
+        if not bump_steps:
             raise ValueError("El jugador no tiene el pasivo 'trade_bump_track_first' activo")
-        colonies = colonieslib.adjust_colony_track(colonies, colony_id, 1)
+        # El pasivo guarda la CANTIDAD de pasos (Trade Envoys/Trading Colony: 1;
+        # L1 Trade Terminal: 2). `true` de las filas viejas equivale a 1 paso.
+        colonies = colonieslib.adjust_colony_track(colonies, colony_id, int(bump_steps))
     new_colonies, income_type, income_amount, colony_bonus = colonieslib.trade_with_colony(colonies, colony_id)
 
     new_player: dict = {**player, payment: player[payment] - cost, "trade_fleets_used": player["trade_fleets_used"] + 1}

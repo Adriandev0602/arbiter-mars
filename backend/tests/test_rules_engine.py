@@ -70,6 +70,7 @@ from app.agent.rules_engine import (
     spend_active_card_resource,
     sum_card_resources_by_type,
     is_blue_card,
+    resolve_active_card_starting_resources,
 )
 
 
@@ -5208,3 +5209,96 @@ def test_venus_allies_raises_venus_and_mc_per_colony():
     assert new_globals["venus"] == 4
     assert new_player["mc"] == 8
     assert new_player["tr"] == TR_START + 2
+
+
+# --- Bloque 31, segunda tanda --------------------------------------------
+
+def test_on_tag_played_mc_delta_counts_each_matching_tag():
+    # FAQ de GMO Contract: cada tag distinto de la misma carta dispara aparte
+    player = register_passive_effect(
+        new_player_state(), "gmo_contract",
+        {"on_tag_played_mc_delta": {"matching_tags": ["plant", "animal", "microbe"], "mc_delta": 2}},
+    )
+    new_player = apply_tag_played_resource_bonuses(player, ("plant", "animal"))
+    assert new_player["mc"] == 4  # dos tags que matchean = 2+2
+
+    sin_match = apply_tag_played_resource_bonuses(player, ("space",))
+    assert sin_match["mc"] == 0
+
+
+def test_parliament_hall_production_per_3_building_tags_including_this():
+    player = {**new_player_state(), "tags_played": {"building": 5}}
+    effects = {"production_delta_per_tag": {"tag": "building", "production": "mc_production",
+                                            "tags_per_step": 3, "per_step": 1, "include_this": True}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 2  # (5+1)//3 = 2
+
+
+def test_target_card_resource_delta_3():
+    player = register_active_card(new_player_state(), "a", initial_resources=1)
+    player = register_active_card(player, "b", initial_resources=1)
+    player = register_active_card(player, "c", initial_resources=1)
+    effects = {"target_card_resource_delta": 1, "target_card_resource_delta_2": 1, "target_card_resource_delta_3": 1}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), effects,
+        target_card_id="a", target_card_id_2="b", target_card_id_3="c",
+    )
+    for cid in ("a", "b", "c"):
+        assert new_player["active_cards"][cid]["resources"] == 2
+
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, new_global_parameters(), {"target_card_resource_delta_3": 1},
+                          target_card_id_3=None)
+
+
+def test_resolve_active_card_starting_resources_per_tag():
+    player = {**new_player_state(), "tags_played": {"venus": 2}}
+    effects = {"active_card_starting_resources_per_tag": {"tag": "venus", "per_tag": 1, "include_this": True}}
+    assert resolve_active_card_starting_resources(player, effects) == 3  # 2 + la propia
+    assert resolve_active_card_starting_resources(player, {"active_card_starting_resources": 4}) == 4
+    assert resolve_active_card_starting_resources(player, {}) == 0
+
+
+def test_any_card_resource_action_cost_spends_from_chosen_card():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "floating_refinery", initial_resources=1, resource_type="floater")
+    player = register_active_card(player, "airliners", initial_resources=5, resource_type="floater")
+    spec = {"cost": {"any_card_resource": {"amount": 2, "resource_type": "floater"}},
+            "gains": {"resource_deltas": {"titanium": 1, "mc": 2}}}
+    new_player, _ = use_card_action(player, globals_, "floating_refinery", spec, target_card_id="airliners")
+    assert new_player["active_cards"]["airliners"]["resources"] == 3
+    assert new_player["active_cards"]["floating_refinery"]["resources"] == 1  # intacta
+    assert new_player["titanium"] == 1 and new_player["mc"] == 2
+
+
+def test_any_card_resource_rejects_wrong_type_and_insufficient():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "refinery", initial_resources=5, resource_type="floater")
+    player = register_active_card(player, "microbios", initial_resources=5, resource_type="microbe")
+    spec = {"cost": {"any_card_resource": {"amount": 2, "resource_type": "floater"}}, "gains": {}}
+    with pytest.raises(CardEffectError):
+        use_card_action(player, globals_, "refinery", spec, target_card_id="microbios")
+
+    pobre = register_active_card(new_player_state(), "refinery", initial_resources=1, resource_type="floater")
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(pobre, globals_, "refinery", spec)
+
+
+def test_mc_reduced_by_tag_action_cost():
+    globals_ = new_global_parameters()
+    player = {**new_player_state(), "mc": 20, "tags_played": {"venus": 4}}
+    player = register_active_card(player, "venus_shuttles")
+    spec = {"cost": {"mc_reduced_by_tag": {"base": 12, "tag": "venus", "reduction_per_tag": 1}},
+            "gains": {"raise_venus_steps": 1}}
+    new_player, new_globals = use_card_action(player, globals_, "venus_shuttles", spec)
+    assert new_player["mc"] == 20 - 8  # 12 - 4 tags venus
+    assert new_globals["venus"] == 2
+
+
+def test_mc_reduced_by_tag_never_below_zero():
+    globals_ = new_global_parameters()
+    player = {**new_player_state(), "mc": 0, "tags_played": {"venus": 20}}
+    player = register_active_card(player, "venus_shuttles")
+    spec = {"cost": {"mc_reduced_by_tag": {"base": 12, "tag": "venus", "reduction_per_tag": 1}}, "gains": {}}
+    new_player, _ = use_card_action(player, globals_, "venus_shuttles", spec)
+    assert new_player["mc"] == 0  # gratis, no negativo
