@@ -274,6 +274,28 @@ create table if not exists card_review_queue (
     discovered_at timestamptz not null default now()
 );
 
+-- Catalogo de Global Event cards (expansion Turmoil, mazo separado de 31-36
+-- cartas -- ver backend/app/agent/turmoil.py y CARDS_LOG.md, seccion
+-- "Turmoil: Global Events"). Mismo criterio que `cards`: arranca vacia,
+-- se carga a mano carta por carta contra su scan/fuente verificada.
+create table if not exists global_events (
+    id text primary key,
+    name text not null,
+    effects jsonb not null default '{}'::jsonb
+);
+
+-- Cola de revision de Global Events, mismo patron que card_review_queue pero
+-- sin scan_number (el sitio fuente no numera esta categoria, solo el nombre
+-- es unico). NUNCA se guarda la imagen del scan aca (derechos de autor).
+create table if not exists global_event_review_queue (
+    id serial primary key,
+    name text not null unique,
+    image_url text not null,
+    reviewed boolean not null default false,
+    event_id text references global_events(id),
+    discovered_at timestamptz not null default now()
+);
+
 create table if not exists transactions (
     id uuid primary key default gen_random_uuid(),
     player_id uuid references players(id) on delete cascade,

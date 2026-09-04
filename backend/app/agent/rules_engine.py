@@ -580,6 +580,25 @@ def _apply_production_floor(key: str, value: int) -> int:
     return max(MC_PRODUCTION_FLOOR if key == "mc_production" else 0, value)
 
 
+def _resolve_capped_counter(counter: str, player: dict, globals_: dict) -> int:
+    """
+    Fuente del contador SIN capar (el cap de 5 y el ajuste por Influencia se
+    aplican en el caller, ver "resource_delta_per_capped_counter" en
+    apply_card_effect -- expansion Turmoil, Global Events). Vocabulario:
+
+      - "city_tiles_placed": ciudades colocadas por CUALQUIER jugador (ej.
+        Riots: "Lose 4 M€ for each city tile").
+      - "tr_sets_of_5_over_15": cuantos grupos completos de 5 TR el jugador
+        tiene por encima de 15 (ej. Generous Funding: "Gain 2 M€ for each
+        ... set of 5 TR over 15").
+    """
+    if counter == "city_tiles_placed":
+        return globals_["city_tiles_placed"]
+    if counter == "tr_sets_of_5_over_15":
+        return max(0, (player["tr"] - 15) // 5)
+    raise CardEffectError(f"Contador '{counter}' no soportado en resource_delta_per_capped_counter")
+
+
 def check_card_requirements(
     requirements: dict | None,
     globals_: GlobalParameters,
@@ -787,6 +806,7 @@ def apply_card_effect(
     target_card_id: str | None = None,
     target_card_id_2: str | None = None,
     discard_card_id: str | None = None,
+    influence: int = 0,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
@@ -891,6 +911,24 @@ def apply_card_effect(
         N (default 1)} -- igual que production_delta_per_colony pero suma
         al STOCK del recurso en vez de a su produccion (ej. Ceres Tech
         Market: +2 MC de stock por cada colonia propia).
+      - "resource_delta_per_capped_counter": {"counter": "<ver
+        _resolve_capped_counter>", "resource": "<recurso>", "per_unit": N,
+        "cap": 5 (default), "influence_direction": "add"|"subtract"
+        (default "add")} -- expansion Turmoil, vocabulario de los Global
+        Event cards (ver turmoil.py y tools.resolve_global_event). El
+        contador se calcula sin tope, se capa a `cap` (regla oficial:
+        "any Global Event that counts something... can only count up to a
+        maximum of 5"), y se ajusta sumando o restando la Influencia del
+        jugador (parametro `influence`, calculada por el caller con
+        turmoil.compute_influence -- rules_engine.py no conoce Turmoil,
+        solo recibe el numero ya resuelto, mismo desacople que
+        wild_tag_choice/card_resource_to_pay). El resultado nunca es
+        negativo (se clampea a 0 antes de multiplicar). Ej. Generous
+        Funding: counter="tr_sets_of_5_over_15", resource="mc",
+        per_unit=2, influence_direction="add" (+influencia SUMA sets);
+        Riots: counter="city_tiles_placed", resource="mc", per_unit=-4,
+        influence_direction="subtract" (+influencia RESTA del conteo de
+        ciudades, reduciendo cuanto se pierde).
       - "production_delta_per_tag_pair": {"tag_a": "<tag>", "tag_b": "<tag>",
         "production": "<recurso>_production", "per_set": N (default 1)} --
         suma N por cada PAR completo de tags "<tag_a>"+"<tag_b>" ya jugados
@@ -1016,6 +1054,15 @@ def apply_card_effect(
         key = spec["resource"]
         count = len(player["colonies_owned"])
         new_player[key] = max(0, new_player[key] + count * spec.get("per_colony", 1))
+
+    if "resource_delta_per_capped_counter" in effects:
+        spec = effects["resource_delta_per_capped_counter"]
+        raw_count = _resolve_capped_counter(spec["counter"], new_player, new_globals)
+        capped = min(raw_count, spec.get("cap", 5))
+        signed_influence = influence if spec.get("influence_direction", "add") == "add" else -influence
+        count = max(0, capped + signed_influence)
+        key = spec["resource"]
+        new_player[key] = max(0, new_player[key] + count * spec.get("per_unit", 1))
 
     if "production_delta_per_tag_pair" in effects:
         spec = effects["production_delta_per_tag_pair"]

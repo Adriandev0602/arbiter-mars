@@ -4682,3 +4682,58 @@ def test_colonial_representation_mc_per_colony():
         player, new_global_parameters(), {"resource_delta_per_colony": {"resource": "mc", "per_colony": 3}},
     )
     assert new_player["mc"] == 3
+
+
+# --- Global Events de Turmoil: contador capado + Influencia -----------------
+
+def test_generous_funding_gain_2mc_per_influence_and_capped_tr_sets():
+    player = {**new_player_state(), "tr": 42}  # 5 sets de 5 TR sobre 15
+    globals_ = new_global_parameters()
+    effects = {
+        "resource_delta_per_capped_counter": {
+            "counter": "tr_sets_of_5_over_15", "resource": "mc", "per_unit": 2, "influence_direction": "add",
+        }
+    }
+    new_player, _ = apply_card_effect(player, globals_, effects, influence=2)
+    assert new_player["mc"] == (5 + 2) * 2  # 14, ejemplo exacto del rulebook
+
+
+def test_generous_funding_caps_tr_sets_at_5():
+    player = {**new_player_state(), "tr": 100}  # muchisimos sets, capa a 5
+    effects = {
+        "resource_delta_per_capped_counter": {
+            "counter": "tr_sets_of_5_over_15", "resource": "mc", "per_unit": 2, "influence_direction": "add",
+        }
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=0)
+    assert new_player["mc"] == 5 * 2
+
+
+def test_riots_lose_4mc_per_city_capped_reduced_by_influence():
+    player = {**new_player_state(), "mc": 100}
+    globals_ = {**new_global_parameters(), "city_tiles_placed": 7}
+    effects = {
+        "resource_delta_per_capped_counter": {
+            "counter": "city_tiles_placed", "resource": "mc", "per_unit": -4, "influence_direction": "subtract",
+        }
+    }
+    new_player, _ = apply_card_effect(player, globals_, effects, influence=1)
+    assert new_player["mc"] == 100 - 4 * 4  # ejemplo exacto del rulebook: 16 MC perdidos
+
+
+def test_riots_never_pays_negative_mc_below_zero():
+    player = {**new_player_state(), "mc": 2}
+    globals_ = {**new_global_parameters(), "city_tiles_placed": 7}
+    effects = {
+        "resource_delta_per_capped_counter": {
+            "counter": "city_tiles_placed", "resource": "mc", "per_unit": -4, "influence_direction": "subtract",
+        }
+    }
+    new_player, _ = apply_card_effect(player, globals_, effects, influence=0)
+    assert new_player["mc"] == 0
+
+
+def test_unsupported_counter_raises():
+    effects = {"resource_delta_per_capped_counter": {"counter": "bogus", "resource": "mc", "per_unit": 1}}
+    with pytest.raises(CardEffectError):
+        apply_card_effect(new_player_state(), new_global_parameters(), effects)
