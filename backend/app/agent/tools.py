@@ -752,7 +752,9 @@ def play_card(
 
     draw_tag_spec = effects.get("draw_cards_matching_tag")
     if draw_tag_spec is not None:
-        new_player = _draw_cards_matching_tag(new_player, draw_tag_spec["tag"], draw_tag_spec["n"])
+        specs = draw_tag_spec if isinstance(draw_tag_spec, list) else [draw_tag_spec]
+        for spec in specs:
+            new_player = _draw_cards_matching_tag(new_player, spec["tag"], spec["n"])
 
     greenery_spec = effects.get("place_greenery")
     if greenery_spec is not None:
@@ -1477,9 +1479,10 @@ def get_turmoil_state(player_id: str) -> dict:
     return {"turmoil": dict(turmoil), "influence": influence}
 
 
-def _draw_cards_matching_tag(player: dict, tag: str, n: int) -> dict:
+def _draw_cards_matching_tag(player: dict, tag, n: int) -> dict:
     """
-    Roba las primeras `n` cartas del mazo que tengan `tag`, salteando (sin
+    Roba las primeras `n` cartas del mazo que tengan `tag` (un tag suelto o
+    una LISTA de tags, en cuyo caso vale cualquiera de ellos), salteando (sin
     descartar ni reordenar) las que no matcheen -- las no elegidas quedan en
     el mazo, en su orden original. Necesita el catalogo `cards` para conocer
     los tags, por eso vive en tools.py y no en el motor puro (mismo criterio
@@ -1492,11 +1495,29 @@ def _draw_cards_matching_tag(player: dict, tag: str, n: int) -> dict:
     if not deck:
         return player
     res = supabase.table("cards").select("id,tags").in_("id", deck).execute()
-    tagged = {row["id"] for row in (res.data or []) if tag in (row["tags"] or [])}
-    drawn = [cid for cid in deck if cid in tagged][:n]
+    wanted = tag if isinstance(tag, list) else [tag]
+    tagged = {
+        row["id"] for row in (res.data or [])
+        if any(t in (row["tags"] or []) for t in wanted)
+    }
+
+    # Se revela DE A UNA desde el tope hasta juntar N con el tag. Las
+    # reveladas que no matchean se DESCARTAN (no vuelven al mazo): FAQ
+    # oficial, "Once the card(s) have been obtained, all other revealed
+    # cards are added to the discard pile". El motor no modela pila de
+    # descarte, asi que simplemente salen del mazo. Las cartas por debajo
+    # del punto donde se corto quedan intactas y en su orden.
+    drawn: list[str] = []
+    revealed_count = 0
+    for cid in deck:
+        revealed_count += 1
+        if cid in tagged:
+            drawn.append(cid)
+            if len(drawn) == n:
+                break
     if not drawn:
         return player
-    remaining = [cid for cid in deck if cid not in drawn]
+    remaining = deck[revealed_count:]
     return {**player, "deck": remaining, "hand": [*player["hand"], *drawn]}
 
 
@@ -1624,7 +1645,8 @@ def resolve_global_event(
 def play_prelude(
     player_id: str, prelude_id: str,
     ocean_hex_ids: list[str] | None = None, city_hex_ids: list[str] | None = None,
-    greenery_hex_id: str | None = None,
+    greenery_hex_id: str | None = None, delegate_party_choices: list[str] | None = None,
+    build_colony_id: str | None = None, discard_card_ids: list[str] | None = None,
 ) -> dict:
     """
     Juega una carta PRELUDE (expansion Prelude). A diferencia de play_card:
@@ -1662,7 +1684,9 @@ def play_prelude(
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
 
-    new_player, new_globals = engine.apply_card_effect(player, globals_, effects)
+    new_player, new_globals = engine.apply_card_effect(
+        player, globals_, effects, discard_card_ids=discard_card_ids,
+    )
 
     # Colocacion de tiles: mismo patron de diff de contadores que play_card.
     board = None
@@ -1701,7 +1725,47 @@ def play_prelude(
 
     draw_tag_spec = effects.get("draw_cards_matching_tag")
     if draw_tag_spec is not None:
-        new_player = _draw_cards_matching_tag(new_player, draw_tag_spec["tag"], draw_tag_spec["n"])
+        # Acepta un spec suelto o una LISTA de specs, para cartas que piden
+        # N de un tag Y M de otro (ej. Planetary Alliance: 1 jovian + 1 venus).
+        specs = draw_tag_spec if isinstance(draw_tag_spec, list) else [draw_tag_spec]
+        for spec in specs:
+            new_player = _draw_cards_matching_tag(new_player, spec["tag"], spec["n"])
+
+    if effects.get("place_delegates"):
+        num = effects["place_delegates"]
+        chosen = delegate_party_choices or []
+        if len(chosen) != num:
+            raise ValueError(f"Esta prelude coloca {num} delegado(s); se recibieron {len(chosen)}")
+        if new_player["reserve_delegates"] < num:
+            raise engine.InsufficientResourcesError(
+                f"El jugador tiene {new_player['reserve_delegates']} delegados en la Reserva, se necesitan {num}"
+            )
+        turmoil = _load_turmoil()
+        for party in chosen:
+            turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+        new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] - num}
+        _save_turmoil(turmoil)
+
+    build_colony_spec = effects.get("build_colony")
+    if build_colony_spec:
+        if build_colony_id is None:
+            raise ValueError(f"La prelude '{prelude_id}' requiere build_colony_id")
+        allow_dup = isinstance(build_colony_spec, dict) and bool(build_colony_spec.get("allow_duplicate"))
+        colonies = _load_colonies()
+        new_colonies, placement_bonus = colonieslib.build_colony(
+            colonies, build_colony_id, player_id, allow_duplicate=allow_dup,
+        )
+        new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], build_colony_id]}
+        for key, delta in placement_bonus.items():
+            new_player[key] = new_player[key] + delta
+        _save_colonies(new_colonies)
+
+    # Pasivos permanentes: se registran ANTES de disparar los bonus por tag,
+    # para que los que se auto-disparan con su propio tag (ej. Albedo Plants:
+    # "+3 calor por cada tag plant, incluida esta") funcionen -- mismo orden
+    # que tools.play_card.
+    if effects.get("passive"):
+        new_player = engine.register_passive_effect(new_player, prelude_id, effects["passive"])
 
     new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
     new_player = engine.increment_tags_played(new_player, tags)

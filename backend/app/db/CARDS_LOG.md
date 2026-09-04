@@ -501,6 +501,54 @@ en la cola con `reviewed = false`.
 - **P91 WG Project** — requiere ser Chairman (ya resuelto), pero además un sub-mazo de Prelude
   separado y un mecanismo para jugar gratis una carta arbitraria revelada.
 
+### Prelude bloque 2: 26 de 46, y un bug de reglas encontrado
+
+Cuatro agentes tomaron las 46 restantes (P25-P67 + promos X). **26 cargadas, 20 pendientes.**
+
+**Bug encontrado en código ya mergeado.** Un agente marcó Acquired Space Agency como pendiente
+porque necesita "revelar del mazo hasta encontrar 2 cartas con tag space y **descartar el
+resto**", y notó que nuestra pieza no hacía eso. Al ir a la fuente, el FAQ oficial lo confirma:
+*"Once the card(s) have been obtained, all other revealed cards are added to the discard pile."*
+`draw_cards_matching_tag` dejaba las reveladas no-coincidentes **dentro del mazo**, así que las
+cartas podían volver a salir. Afectaba a tres cartas ya cargadas: **Experimental Forest**,
+**Ishtar Expedition** y **Stratospheric Expedition**. Corregido: ahora revela de a una desde el
+tope, descarta las que no matchean y corta al juntar las N. El fix además destrabó la carta que
+lo expuso.
+
+**Dos piezas que los agentes creyeron faltantes y ya existían.** Tres cartas (P56, P61, P65) se
+declararon pendientes por "no hay forma de robar una carta por tag", cuando
+`draw_cards_matching_tag` hace exactamente eso -- no la vieron porque vive en `tools.py` y no en
+el docstring de `apply_card_effect`. Lo mismo con `build_colony_id` en `play_prelude`, que se
+había agregado en esta misma sesión. Dos de esas cartas terminaron cargadas.
+
+**Aporte del agente del grupo B:** cruzó los íconos ambiguos contra el repo open-source
+`terraforming-mars/terraforming-mars` para confirmar tags con certeza, y estableció que **el
+estallido negro tipo sol es el tag `space`** (no una insignia de expansión). Vale sumarlo a la
+lista de trampas de íconos.
+
+**Piezas nuevas del bloque:** pasivo `on_tag_played_resource_delta` (generaliza
+`on_tag_played_mc_delta` a cualquier recurso -- Albedo Plants da calor, Soil Bacteria da
+plantas); `tag_filter` acepta LISTA en `card_cost_discount_mc` (Space Lanes: "planet tag" son
+tres tags); `draw_cards_matching_tag` acepta lista de specs y lista de tags (Planetary Alliance:
+1 jovian + 1 venus); y `play_prelude` ahora resuelve delegados, colonias, descartes y pasivos.
+
+**20 pendientes, agrupadas por la pieza que les falta:**
+- **Cartas activas / acciones repetibles en preludes** (4): Applied Science, Board of Directors,
+  Floating Trade Hub, Main Belt Asteroids, World Government Advisor. `prelude_cards` solo modela
+  efectos inmediatos; no hay registro en `active_cards` ni `use_card_action` para preludes.
+- **Robar filtrando por propiedad del catálogo que no es un tag** (3): Atmospheric Enhancers
+  (ícono de floater), High Circles (requisito de partido), Nobel Prize (que tenga requisitos).
+- **Hook genérico "subió el TR" / "subió producción"** (3): Preservation Program, Suitable
+  Infrastructure, Terraforming Deal. No hay un punto único donde el motor otorgue TR.
+- **Pasivos de eventos nuevos** (3): Colony Trade Hub (al colocarse cualquier colonia), Corridors
+  of Power (al volverse party leader), Venus Contract (por cada paso de Venus).
+- **Elección de recurso estándar como costo/destino** (2): Focused Organization, Industrial
+  Complex (esta además necesita "subir a 1 todas las producciones que estén por debajo").
+- **Corporaciones, no modeladas** (1): Merger.
+- **Sub-mazo Prelude drafteable** (2): New Partner y Double Down (esta además necesita copiar
+  el `effects` de otra prelude en runtime). Misma familia que WG Project.
+- **Subir todos los tracks de colonia a la vez** (1): Early Colonization.
+
 ### Prelude: mazo propio (categoría que faltaba entera)
 
 **Descubrimiento (2026-09-04).** Buscando "las Prelude que faltan" apareció algo más grande: las
