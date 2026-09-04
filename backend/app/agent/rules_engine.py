@@ -575,6 +575,7 @@ def check_card_requirements(
     requirements: dict | None,
     globals_: GlobalParameters,
     player: PlayerState | None = None,
+    wild_tag_choice: str | None = None,
 ) -> None:
     """
     Valida que el estado del tablero cumpla el requisito de la carta
@@ -602,7 +603,11 @@ def check_card_requirements(
         Rad-Suits: requiere 2 ciudades en juego).
       - "min_tag_count": {"tag": "<tag>", "count": N} -- requiere que el
         jugador haya jugado al menos N cartas con ese tag (ej. Mass
-        Converter: 5 tags de ciencia). Requiere pasar `player`.
+        Converter: 5 tags de ciencia). Requiere pasar `player`. Si el
+        jugador tiene el tag comodin "wild" jugado (ej. Research
+        Coordination) y pasa `wild_tag_choice="<tag>"` que matchee el tag
+        de este requisito, los tags "wild" en juego cuentan como ese tag
+        para este chequeo puntual (ver parametro `wild_tag_choice` abajo).
       - "min_production": {"key": "<recurso>_production", "count": N} -- requiere
         que el jugador ya tenga esa produccion en al menos N (ej. Great
         Escarpment Consortium: requiere tener produccion de steel >= 1).
@@ -610,6 +615,14 @@ def check_card_requirements(
 
     requirements None o {} no exige nada. Lanza CardRequirementNotMetError
     si algun requisito no se cumple.
+
+    wild_tag_choice: OPCIONAL -- el tag que el jugador elige que representen
+    sus tags "wild" en juego (ej. Research Coordination: "the wild tag
+    counts as any tag of your choice when performing an action") para ESTE
+    chequeo puntual. Solo afecta "min_tag_count" -- si `spec["tag"]` matchea
+    `wild_tag_choice`, se suma `player["tags_played"].get("wild", 0)` al
+    conteo de ese tag. None si el jugador no tiene tags "wild" o no los
+    necesita para este requisito.
 
     Si `player` tiene el pasivo "global_requirements_tolerance_steps": N
     (ej. Adaptation Technology: N=2 -- "your global requirements are +2 or
@@ -647,6 +660,8 @@ def check_card_requirements(
             )
         for spec in specs:
             have = player["tags_played"].get(spec["tag"], 0)
+            if wild_tag_choice == spec["tag"]:
+                have += player["tags_played"].get("wild", 0)
             if have < spec["count"]:
                 raise CardRequirementNotMetError(
                     f"Requiere {spec['count']} tags de '{spec['tag']}' jugados, hay {have}"

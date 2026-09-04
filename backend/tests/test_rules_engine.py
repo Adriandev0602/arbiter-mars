@@ -4584,3 +4584,38 @@ def test_psychrophiles_passive_pays_plant_card_with_microbes():
     match = next(p for p in player["passive_effects"] if "card_resource_payment" in p)
     assert match["card_resource_payment"]["required_tag"] == "plant"
     assert match["card_resource_payment"]["value_mc"] == 2
+
+
+# --- Tag comodin "wild" (Research Coordination) -----------------------------
+
+def test_min_tag_count_ignores_wild_without_choice():
+    player = {**new_player_state(), "tags_played": {"science": 4, "wild": 1}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_tag_count": {"tag": "science", "count": 5}}, new_global_parameters(), player)
+
+
+def test_min_tag_count_wild_choice_covers_missing_tag():
+    player = {**new_player_state(), "tags_played": {"science": 4, "wild": 1}}
+    check_card_requirements(
+        {"min_tag_count": {"tag": "science", "count": 5}},
+        new_global_parameters(),
+        player,
+        wild_tag_choice="science",
+    )
+
+
+def test_min_tag_count_wild_choice_does_not_apply_to_unmatched_tag():
+    player = {**new_player_state(), "tags_played": {"science": 4, "wild": 1}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"min_tag_count": {"tag": "science", "count": 5}},
+            new_global_parameters(),
+            player,
+            wild_tag_choice="earth",
+        )
+
+
+def test_research_coordination_no_immediate_effect_just_wild_tag():
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), {})
+    new_player = increment_tags_played(new_player, ("wild",))
+    assert new_player["tags_played"]["wild"] == 1

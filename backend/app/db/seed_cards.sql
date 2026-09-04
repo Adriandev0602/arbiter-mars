@@ -1549,3 +1549,26 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Pendiente resuelto: tag comodin "wild" (Research Coordination) -- pieza
+-- nueva de motor: parametro wild_tag_choice en check_card_requirements
+-- (rules_engine.py) + tools.play_card. Si el jugador tiene tags "wild" en
+-- juego (basta con que la carta tenga tag "wild", no hace falta pasivo
+-- registrado -- el mecanismo lee tags_played["wild"] directo), puede
+-- declarar a que tag representan para cubrir un requisito puntual
+-- "min_tag_count" (ej. Mass Converter: 5 tags de ciencia). Alcance: solo
+-- min_tag_count por ahora, que es donde vive todo el catalogo cargado que
+-- cuenta tags -- el resto de los usos de tags_played son efectos
+-- inmediatos de OTRAS cartas al jugarse, no requisitos, y no matchean el
+-- texto impreso ("the wild tag counts as any tag of your choice when
+-- performing an action").
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'research_coordination', 'Research Coordination', 4, '{wild}', null, '{}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;

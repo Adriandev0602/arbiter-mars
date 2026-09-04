@@ -324,6 +324,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `cloud_tourism` | Cloud Tourism | P69 | 11 MC | Tags jovian+venus, expansión **Venus Next** (promo). +1 producción MC por cada par de tags earth+venus jugados (pieza nueva `production_delta_per_tag_pair`, usa el mínimo de ambos conteos). Acción repetible sin costo: +1 floater a sí misma |
 | `dirigibles` | Dirigibles | 222 | 11 MC | Tag venus. Pasivo: floaters guardados en esta carta valen 3 M€ cada uno para pagar cartas con tag venus (pieza nueva `card_resource_payment`, resuelta 2026-09-04 — ver sección dedicada abajo). Acción repetible sin costo: +1 floater a CUALQUIER carta activa elegida, incluida ella misma (pieza nueva `target_card_resource_delta_allow_self`) |
 | `psychrophiles` | Psychrophiles | P39 | 2 MC | Tag microbe, expansión **Prelude**. Requiere temperatura ≤-20°C. Pasivo: microbios guardados en esta carta valen 2 M€ cada uno para pagar cartas con tag plant (mismo `card_resource_payment` que Dirigibles). Acción repetible sin costo: +1 microbio a sí misma |
+| `research_coordination` | Research Coordination | P40 | 4 MC | Tag **wild** (ícono "?"), expansión **Prelude**. Sin efecto inmediato. El tag "wild" cuenta como cualquier tag elegido por el jugador para cubrir un requisito `min_tag_count` puntual al jugar OTRA carta (pieza nueva `wild_tag_choice`, resuelta 2026-09-04 — ver sección dedicada abajo) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -335,9 +336,36 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). **Actualización bloque 25:** ya son 4 cartas las que necesitan esta pieza (ver Airliners y Floater Leasing abajo) — sube de prioridad para una sesión dedicada. |
 | C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
 | C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
-| P40 | Research Coordination | Pasivo: "the wild tag counts as any tag of your choice when performing an action" — la carta imprime un tag "wild" (ícono "?"). Los tags hoy son strings planos y todo el sistema de conteo (`tags_played`, `increment_tags_played`, cualquier requirement `min_tag_count`) asume coincidencia exacta de string. Modelar un tag comodín requiere tocar el subsistema de conteo de tags en varios puntos a la vez (no una extensión chica de vocabulario) — pospuesta como refactor propio, no como pieza aislada. |
 | P70 | Colonial Envoys | Prelude 2. Depende de la mecánica de **Turmoil** (delegados, partidos, "Unity ruling", chairman, influencia) — expansión entera sin construir todavía, del mismo tamaño/alcance que Colonies cuando se decidió construirla. No se puede cargar parcialmente sin la pieza de "influencia". Igual que Colonial Representation (P71) abajo, queda pendiente de una decisión explícita de alcance del usuario antes de construir nada de Turmoil (a diferencia de Colonies, que sí se aprobó explícitamente en el bloque 25). |
 | P71 | Colonial Representation | Prelude 2. "+3 MC por cada colonia propia" es técnicamente cargable ya con la pieza existente `resource_delta_per_colony` (la misma que usa Ceres Tech Market, bloque 30) — pero el resto de la carta es "+1 influencia" de forma OBLIGATORIA (no "hasta N", no opcional), y el motor no tiene ningún concepto de influencia/Turmoil todavía. Cargar solo la mitad de la carta sería deshonesto respecto al efecto real impreso. Misma dependencia de Turmoil que Colonial Envoys (P70) — pendiente de la misma decisión de alcance. |
+
+### Tag comodín "wild" (Research Coordination)
+
+**Resuelto (2026-09-04).** El texto impreso es "After being played, when you perform an
+action, the wild tag counts as any tag of your choice" — se interpretó "perform an action" en
+el sentido amplio del reglamento (una de las 4 acciones de turno, incluye jugar una carta), y
+se buscó dónde vive HOY en el catálogo cargado algo que cuente tags de forma que este comodín
+pueda cubrir de verdad: el único lugar es `check_card_requirements` → `min_tag_count` (ej. Mass
+Converter: requiere 5 tags de ciencia), que se chequea al intentar JUGAR otra carta. El resto de
+los usos de `tags_played` en el motor (`production_delta_per_tag`, `tr_delta_per_tag`,
+`target_card_resource_delta_per_tag`, etc.) son efectos INMEDIATOS calculados al jugar la propia
+carta que los tiene, no requisitos — extender el comodín ahí sería inventar alcance que la carta
+no pide.
+
+- No hace falta ningún campo nuevo en `PlayerState` ni pasivo registrado: basta con que
+  `research_coordination` tenga tag `"wild"` en su fila de `cards` — `increment_tags_played` ya
+  suma cualquier string de tag a `tags_played` sin cambios, así que `tags_played["wild"]` queda
+  disponible automáticamente en cuanto se juega la carta.
+- `check_card_requirements` suma el parámetro opcional `wild_tag_choice: str | None`. Si
+  `requirements.min_tag_count.tag` coincide con `wild_tag_choice`, se suma
+  `player["tags_played"].get("wild", 0)` al conteo de ese tag para ESE chequeo puntual (no
+  altera `tags_played` real, no es permanente — el jugador re-declara la elección cada vez que
+  la necesita).
+- `tools.play_card` suma el parámetro `wild_tag_choice`, que reenvía directo al motor.
+
+No cambia el requirement de ninguna carta ya cargada — solo hace que, si el jugador tiene
+Research Coordination en juego, pueda declarar `wild_tag_choice` al jugar una carta con
+`min_tag_count` que de otra forma no alcanzaría a cumplir.
 
 ### Pago con recurso de carta (Dirigibles, Psychrophiles)
 
