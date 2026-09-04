@@ -315,6 +315,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `urban_decomposers` | Urban Decomposers | C48 | 6 MC | Tags building+microbe. Requiere 1 ciudad y 1 colonia en juego. +1 producción plantas, +2 microbios a OTRA carta activa elegida |
 | `warp_drive` | Warp Drive | C49 | 14 MC | Tag science. Requiere 5 tags de ciencia. Pasivo: cartas con tag space cuestan 4 MC menos |
 | `house_printing` | House Printing | P36 | 10 MC | Tag building, expansión **Prelude** (primera carta cargada de esta expansión — no necesita mecánica propia, se dealt 2 gratis en el setup real, no modelado todavía). +1 producción steel |
+| `titan_floating_launch_pad` | Titan Floating Launch-Pad | C44 | 18 MC | Tag jovian. +2 floaters a cualquier carta Jovian elegida. Acción con elección: +1 floater a OTRA carta Jovian elegida, O gastar 1 floater propio → comerciar GRATIS (pieza nueva `free_trade`, resuelta 2026-09-03 — ver sección dedicada abajo) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -327,7 +328,6 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 222 | Dirigibles | Pasivo: "when playing a Venus tag, floaters [guardados en ESTA carta] may be used as payment, and are worth 3 M€ each" — los floaters acumulados en una carta activa funcionan como una TERCERA moneda de pago (como acero/titanio, pero el stock vive en una carta, no en el jugador, y solo aplica a cartas con tag Venus). `calculate_card_payment`/`compute_conversion_rates` solo conocen mc/steel/titanium del jugador — necesitaría un parámetro nuevo tipo `floater_card_id`+`floaters_to_pay` en `tools.play_card`, validar que esa carta tenga tag Venus el objetivo, y sumar `floaters_to_pay * 3` al pago igual que steel/titanium. Pieza real de pago, no de efecto — misma categoría que Self-Replicating Robots (mecánica de pago no trivial), pospuesta para abordarla con foco dedicado en vez de forzarla en un bloque de revisión normal. Mismo patrón se repetirá en más cartas Venus Next que usan floaters como pago (verificar cuando aparezcan). |
 | C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
 | C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
-| C44 | Titan Floating Launch-Pad (Colonies) | Acción con elección: [+1 floater a CUALQUIER carta Jovian] (sin problema, ya cargable) O [gastar 1 floater propio → comerciar GRATIS, sin pagar el costo normal de 9 MC/3 energía/3 titanio]. La segunda rama exige integrar `use_card_action` (que hoy no conoce `colonies.py` en absoluto) con la mecánica de comercio (`tools.use_trade_fleet`) en una sola acción: gastar recurso de la carta + elegir `colony_id` + resolver `trade_with_colony` sin pasar por el costo normal. Pieza real de integración entre dos subsistemas, no una extensión chica — pospuesta en vez de forzar una implementación frágil. |
 
 ### Colonies: mecánica de colonias/comercio
 
@@ -365,6 +365,20 @@ carta SIN cobrar los 17 MC del proyecto estándar (ya incluidos en el costo de l
 Ice Moon Colony e Interplanetary Colony Ship. También `mc_per_card_resource` en `use_card_action`
 (da MC por recurso guardado en la carta SIN gastarlo, con tope opcional -- distinto de
 `convert_card_resource_amount`, que sí gasta) para Jupiter Floating Station.
+
+**Resuelto (2026-09-03):** la pieza que faltaba para Titan Floating Launch-Pad (C44) — su
+acción "gastar 1 floater propio para comerciar GRATIS" — quedó implementada como flag nuevo
+`free_trade` en el vocabulario de `gains` de `use_card_action`. A diferencia de las demás piezas
+de colonias, `rules_engine.py` NO lo procesa (a propósito, ese módulo no conoce `colonies.py`,
+ver CLAUDE.md sección 3) — `tools.use_card_action` lo detecta ANTES de llamar al motor (mirando
+la rama de `choice` ya resuelta), exige el parámetro nuevo `trade_colony_id`, deja que el motor
+cobre el costo declarado de la acción (ej. 1 floater guardado) y DESPUÉS llama
+`colonies.trade_with_colony` directo, sin cobrar el costo normal de comerciar (9 MC/3 energía/3
+titanio) ni gastar una flota de comercio propia. Tests:
+`test_titan_floating_launch_pad_action_choice_target_or_cost_only_for_free_trade` en
+`test_rules_engine.py` (la parte que sí vive en el motor); la integración completa con
+`colonies.py` no se testea a nivel `rules_engine.py` por el mismo motivo que `build_colony`/
+`place_special_tile` tampoco se testean ahí -- vive enteramente en `tools.py`.
 
 **Resuelto (2026-09-02):** la pieza que faltaba para Lava Flows (140) — colocar
 tile en uno de 4 hexágonos volcánicos nombrados individualmente — quedó

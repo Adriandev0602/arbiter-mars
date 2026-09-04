@@ -140,10 +140,12 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 
 ### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→29 + Venus Next + Lava Flows + Colonies)
 
-**Progreso:** catálogo en **297 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-28 y la mecánica de colonias/comercio, Lava Flows (140). `card_review_queue` tiene
-193 filas `reviewed = true` y **111 sin revisar** — el próximo bloque (30) son las filas #1-10
-de `select * from card_review_queue where reviewed = false order by id limit 10`.
+**Progreso:** catálogo en **298 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-28 y la mecánica de colonias/comercio, Lava Flows (140); el bloque 29 (rama
+`feat/review-block-29`, incluye la resolución de Titan Floating Launch-Pad) todavía no está
+mergeado. `card_review_queue` tiene 194 filas `reviewed = true` y **111 sin revisar** — el
+próximo bloque (30) son las filas #1-10 de `select * from card_review_queue where reviewed =
+false order by id limit 10`.
 
 **Decisión de alcance (2026-09-02/03):** primero entró **Venus Next** (bloque 20 completo era
 de esa expansión, ver sección 7). El bloque 25 trajo la primera tanda de **Colonies** -- el
@@ -173,13 +175,20 @@ income + colony bonus, reset de track, paso de producción de colonias en la fas
 cartas que ignoran la restricción de 1 colonia por jugador por tile -- Research Colony, Space
 Port Colony), `adjust_colony_tracks`, `gain_all_colony_bonuses`, `mc_per_colony_in_play`,
 `production_delta_per_colony_in_play`. Requirements nuevos: `min_colonies_owned`/`max_colonies_owned`.
-Solo **Callisto** cargada en `COLONY_DEFS` (verificada con dos fuentes independientes) -- las
+También `free_trade` (bloque 29, resuelto 2026-09-03) en el vocabulario de `gains` de
+`use_card_action` -- a diferencia de las demás piezas de colonias, `rules_engine.py` NO lo
+procesa (se mantiene sin depender de `colonies.py`, ver sección 3 más abajo): `tools.use_card_action`
+lo detecta antes de llamar al motor y, después de que este cobre el costo declarado de la
+acción, llama `colonies.trade_with_colony` directo sin cobrar el costo normal de comerciar ni
+gastar flota (parámetro nuevo `trade_colony_id`) -- desbloqueó Titan Floating Launch-Pad, la
+última carta pendiente de Colonies. Solo **Callisto** cargada en `COLONY_DEFS` (verificada con
+dos fuentes independientes) -- las
 otras 10 colonias reales del juego quedan sin cargar hasta verificarlas igual que el catálogo
 de cartas; el mecanismo ya es genérico, agregar una colonia nueva es solo datos, no código. Ver
 detalle completo en `CARDS_LOG.md`, sección "Colonies: mecánica de colonias/comercio". Tests:
 `test_colonies.py`.
 
-**Bloques 21-29, 85 de 90 cargadas** (5 pendientes, ver abajo). Piezas de motor nuevas
+**Bloques 21-29, 86 de 90 cargadas** (4 pendientes, ver abajo). Piezas de motor nuevas
 agregadas a lo largo de los nueve bloques, todas extensiones chicas de vocabulario existente:
 - `production_delta_per_tag` acepta una LISTA de specs (Gyropolis, bloque 21).
 - `target_card_resource_delta_per_tag` (Hydrogen to Venus, bloque 21).
@@ -222,10 +231,6 @@ pieza de mecánica ya diagnosticada pero no implementada:**
 - **Dirigibles** (222, Venus Next): floaters guardados en la carta valen 3 M€ como pago para
   cartas Venus -- tercera moneda de pago cuyo stock vive en una carta, no en el jugador. Misma
   categoría que Self-Replicating Robots (mecánica de pago no trivial).
-- **Titan Floating Launch-Pad** (C44, Colonies): una de sus dos ramas de acción es "gastar 1
-  floater propio para comerciar GRATIS" -- integra `use_card_action` (que hoy no conoce
-  `colonies.py`) con `tools.use_trade_fleet` en una sola acción. Pieza de integración entre
-  subsistemas, no una extensión chica.
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
 checkout -b feat/review-block-30`, consultar

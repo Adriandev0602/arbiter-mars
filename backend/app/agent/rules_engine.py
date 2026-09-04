@@ -1213,6 +1213,14 @@ def use_card_action(
         carta, SIN gastarlos (a diferencia de convert_card_resource_amount,
         que si los gasta), limitado a `cap` si esta presente (ej. Jupiter
         Floating Station: 1 MC por floater guardado, maximo 4).
+        "free_trade": true -- NO se procesa aca (este motor no conoce
+        colonies.py a proposito, ver CLAUDE.md seccion 3): es un flag que
+        `tools.use_card_action` detecta ANTES de llamar a esta funcion,
+        para comerciar sin cobrar el costo normal de comerciar despues de
+        que esta funcion resuelva el "cost" propio de la accion (ej. gastar
+        1 floater guardado) (ej. Titan Floating Launch-Pad: "spend 1
+        floater here to trade for free"). Ver tools.use_card_action,
+        parametro `trade_colony_id`.
         "reserve_card_from_hand": {"initial_resources": N (default 2)} --
         reserva `reserved_card_id` (obligatorio, debe estar en la mano)
         sobre la propia carta, ver reserve_card_in_slot (ej. Self-

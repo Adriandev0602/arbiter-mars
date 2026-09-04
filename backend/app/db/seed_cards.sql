@@ -1456,3 +1456,23 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Resuelta 2026-09-03: Titan Floating Launch-Pad (#C44) quedaba pendiente
+-- por su rama "comerciar gratis" -- ver pieza nueva "free_trade" en
+-- rules_engine.use_card_action / tools.use_card_action (parametro
+-- trade_colony_id).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'titan_floating_launch_pad', 'Titan Floating Launch-Pad', 18, '{jovian}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "target_card_resource_delta": 2,
+          "action": {"choice": [
+            {"gains": {"target_card_resource_delta": 1}},
+            {"cost": {"card_resource": 1}, "gains": {"free_trade": true}}
+        ]}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;

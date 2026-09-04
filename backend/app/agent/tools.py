@@ -731,6 +731,7 @@ def use_card_action(
     effect_amount: int | None = None,
     reserved_card_id: str | None = None,
     titanium_to_pay: int = 0,
+    trade_colony_id: str | None = None,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -767,6 +768,15 @@ def use_card_action(
             esta definido -- cuanto titanio declara pagar el jugador hacia
             ese costo (el resto se cubre con MC del stock). 0 (default) paga
             todo en MC.
+        trade_colony_id: OBLIGATORIO si `effects.action.gains.free_trade`
+            esta definido (expansion Colonies, ej. Titan Floating
+            Launch-Pad: "spend 1 floater here to trade for free") -- el id
+            de `colonies.COLONY_DEFS` con el que comerciar, debe estar en
+            juego y libre de flota. Comercia SIN cobrar el costo normal de
+            9 MC/3 energia/3 titanio ni gastar una flota de comercio propia
+            -- el costo real de esta accion es el que declare
+            `effects.action.cost` de la carta (ej. 1 floater guardado).
+            None si la accion no tiene esta mecanica.
 
     Returns:
         dict con el estado actualizado del jugador y, si la accion afecto
@@ -787,13 +797,13 @@ def use_card_action(
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
 
-    reserve_spec = None
+    resolved_spec = action_spec
     if effect_choice is not None and "choice" in (action_spec or {}):
         options = action_spec["choice"]
         if 0 <= effect_choice < len(options):
-            reserve_spec = options[effect_choice].get("gains", {}).get("reserve_card_from_hand")
-    else:
-        reserve_spec = (action_spec.get("gains", {})).get("reserve_card_from_hand")
+            resolved_spec = options[effect_choice]
+
+    reserve_spec = resolved_spec.get("gains", {}).get("reserve_card_from_hand")
     if reserve_spec is not None:
         if reserved_card_id is None:
             raise ValueError(f"La accion de '{card_id}' requiere reserved_card_id")
@@ -807,6 +817,10 @@ def use_card_action(
                 raise ValueError(
                     f"'{reserved_card_id}' no tiene ninguno de los tags requeridos {required_tags}"
                 )
+
+    free_trade = bool(resolved_spec.get("gains", {}).get("free_trade"))
+    if free_trade and trade_colony_id is None:
+        raise ValueError(f"La accion de '{card_id}' requiere trade_colony_id")
 
     new_player, new_globals = engine.use_card_action(
         player, globals_, card_id, action_spec, effect_choice, target_card_id=target_card_id,
@@ -827,6 +841,18 @@ def use_card_action(
                 raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
             board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
 
+    trade_result = None
+    if free_trade:
+        colonies = _load_colonies()
+        new_colonies, income_type, income_amount, colony_bonus = colonieslib.trade_with_colony(colonies, trade_colony_id)
+        new_player = dict(new_player)
+        new_player[income_type] = new_player[income_type] + income_amount
+        if player_id in new_colonies[trade_colony_id]["owners"]:
+            for key, delta in colony_bonus.items():
+                new_player[key] = new_player[key] + delta
+        _save_colonies(new_colonies)
+        trade_result = {"income_type": income_type, "income_amount": income_amount, "colony_bonus": colony_bonus}
+
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
@@ -835,10 +861,13 @@ def use_card_action(
     _log_transaction(
         player_id, "use_card_action",
         {"card_id": card_id, "effect_choice": effect_choice, "ocean_hex_ids": ocean_hex_ids,
-         "target_card_id": target_card_id, "effect_amount": effect_amount},
+         "target_card_id": target_card_id, "effect_amount": effect_amount, "trade_colony_id": trade_colony_id},
     )
 
-    return {"player": dict(new_player), "global_parameters": dict(new_globals)}
+    result = {"player": dict(new_player), "global_parameters": dict(new_globals)}
+    if trade_result is not None:
+        result.update(trade_result)
+    return result
 
 
 @tool
