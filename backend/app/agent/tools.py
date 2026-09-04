@@ -1620,11 +1620,107 @@ def resolve_global_event(
     return {"player": dict(new_player), "globals": dict(new_globals), "influence": influence}
 
 
+@tool
+def play_prelude(
+    player_id: str, prelude_id: str,
+    ocean_hex_ids: list[str] | None = None, city_hex_ids: list[str] | None = None,
+    greenery_hex_id: str | None = None,
+) -> dict:
+    """
+    Juega una carta PRELUDE (expansion Prelude). A diferencia de play_card:
+    las preludes se reparten gratis en el setup (2 por jugador), NO se pagan
+    y no tienen requisitos -- por eso viven en su propia tabla
+    `prelude_cards` (id, name, tags, effects) y no en `cards`.
+
+    Aplica `effects` con el mismo motor que las cartas de proyecto
+    (rules_engine.apply_card_effect), suma sus tags a `tags_played` y
+    resuelve la colocacion de tiles en el mapa igual que play_card (por
+    diferencia de contadores globales).
+
+    Args:
+        player_id: id del jugador.
+        prelude_id: id en `prelude_cards` (ej. "allied_bank").
+        ocean_hex_ids: OBLIGATORIO (con esa cantidad exacta) si la prelude
+            coloca oceano(s) (ej. Great Aquifer: 2).
+        city_hex_ids: idem para ciudades (ej. Early Settlement: 1).
+        greenery_hex_id: OBLIGATORIO si la prelude coloca un greenery (ej.
+            Experimental Forest).
+
+    Returns:
+        dict con el estado actualizado del jugador y de los parametros
+        globales.
+
+    Lanza ValueError si `prelude_id` no existe en el catalogo.
+    """
+    res = supabase.table("prelude_cards").select("*").eq("id", prelude_id).single().execute()
+    prelude = res.data
+    if prelude is None:
+        raise ValueError(f"Prelude '{prelude_id}' no encontrada en el catalogo")
+
+    effects = prelude.get("effects") or {}
+    tags = tuple(prelude.get("tags") or [])
+    player = _load_player(player_id)
+    globals_ = _load_global_parameters()
+
+    new_player, new_globals = engine.apply_card_effect(player, globals_, effects)
+
+    # Colocacion de tiles: mismo patron de diff de contadores que play_card.
+    board = None
+    oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
+    cities_delta = new_globals["city_tiles_placed"] - globals_["city_tiles_placed"]
+    if oceans_delta > 0 or cities_delta > 0 or effects.get("place_greenery") is not None:
+        board = _load_board()
+    if oceans_delta > 0:
+        chosen = ocean_hex_ids or []
+        if len(chosen) != oceans_delta:
+            raise ValueError(
+                f"Esta prelude coloca {oceans_delta} oceano(s); se recibieron {len(chosen)} hex_id(s)"
+            )
+        for hid in chosen:
+            if not boardlib.can_place_ocean(board, hid):
+                raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+    if cities_delta > 0:
+        chosen = city_hex_ids or []
+        if len(chosen) != cities_delta:
+            raise ValueError(
+                f"Esta prelude coloca {cities_delta} ciudad(es); se recibieron {len(chosen)} hex_id(s)"
+            )
+        for hid in chosen:
+            if not boardlib.can_place_city(board, hid):
+                raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hid}'")
+            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id)
+    greenery_spec = effects.get("place_greenery")
+    if greenery_spec is not None:
+        if greenery_hex_id is None:
+            raise ValueError(f"La prelude '{prelude_id}' requiere greenery_hex_id")
+        board, new_player = _place_greenery_and_apply_bonus(
+            board, new_player, greenery_hex_id, player_id,
+            ignore_restrictions=greenery_spec.get("ignore_restrictions", False),
+        )
+
+    draw_tag_spec = effects.get("draw_cards_matching_tag")
+    if draw_tag_spec is not None:
+        new_player = _draw_cards_matching_tag(new_player, draw_tag_spec["tag"], draw_tag_spec["n"])
+
+    new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
+    new_player = engine.increment_tags_played(new_player, tags)
+
+    _save_player(player_id, new_player)
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
+    if board is not None:
+        _save_board(board)
+    _log_transaction(player_id, "play_prelude", {"prelude_id": prelude_id})
+
+    return {"player": dict(new_player), "globals": dict(new_globals)}
+
+
 # Lista de tools que se bindean al LLM en graph.py
 ALL_TOOLS = [
     use_standard_project, convert_resources, run_production_phase,
     play_card, use_card_action, get_player_state, get_board_state,
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
-    lobby, resolve_new_government, get_turmoil_state, resolve_global_event,
+    lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
 ]

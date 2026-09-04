@@ -5302,3 +5302,62 @@ def test_mc_reduced_by_tag_never_below_zero():
     spec = {"cost": {"mc_reduced_by_tag": {"base": 12, "tag": "venus", "reduction_per_tag": 1}}, "gains": {}}
     new_player, _ = use_card_action(player, globals_, "venus_shuttles", spec)
     assert new_player["mc"] == 0  # gratis, no negativo
+
+
+# --- Cartas Prelude (mazo propio, sin costo) ------------------------------
+
+def test_prelude_allied_bank_production_and_stock():
+    new_player, _ = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"production_deltas": {"mc_production": 4}, "mc_delta": 3},
+    )
+    assert new_player["mc_production"] == 1 + 4
+    assert new_player["mc"] == 3
+
+
+def test_prelude_loan_trades_production_for_stock():
+    player = {**new_player_state(), "mc_production": 1}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"mc_production": -2}, "mc_delta": 30},
+    )
+    assert new_player["mc_production"] == -1  # el piso de MC es -5
+    assert new_player["mc"] == 30
+
+
+def test_prelude_great_aquifer_places_two_oceans_with_tr():
+    new_player, new_globals = apply_card_effect(
+        new_player_state(), new_global_parameters(), {"place_oceans": 2},
+    )
+    assert new_globals["oceans_placed"] == 2
+    assert new_player["tr"] == TR_START + 2
+
+
+def test_prelude_metal_rich_asteroid_temperature_and_resources():
+    new_player, new_globals = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"raise_temperature_steps": 1, "resource_deltas": {"titanium": 4, "steel": 4}},
+    )
+    assert new_globals["temperature"] == TEMPERATURE_MIN + TEMPERATURE_STEP
+    assert new_player["titanium"] == 4 and new_player["steel"] == 4
+    assert new_player["tr"] == TR_START + 1
+
+
+def test_prelude_nitrogen_shipment_raises_tr_directly():
+    new_player, new_globals = apply_card_effect(
+        new_player_state(), new_global_parameters(),
+        {"tr_delta": 1, "production_deltas": {"plant_production": 1}, "resource_deltas": {"mc": 5}},
+    )
+    assert new_player["tr"] == TR_START + 1
+    assert new_globals["temperature"] == TEMPERATURE_MIN  # sube TR sin tocar parametros
+    assert new_player["plant_production"] == 2 and new_player["mc"] == 5
+
+
+def test_prelude_business_empire_pays_its_own_cost():
+    player = {**new_player_state(), "mc": 6}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(),
+        {"production_deltas": {"mc_production": 6}, "mc_delta": -6},
+    )
+    assert new_player["mc"] == 0
+    assert new_player["mc_production"] == 1 + 6

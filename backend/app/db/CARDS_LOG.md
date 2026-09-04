@@ -501,6 +501,53 @@ en la cola con `reviewed = false`.
 - **P91 WG Project** — requiere ser Chairman (ya resuelto), pero además un sub-mazo de Prelude
   separado y un mecanismo para jugar gratis una carta arbitraria revelada.
 
+### Prelude: mazo propio (categoría que faltaba entera)
+
+**Descubrimiento (2026-09-04).** Buscando "las Prelude que faltan" apareció algo más grande: las
+cartas Prelude *propiamente dichas* — las que se reparten 2 gratis en el setup — **nunca habían
+entrado al pipeline**. `enqueue_card_review_queue.py` filtra `card.get("cat") != "Project"`, así
+que las categorías `Prelude` (70), `Corporation` (48) y `Automa` (78) del índice del sitio
+quedaron afuera desde el principio.
+
+Lo que veníamos cargando como "Prelude" eran las cartas de PROYECTO de esa expansión (scans
+P36-P42 y P68-P91). Las Prelude reales ocupan el rango complementario **P01-P35 y P43-P67**, más
+10 promos con numeración X. Son 70 en total: 44 de Prelude, 21 de Prelude 2 y 5 de Venus Next.
+
+**Modelo de datos:** las Prelude no tienen costo ni se compran, así que no encajan en `cards`.
+Tabla propia `prelude_cards` (id, name, tags, effects) + cola `prelude_review_queue`, mismo
+patrón que `global_events`. Tool nueva `tools.play_prelude(player_id, prelude_id, ...)`: aplica
+`effects` con el mismo `apply_card_effect` de siempre, suma los tags a `tags_played` y resuelve
+la colocación de tiles por diferencia de contadores, igual que `play_card`.
+
+Esto además destraba parcialmente **P91 WG Project**, que necesitaba justamente un sub-mazo
+Prelude identificable.
+
+**Bloque 1 (P01-P24): 22 cargadas, 2 pendientes.** Revisadas por 4 agentes en paralelo. Todas las
+cargadas usan vocabulario existente -- ninguna necesitó pieza nueva de motor.
+
+*Corrección de la revisión:* el agente del primer grupo reportó Allied Bank y Business Empire
+**sin tags**, describiendo el globo terráqueo de la esquina como "arte decorativo". Es
+exactamente así como se dibuja el tag `earth` en este juego. Verificado contra el scan y
+corregido a `["earth"]` en ambas. Es la tercera variante del mismo error de íconos (antes:
+recuadro de requisito leído como tags, y puntos de victoria leídos como TR).
+
+**Pendientes del bloque 1 — las dos por la MISMA pieza faltante:**
+- **Ecology Experts (P10)** — "play a card from hand, ignoring global requirements".
+- **Eccentric Sponsor (P11)** — "play a card from hand, reducing its cost by 25 M€".
+
+Las dos exigen **jugar otra carta de la mano como parte de resolver esta**, en el mismo instante.
+No alcanza con el vocabulario existente: `next_card_requirement_tolerance_steps` relaja N pasos
+de la PRÓXIMA carta jugada más tarde en la generación (no ignora el requisito por completo), y
+`next_card_discount_mc` es igual de diferido. Es la misma mecánica anidada que bloquea **WG
+Project (P91)** — ya son 3 cartas esperándola, lo que la vuelve candidata a una sesión dedicada.
+
+El FAQ oficial aporta las reglas exactas para cuando se implemente: solo se ignoran requisitos
+GLOBALES (temperatura/océanos/oxígeno/Venus), no los demás; la carta jugada **se paga igual** a
+precio de lista menos descuentos; el costo no baja de 0 (no se devuelve MC); y Ecology Experts y
+Eccentric Sponsor no pueden apuntar a la misma carta.
+
+**46 pendientes de revisar** en `prelude_review_queue`.
+
 ### Recursos tipados por carta activa (floaters entre cartas)
 
 **Resuelto (2026-09-04).** Hasta ahora `active_cards[card_id]["resources"]` era un contador SIN
