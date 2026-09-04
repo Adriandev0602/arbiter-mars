@@ -4397,3 +4397,33 @@ def test_warp_drive_requires_5_science_tags_passive_discounts_space_cards():
 def test_house_printing_steel_production():
     new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"steel_production": 1}})
     assert new_player["steel_production"] == 2
+
+
+# --- Resuelto: Titan Floating Launch-Pad (bloque 29, pieza pendiente) -------
+
+def test_titan_floating_launch_pad_action_choice_target_or_cost_only_for_free_trade():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "titan_floating_launch_pad")
+    player = register_active_card(player, "aerial_mappers")
+    action_spec = {"choice": [
+        {"gains": {"target_card_resource_delta": 1}},
+        {"cost": {"card_resource": 1}, "gains": {"free_trade": True}},
+    ]}
+    p1, _ = use_card_action(player, globals_, "titan_floating_launch_pad", action_spec, effect_choice=0, target_card_id="aerial_mappers")
+    assert p1["active_cards"]["aerial_mappers"]["resources"] == 1
+
+    # La rama "free_trade" solo cobra el costo declarado (1 floater guardado);
+    # el "free_trade" en si es responsabilidad de tools.use_card_action, no
+    # de este motor (que no conoce colonies.py) -- ver docstring.
+    player_with_floater = {**player, "active_cards": {**player["active_cards"], "titan_floating_launch_pad": {"resources": 1, "action_used": False}}}
+    p2, _ = use_card_action(player_with_floater, globals_, "titan_floating_launch_pad", action_spec, effect_choice=1)
+    assert p2["active_cards"]["titan_floating_launch_pad"]["resources"] == 0
+
+
+def test_titan_floating_launch_pad_immediate_effect_targets_any_jovian_card():
+    player = register_active_card(new_player_state(), "titan_floating_launch_pad")
+    player = register_active_card(player, "aerial_mappers")
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"target_card_resource_delta": 2}, target_card_id="aerial_mappers",
+    )
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
