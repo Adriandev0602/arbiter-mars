@@ -149,3 +149,23 @@ def test_adjust_colony_track_unknown_colony_raises():
     colonies = new_colonies(["callisto"])
     with pytest.raises(UnknownColonyError):
         adjust_colony_track(colonies, "ganymede", 1)
+
+
+def test_build_colony_allow_duplicate_bypasses_owner_check():
+    colonies = new_colonies(["callisto"])
+    colonies, _ = build_colony(colonies, "callisto", "player-1")
+    # Sin allow_duplicate, falla
+    with pytest.raises(ColonyFullError):
+        build_colony(colonies, "callisto", "player-1")
+    # Con allow_duplicate, el mismo jugador puede quedarse con un 2do slot
+    new_state, _ = build_colony(colonies, "callisto", "player-1", allow_duplicate=True)
+    assert new_state["callisto"]["owners"] == ["player-1", "player-1"]
+
+
+def test_build_colony_allow_duplicate_still_respects_max_3():
+    colonies = new_colonies(["callisto"])
+    colonies, _ = build_colony(colonies, "callisto", "player-1", allow_duplicate=True)
+    colonies, _ = build_colony(colonies, "callisto", "player-1", allow_duplicate=True)
+    colonies, _ = build_colony(colonies, "callisto", "player-1", allow_duplicate=True)
+    with pytest.raises(ColonyFullError):
+        build_colony(colonies, "callisto", "player-1", allow_duplicate=True)

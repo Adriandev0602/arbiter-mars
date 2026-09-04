@@ -435,8 +435,11 @@ def play_card(
             Colony -- "place a colony" como parte del efecto de la carta,
             SIN cobrar los 17 MC del proyecto estandar, ya incluidos en el
             costo de la carta) -- el id de `colonies.COLONY_DEFS`, debe
-            estar en juego (ver tools.setup_colonies). None si la carta no
-            tiene esta mecanica.
+            estar en juego (ver tools.setup_colonies). Si `effects.build_colony`
+            es `{"allow_duplicate": true}` en vez de `true` (ej. Research
+            Colony, Space Port Colony: "may be placed where you already
+            have a colony"), se ignora la restriccion normal de 1 colonia
+            por jugador por tile. None si la carta no tiene esta mecanica.
         colony_id_increase: OBLIGATORIO junto con `colony_id_decrease` si
             `effects.adjust_colony_tracks` esta definido (ej. Market
             Manipulation: subir el track de una colonia 1 paso, bajar el
@@ -589,11 +592,15 @@ def play_card(
             )
         new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
 
-    if effects.get("build_colony"):
+    build_colony_spec = effects.get("build_colony")
+    if build_colony_spec:
         if build_colony_id is None:
             raise ValueError(f"La carta '{card_id}' requiere build_colony_id")
+        allow_duplicate = isinstance(build_colony_spec, dict) and bool(build_colony_spec.get("allow_duplicate"))
         colonies = _load_colonies()
-        new_colonies, placement_bonus = colonieslib.build_colony(colonies, build_colony_id, player_id)
+        new_colonies, placement_bonus = colonieslib.build_colony(
+            colonies, build_colony_id, player_id, allow_duplicate=allow_duplicate,
+        )
         new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], build_colony_id]}
         for key, delta in placement_bonus.items():
             new_player[key] = new_player[key] + delta
@@ -617,6 +624,13 @@ def play_card(
     if effects.get("mc_per_colony_in_play"):
         colonies_in_play = _load_colonies()
         new_player = {**new_player, "mc": new_player["mc"] + len(colonies_in_play)}
+
+    production_per_colony_spec = effects.get("production_delta_per_colony_in_play")
+    if production_per_colony_spec:
+        colonies_in_play = _load_colonies()
+        key = production_per_colony_spec["production"]
+        delta = len(colonies_in_play) * production_per_colony_spec.get("per_colony", 1)
+        new_player = {**new_player, key: engine._apply_production_floor(key, new_player[key] + delta)}
 
     greenery_spec = effects.get("place_greenery")
     if greenery_spec is not None:
