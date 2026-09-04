@@ -167,17 +167,21 @@ seguir cargando), catalogado en el mismo índice del sitio (`hadronikle`, catego
 `"GlobalEvent"`) pero en tabla nueva `global_events` + cola `global_event_review_queue` (mismo
 patrón que `card_review_queue`, sin `scan_number`). Los Global Events REUSAN
 `rules_engine.apply_card_effect` (mismo `effects` jsonb que las cartas). Tool nueva:
-`resolve_global_event(player_id, event_id, target_card_id=None, effect_choice=None)`. **13 de 36
-cargadas**: Generous Funding, Riots (bloque 1, verificados contra el rulebook oficial); Aquifer
-Released by Public Council, Asteroid Mining, Celebrity Leaders, Diversity (bloque 2); Cloud
-Societies, Corrosive Rain (bloque 3, desbloqueadas por la pieza de recursos tipados); Eco
-Sabotage, Election, Global Dust Storm, Homeworld Support, Improved Energy Templates (bloque 4,
-2026-09-04 -- piezas nuevas `resource_delta_clamp_to_capped_max`, `resource_set_to_zero`,
-`tr_delta_by_threshold`, `production_delta_per_tag_plus_influence`). Dry Deserts (bloque 4)
-pospuesta -- depende de tablero hexagonal wireado a Global Events (todavía no) + una pieza de
-"elección de recurso estándar" sin construir. **22 pendientes** en la cola. Ver sección dedicada
-"Turmoil: Global Events" en `CARDS_LOG.md` para la lista completa y el flujo para seguir
-cargando de a bloques.
+`resolve_global_event(player_id, event_id, target_card_id=None, effect_choice=None,
+discard_card_ids=None)`. **33 de 36 cargadas y la cola de revisión quedó en 0 filas sin
+revisar** (bloques 1-4 + bloque 5). El **bloque 5 (2026-09-04)** cerró las 22 restantes con
+**orquestación multi-agente**: 4 agentes Sonnet en paralelo, uno por grupo de cartas, cada uno
+leyendo el vocabulario del motor, descargando y transcribiendo sus scans y proponiendo el
+`effects` JSON + tests, sin tocar archivos del repo (la integración y verificación quedaron
+centralizadas; se re-verificaron 3 scans de muestra, los que motivaron cambios de semántica).
+Piezas nuevas del bloque 5: contadores `colonies_owned`/`hand_size`/`<recurso>_production`/
+`tr_sets_of_5_over:<N>`, `cap: null` e `influence_direction: "none"` en
+`resource_delta_per_capped_counter`, `production_delta_per_influence`,
+`tr_delta_reduced_by_influence`, `lower_temperature_steps`,
+`add_resource_to_all_cards_with_resources` y `discard_cards`. **3 pendientes por mecánica**
+(no por revisar): Dry Deserts y Mud Slides (necesitan el tablero hexagonal wireado a Global
+Events) y Solarnet Shutdown (necesita clasificar cartas por color en el catálogo, retrofit de
+~300 cartas). Ver sección dedicada "Turmoil: Global Events" en `CARDS_LOG.md`.
 
 **Turmoil: núcleo político, implementado (2026-09-04, decisión explícita del usuario).**
 Resolvió las últimas 2 cartas pendientes del catálogo normal: Colonial Envoys y Colonial

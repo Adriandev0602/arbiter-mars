@@ -4926,3 +4926,131 @@ def test_production_delta_per_tag_plus_influence_no_cap():
     effects = {"production_delta_per_tag_plus_influence": {"tag": "power", "production": "energy_production", "divisor": 2, "per_unit": 1}}
     new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=3)
     assert new_player["energy_production"] == 1 + (9 + 3) // 2  # sin tope de 5
+
+
+# --- Global Events, bloque 5 (analisis en paralelo, grupos A-D) ------------
+
+def test_capped_counter_new_sources_colonies_hand_and_production():
+    # colonies_owned (Microgravity Health Problems)
+    player = {**new_player_state(), "mc": 100, "colonies_owned": ["callisto", "titan", "luna"]}
+    effects = {"resource_delta_per_capped_counter": {"counter": "colonies_owned", "resource": "mc", "per_unit": -3, "influence_direction": "subtract"}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=1)
+    assert new_player["mc"] == 100 - 3 * 2  # min(3,5) - 1 = 2
+
+    # hand_size sin tope (Scientific Community: "no limit")
+    player_hand = {**new_player_state(), "hand": ["a", "b", "c", "d", "e", "f", "g", "h"]}
+    effects_hand = {"resource_delta_per_capped_counter": {"counter": "hand_size", "resource": "mc", "per_unit": 1, "cap": None, "influence_direction": "add"}}
+    new_player2, _ = apply_card_effect(player_hand, new_global_parameters(), effects_hand, influence=2)
+    assert new_player2["mc"] == 10  # 8 + 2, sin capar a 5
+
+    # produccion propia como contador (Productivity / Successful Organisms)
+    player_prod = {**new_player_state(), "steel_production": 3}
+    effects_prod = {"resource_delta_per_capped_counter": {"counter": "steel_production", "resource": "steel", "per_unit": 1, "influence_direction": "add"}}
+    new_player3, _ = apply_card_effect(player_prod, new_global_parameters(), effects_prod, influence=2)
+    assert new_player3["steel"] == 5
+
+
+def test_red_influence_influence_direction_none_and_custom_tr_threshold():
+    player = {**new_player_state(), "tr": 27, "mc": 100}
+    effects = {
+        "resource_delta_per_capped_counter": {"counter": "tr_sets_of_5_over:10", "resource": "mc", "per_unit": -3, "influence_direction": "none"},
+        "production_delta_per_influence": {"mc_production": 1},
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=2)
+    # (27-10)//5 = 3 sets; la Influencia NO ajusta ese conteo ("none")
+    assert new_player["mc"] == 100 - 3 * 3
+    assert new_player["mc_production"] == 1 + 2  # +1 por influencia
+
+
+def test_war_on_earth_tr_reduction_prevented_by_influence():
+    effects = {"tr_delta_reduced_by_influence": {"base_reduction": 4}}
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects, influence=1)
+    assert new_player["tr"] == TR_START - 3
+
+    new_player2, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects, influence=6)
+    assert new_player2["tr"] == TR_START  # nunca se convierte en ganancia
+
+
+def test_snow_cover_lowers_temperature_without_touching_tr():
+    globals_ = {**new_global_parameters(), "temperature": -10}
+    player = {**new_player_state(), "deck": ["a", "b"]}
+    effects = {"lower_temperature_steps": 2, "draw_cards_per_influence": True}
+    new_player, new_globals = apply_card_effect(player, globals_, effects, influence=2)
+    assert new_globals["temperature"] == -14  # 2 pasos de 2 grados
+    assert new_player["tr"] == TR_START  # bajar un parametro no toca el TR
+    assert new_player["hand"] == ["a", "b"]
+
+
+def test_snow_cover_clamps_at_temperature_min():
+    globals_ = {**new_global_parameters(), "temperature": TEMPERATURE_MIN + TEMPERATURE_STEP}
+    new_player, new_globals = apply_card_effect(new_player_state(), globals_, {"lower_temperature_steps": 5})
+    assert new_globals["temperature"] == TEMPERATURE_MIN
+
+
+def test_sponsored_projects_only_cards_that_already_have_resources():
+    player = register_active_card(new_player_state(), "con_recursos", initial_resources=2, resource_type="microbe")
+    player = register_active_card(player, "vacia", initial_resources=0, resource_type="floater")
+    player = register_active_card(player, "otra", initial_resources=1, resource_type="animal")
+    player = {**player, "deck": ["a"]}
+    effects = {"add_resource_to_all_cards_with_resources": {"amount": 1}, "draw_cards_per_influence": True}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=1)
+    assert new_player["active_cards"]["con_recursos"]["resources"] == 3
+    assert new_player["active_cards"]["vacia"]["resources"] == 0  # no tenia recursos, no gana
+    assert new_player["active_cards"]["otra"]["resources"] == 2
+    assert new_player["hand"] == ["a"]
+
+
+def test_paradigm_breakdown_discards_two_chosen_cards():
+    player = {**new_player_state(), "hand": ["x", "y", "z"]}
+    effects = {"discard_cards": {"n": 2}, "resource_delta_per_influence": {"mc": 2}}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), effects, influence=2, discard_card_ids=["x", "z"],
+    )
+    assert new_player["hand"] == ["y"]
+    assert new_player["mc"] == 4
+
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, new_global_parameters(), effects, discard_card_ids=["x"])
+
+
+def test_revolution_solo_rule_loses_tr_at_threshold():
+    effects = {"tr_delta_by_threshold": {"score_tags": ["earth"], "thresholds": [[4, -2]]}}
+    player = {**new_player_state(), "tags_played": {"earth": 3}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=1)
+    assert new_player["tr"] == TR_START - 2  # score 3+1 = 4
+
+    player_low = {**new_player_state(), "tags_played": {"earth": 1}}
+    new_player2, _ = apply_card_effect(player_low, new_global_parameters(), effects, influence=0)
+    assert new_player2["tr"] == TR_START
+
+
+def test_volcanic_eruptions_raises_temperature_and_heat_production():
+    player = new_player_state()
+    effects = {"raise_temperature_steps": 2, "production_delta_per_influence": {"heat_production": 1}}
+    new_player, new_globals = apply_card_effect(player, new_global_parameters(), effects, influence=3)
+    assert new_globals["temperature"] == TEMPERATURE_MIN + 2 * TEMPERATURE_STEP
+    assert new_player["tr"] == TR_START + 2  # subir temperatura SI da TR
+    assert new_player["heat_production"] == 1 + 3
+
+
+def test_jovian_tax_rights_combines_colony_production_and_influence_titanium():
+    player = {**new_player_state(), "colonies_owned": ["callisto", "titan"]}
+    effects = {
+        "production_delta_per_colony": {"production": "mc_production", "per_colony": 1},
+        "resource_delta_per_influence": {"titanium": 1},
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=3)
+    assert new_player["mc_production"] == 1 + 2
+    assert new_player["titanium"] == 3
+
+
+def test_sabotage_lowers_two_productions_and_gains_steel_per_influence():
+    player = {**new_player_state(), "steel_production": 2, "energy_production": 1}
+    effects = {
+        "production_deltas": {"steel_production": -1, "energy_production": -1},
+        "resource_delta_per_influence": {"steel": 1},
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, influence=3)
+    assert new_player["steel_production"] == 1
+    assert new_player["energy_production"] == 0
+    assert new_player["steel"] == 3

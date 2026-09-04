@@ -594,16 +594,36 @@ def _resolve_capped_counter(counter: str, player: dict, globals_: dict) -> int:
       - "events_played": cartas evento jugadas historicamente, cualquier
         jugador (`globals_["events_played"]`, ej. Celebrity Leaders: "Gain
         2 M€ for each event played").
+      - "tr_sets_of_5_over:<N>": forma general del anterior con el umbral
+        que imprima la carta (ej. Red Influence: "each set of 5 TR over
+        10" -> counter="tr_sets_of_5_over:10").
+      - "colonies_owned": colonias propias construidas
+        (`player["colonies_owned"]`, expansion Colonies, ej. Microgravity
+        Health Problems: "Lose 3 M€ for each colony").
+      - "hand_size": cartas en la mano del jugador (ej. Scientific
+        Community: "Gain 1 M€ for each card in hand").
+      - "<recurso>_production": la produccion propia de ese recurso (ej.
+        Successful Organisms: "Gain 1 plant per plant production" ->
+        counter="plant_production").
       - "tag:<tag>": cartas jugadas con ese tag (`player["tags_played"]`,
         ej. Asteroid Mining: "Gain 1 titanium for each Jovian tag" ->
         counter="tag:jovian").
     """
     if counter == "city_tiles_placed":
         return globals_["city_tiles_placed"]
-    if counter == "tr_sets_of_5_over_15":
+    if counter == "tr_sets_of_5_over_15":  # forma vieja, equivale a "tr_sets_of_5_over:15"
         return max(0, (player["tr"] - 15) // 5)
+    if counter.startswith("tr_sets_of_5_over:"):
+        threshold = int(counter[len("tr_sets_of_5_over:"):])
+        return max(0, (player["tr"] - threshold) // 5)
     if counter == "events_played":
         return globals_["events_played"]
+    if counter == "colonies_owned":
+        return len(player["colonies_owned"])
+    if counter == "hand_size":
+        return len(player["hand"])
+    if counter.endswith("_production"):
+        return player[counter]
     if counter.startswith("tag:"):
         return player["tags_played"].get(counter[len("tag:"):], 0)
     raise CardEffectError(f"Contador '{counter}' no soportado en resource_delta_per_capped_counter")
@@ -835,6 +855,7 @@ def apply_card_effect(
     target_card_id_2: str | None = None,
     discard_card_id: str | None = None,
     influence: int = 0,
+    discard_card_ids: list[str] | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Aplica el efecto inmediato de una carta ya pagada, segun el jsonb
@@ -941,9 +962,12 @@ def apply_card_effect(
         Market: +2 MC de stock por cada colonia propia).
       - "resource_delta_per_capped_counter": {"counter": "<ver
         _resolve_capped_counter>", "resource": "<recurso>", "per_unit": N,
-        "cap": 5 (default), "influence_direction": "add"|"subtract"
-        (default "add")} -- expansion Turmoil, vocabulario de los Global
-        Event cards (ver turmoil.py y tools.resolve_global_event). El
+        "cap": 5 (default, `null` = sin tope cuando la carta dice
+        explicitamente "no limit", ej. Scientific Community),
+        "influence_direction": "add"|"subtract"|"none" (default "add";
+        "none" para cartas donde la Influencia NO ajusta este contador
+        porque se usa en otra clausula aparte, ej. Red Influence)} --
+        expansion Turmoil, vocabulario de los Global Event cards (ver turmoil.py y tools.resolve_global_event). El
         contador se calcula sin tope, se capa a `cap` (regla oficial:
         "any Global Event that counts something... can only count up to a
         maximum of 5"), y se ajusta sumando o restando la Influencia del
@@ -971,6 +995,30 @@ def apply_card_effect(
         Influence counts as unique tags" -> threshold=9, resource="mc",
         amount=10). Sin tope de 5 -- es un umbral booleano, no un
         contador que se multiplica.
+      - "production_delta_per_influence": {"<recurso>_production": per_unit,
+        ...} -- analogo de produccion a resource_delta_per_influence, sin
+        tope (ej. Volcanic Eruptions: "+1 heat production per influence";
+        Red Influence: "+1 M€ production per influence").
+      - "tr_delta_reduced_by_influence": {"base_reduction": N} -- BAJA el
+        TR N pasos, y cada punto de Influencia evita 1 paso; nunca se
+        convierte en ganancia (piso 0 pasos) (ej. War on Earth: "Reduce TR
+        4 steps. Each influence prevents 1 step").
+      - "lower_temperature_steps": N -- BAJA la temperatura N pasos
+        (clampeada al piso TEMPERATURE_MIN). NO toca el TR: bajar un
+        parametro global nunca quita TR en este motor (el TR ya ganado por
+        haberlo subido no se devuelve) (ej. Snow Cover: "Decrease
+        temperature 2 steps").
+      - "add_resource_to_all_cards_with_resources": {"amount": N} -- suma
+        N a TODA carta activa que YA tenga al menos 1 recurso, sin filtrar
+        por tipo (a diferencia de add_resource_to_all_matching_type, que
+        filtra por `resource_type` e incluye las que estan en 0) (ej.
+        Sponsored Projects: "All cards with resources on them gain 1
+        resource").
+      - "discard_cards": {"n": N} -- descarta N cartas de la mano elegidas
+        por el jugador (parametro `discard_card_ids`, lista de largo
+        exacto N), sin robar nada a cambio -- distinto de
+        discard_card_then_draw (esa descarta 1 y roba) (ej. Paradigm
+        Breakdown: "Discard 2 cards from hand").
       - "resource_delta_clamp_to_capped_max": {"resource": "<recurso>",
         "base_max": N} -- expansion Turmoil (Global Events), BAJA el stock
         de ese recurso al minimo entre su valor actual y `base_max +
@@ -1095,6 +1143,7 @@ def apply_card_effect(
             player, globals_, options[effect_choice], effect_amount,
             target_card_id=target_card_id, target_card_id_2=target_card_id_2,
             discard_card_id=discard_card_id, influence=influence,
+            discard_card_ids=discard_card_ids,
         )
 
     if "tag_count_choice" in effects:
@@ -1157,8 +1206,10 @@ def apply_card_effect(
     if "resource_delta_per_capped_counter" in effects:
         spec = effects["resource_delta_per_capped_counter"]
         raw_count = _resolve_capped_counter(spec["counter"], new_player, new_globals)
-        capped = min(raw_count, spec.get("cap", 5))
-        signed_influence = influence if spec.get("influence_direction", "add") == "add" else -influence
+        cap = spec.get("cap", 5)
+        capped = raw_count if cap is None else min(raw_count, cap)
+        direction = spec.get("influence_direction", "add")
+        signed_influence = {"add": influence, "subtract": -influence, "none": 0}[direction]
         count = max(0, capped + signed_influence)
         key = spec["resource"]
         new_player[key] = max(0, new_player[key] + count * spec.get("per_unit", 1))
@@ -1166,6 +1217,38 @@ def apply_card_effect(
     if "resource_delta_per_influence" in effects:
         for key, per_unit in effects["resource_delta_per_influence"].items():
             new_player[key] = max(0, new_player[key] + influence * per_unit)
+
+    if "production_delta_per_influence" in effects:
+        for key, per_unit in effects["production_delta_per_influence"].items():
+            new_player[key] = _apply_production_floor(key, new_player[key] + influence * per_unit)
+
+    if "tr_delta_reduced_by_influence" in effects:
+        spec = effects["tr_delta_reduced_by_influence"]
+        steps = max(0, spec["base_reduction"] - influence)
+        new_player["tr"] = new_player["tr"] - steps
+
+    if "lower_temperature_steps" in effects:
+        after = max(
+            TEMPERATURE_MIN,
+            new_globals["temperature"] - effects["lower_temperature_steps"] * TEMPERATURE_STEP,
+        )
+        new_globals["temperature"] = after
+
+    if "add_resource_to_all_cards_with_resources" in effects:
+        amount = effects["add_resource_to_all_cards_with_resources"]["amount"]
+        new_active_cards = dict(new_player["active_cards"])
+        for cid, c in new_active_cards.items():
+            if c["resources"] > 0:
+                new_active_cards[cid] = {**c, "resources": max(0, c["resources"] + amount)}
+        new_player["active_cards"] = new_active_cards
+
+    if "discard_cards" in effects:
+        n = effects["discard_cards"]["n"]
+        chosen = discard_card_ids or []
+        if len(chosen) != n:
+            raise CardEffectError(f"Este efecto descarta {n} carta(s); se recibieron {len(chosen)}")
+        for cid in chosen:
+            new_player = dict(remove_card_from_hand(PlayerState(**new_player), cid))  # type: ignore[typeddict-item]
 
     if "resource_delta_if_tag_diversity" in effects:
         spec = effects["resource_delta_if_tag_diversity"]
