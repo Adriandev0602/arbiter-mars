@@ -1756,3 +1756,107 @@ update cards set is_event = true where id in (
     'soil_studies', 'special_permit', 'stratospheric_expedition',
     'unexpected_application', 'banned_delegate'
 );
+
+-- Bloque 31, segunda tanda (2026-09-04): las 7 cartas Turmoil T04-T10 que
+-- habian quedado sin analizar, mas 5 de las que estaban pendientes por
+-- mecanica. Igual que en la tanda anterior, los TAGS se re-verificaron uno
+-- por uno contra los scans: el agente confundio los 2 puntos de VICTORIA de
+-- Public Celebrations con "+2 TR" (el disco marron de abajo a la derecha es
+-- VP, que este motor no modela) y P74 Frontier Town tiene DOS tags
+-- (city+building), no uno. Piezas nuevas: pasivo "on_tag_played_mc_delta",
+-- "city_placement_bonus_multiplier", "target_card_resource_delta_3",
+-- "active_card_starting_resources_per_tag", costos de accion
+-- "any_card_resource"/"mc_reduced_by_tag"/"remove_own_delegates",
+-- requisito propio de la accion (effects.action.requirements) y
+-- trade_bump_track_first parametrizable a N pasos.
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'diaspora_movement', 'Diaspora Movement', 7, '{jovian}',
+        '{"ruling_or_delegates": {"party": "reds", "min_delegates": 2}}'::jsonb,
+        '{"resource_delta_per_tag": {"tag": "jovian", "resource": "mc", "per_tag": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'event_analysts', 'Event Analysts', 5, '{science}',
+        '{"ruling_or_delegates": {"party": "scientists", "min_delegates": 2}}'::jsonb,
+        '{"passive": {"influence_bonus": 1}}'::jsonb
+    ),
+    (
+        'gmo_contract', 'GMO Contract', 3, '{microbe,science}',
+        '{"ruling_or_delegates": {"party": "greens", "min_delegates": 2}}'::jsonb,
+        '{"passive": {"on_tag_played_mc_delta": {"matching_tags": ["plant", "animal", "microbe"], "mc_delta": 2}}}'::jsonb
+    ),
+    (
+        'parliament_hall', 'Parliament Hall', 8, '{building}',
+        '{"ruling_or_delegates": {"party": "mars_first", "min_delegates": 2}}'::jsonb,
+        '{"production_delta_per_tag": {"tag": "building", "production": "mc_production", "tags_per_step": 3, "per_step": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'pr_office', 'PR Office', 7, '{earth}',
+        '{"ruling_or_delegates": {"party": "unity", "min_delegates": 2}}'::jsonb,
+        '{"tr_delta": 1, "resource_delta_per_tag": {"tag": "earth", "resource": "mc", "per_tag": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'public_celebrations', 'Public Celebrations', 8, '{}',
+        '{"is_chairman": true}'::jsonb,
+        '{}'::jsonb
+    ),
+    (
+        'frontier_town', 'Frontier Town', 11, '{city,building}',
+        '{"ruling_or_delegates": {"party": "mars_first", "min_delegates": 2}}'::jsonb,
+        '{"production_deltas": {"energy_production": -1}, "place_city_tiles": 1,
+          "city_placement_bonus_multiplier": 3}'::jsonb
+    ),
+    (
+        'l1_trade_terminal', 'L1 Trade Terminal', 25, '{space}', null,
+        '{"passive": {"trade_bump_track_first": 2},
+          "target_card_resource_delta": 1, "target_card_resource_delta_2": 1,
+          "target_card_resource_delta_3": 1}'::jsonb
+    ),
+    (
+        'floating_refinery', 'Floating Refinery', 7, '{venus}', null,
+        '{"becomes_active": true, "active_card_resource_type": "floater",
+          "active_card_starting_resources_per_tag": {"tag": "venus", "per_tag": 1, "include_this": true},
+          "action": {"choice": [
+             {"cost": {}, "gains": {"card_resource_delta": 1}},
+             {"cost": {"any_card_resource": {"amount": 2, "resource_type": "floater"}},
+              "gains": {"resource_deltas": {"titanium": 1, "mc": 2}}}
+          ]}}'::jsonb
+    ),
+    (
+        'venus_shuttles', 'Venus Shuttles', 9, '{venus}', null,
+        '{"becomes_active": true,
+          "target_card_resource_delta_typed": {"resource_type": "floater", "amount": 2},
+          "action": {"cost": {"mc_reduced_by_tag": {"base": 12, "tag": "venus", "reduction_per_tag": 1}},
+                     "gains": {"raise_venus_steps": 1}}}'::jsonb
+    ),
+    (
+        'red_appeasement', 'Red Appeasement', 0, '{}', null,
+        '{"becomes_active": true,
+          "action": {"requirements": {"ruling_or_delegates": {"party": "reds", "min_delegates": 2}},
+                     "cost": {"remove_own_delegates": 2},
+                     "gains": {"production_deltas": {"mc_production": 2}}}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in ('public_celebrations');
+
+-- Retrofit: el pasivo trade_bump_track_first pasa de booleano a CANTIDAD de
+-- pasos. Las dos cartas ya cargadas suben 1 (comportamiento identico).
+update cards set effects = jsonb_set(effects, '{passive,trade_bump_track_first}', '1'::jsonb)
+where id in ('trade_envoys', 'trading_colony');
+
+-- T07 Martian Media Center: su accion coloca 1 delegado pagando 3 MC (el
+-- costo en MC lo cobra el motor por la via normal; la colocacion se resuelve
+-- en tools.use_card_action, simetrica a "remove_own_delegates").
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'martian_media_center', 'Martian Media Center', 7, '{building}',
+        '{"ruling_or_delegates": {"party": "mars_first", "min_delegates": 2}}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}, "becomes_active": true,
+          "action": {"cost": {"mc": 3}, "gains": {"place_delegates": 1}}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;

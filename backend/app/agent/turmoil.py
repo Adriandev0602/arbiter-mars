@@ -149,13 +149,17 @@ def place_delegate(turmoil: TurmoilState, party: str, player_id: str) -> Turmoil
     )
 
 
-def remove_delegate(turmoil: TurmoilState, party: str, player_id: str) -> TurmoilState:
+def remove_delegate(
+    turmoil: TurmoilState, party: str, player_id: str, allow_leader: bool = False,
+) -> TurmoilState:
     """
     Saca 1 delegado propio de `party` y lo devuelve a la Reserva del jugador
-    (el caller es quien suma a `player["reserve_delegates"]`). Solo se pueden
-    remover delegados NO-lider: si `player_id` es el Party Leader de ese
-    partido, se rechaza (Banned Delegate dice "remove any NON-LEADER
-    delegate"). Recalcula el partido Dominante despues de sacarlo -- el FAQ
+    (el caller es quien suma a `player["reserve_delegates"]`). Por defecto solo
+    se pueden remover delegados NO-lider: si `player_id` es el Party Leader de
+    ese partido, se rechaza (Banned Delegate dice "remove any NON-LEADER
+    delegate"). `allow_leader=True` levanta esa restriccion para cartas que NO
+    la imprimen (ej. Red Appeasement, cuya accion cuesta 2 delegados propios:
+    con exactamente 2 en un partido, uno es forzosamente el lider). Recalcula el partido Dominante despues de sacarlo -- el FAQ
     oficial confirma que la remocion puede cambiar el Dominante AL INSTANTE,
     con el mismo desempate horario de _recompute_dominant.
 
@@ -168,14 +172,19 @@ def remove_delegate(turmoil: TurmoilState, party: str, player_id: str) -> Turmoi
     p = turmoil["parties"][party]
     if p["delegates"].get(player_id, 0) < 1:
         raise UnknownPartyError(f"El jugador no tiene delegados en '{party}'")
-    if p["leader"] == player_id:
+    if p["leader"] == player_id and not allow_leader:
         raise UnknownPartyError(
             f"El delegado de '{player_id}' en '{party}' es el Party Leader: solo se pueden remover NO-lideres"
         )
     new_delegates = {**p["delegates"], player_id: p["delegates"][player_id] - 1}
+    new_leader = p["leader"]
     if new_delegates[player_id] == 0:
         del new_delegates[player_id]
-    new_parties = {**turmoil["parties"], party: PartyState(delegates=new_delegates, leader=p["leader"])}
+        if new_leader == player_id:
+            # Se quedo sin delegados ahi: el liderazgo pasa a quien quede (en
+            # modo un jugador, normalmente a nadie).
+            new_leader = next(iter(new_delegates), None)
+    new_parties = {**turmoil["parties"], party: PartyState(delegates=new_delegates, leader=new_leader)}
     from_party = turmoil["dominant_party"] or party
     return TurmoilState(
         parties=new_parties,

@@ -140,18 +140,27 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 
 ### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events + floaters por carta activa)
 
-**Progreso:** catálogo en **328 cartas** cargadas en `cards` y **36 Global Events** (mazo
-completo). `card_review_queue` tiene **78 filas sin revisar**. El bloque 31 (2026-09-04) revisó
-30 cartas con 4 agentes en paralelo: 16 cargadas, 7 pendientes por mecánica y 7 (T04-T10, todas
-Turmoil) **sin analizar** porque el agente asignado se cortó por límite de sesión -- siguen en la
-cola con `reviewed = false`, son lo primero a retomar.
+**Progreso:** catálogo en **340 cartas** cargadas en `cards` y **36 Global Events** (mazo
+completo). `card_review_queue` tiene **71 filas sin revisar**. El bloque 31 se hizo en dos
+tandas multi-agente: la primera revisó 30 cartas (16 cargadas), la segunda cerró las que habían
+quedado colgando (12 cargadas más). Solo quedan **2 cartas pendientes por mecánica**: P88 Venus
+Orbital Survey (revelar/filtrar el tope del mazo, hay diseño propuesto) y P91 WG Project
+(sub-mazo Prelude + jugar gratis una carta arbitraria -- evaluado como feature del tamaño de
+`reserved_cards`, conviene cargar antes las ~9 cartas Prelude que faltan).
 
-**Aprendizaje del bloque 31 (importante para próximas tandas multi-agente):** 2 de los 4 agentes
-leyeron mal los TAGS de varias cartas, confundiendo el recuadro de REQUISITO (arriba a la
-izquierda, junto al costo) con los tags propios (arriba a la derecha). Se re-verificaron uno por
-uno contra los scans antes de cargar. **El prompt del agente debe explicitar esa diferencia y
-pedir los dos datos por separado.** Ver la tabla de errores concretos en `CARDS_LOG.md`, sección
-"Bloque 31".
+**Aprendizajes de las tandas multi-agente (aplicar en las próximas):**
+- Los agentes confunden el recuadro de **requisito** (arriba a la izquierda, junto al costo) con
+  los **tags propios** (arriba a la derecha). El prompt debe explicitarlo y pedir requisito, tags
+  e `is_event` **por separado** -- ya está incorporado, y con eso la segunda tanda tuvo muchos
+  menos errores.
+- También confunden los **puntos de victoria** (disco marrón abajo a la derecha) con TR. Un
+  agente propuso `tr_delta: 2` para una carta cuyo único beneficio son 2 VP, que este motor no
+  modela.
+- Los agentes inventan nombres de campos del vocabulario (`megacredits` en vez de `mc`,
+  contadores que no existen). Conviene pedirles que citen el docstring exacto de donde sacan cada
+  clave, y mapear a mano al integrar.
+- **Verificar siempre los tags contra los scans antes de cargar.** Es barato y atrapó ~8 errores
+  entre las dos tandas.
 
 **Turmoil: Global Events, COMPLETO (2026-09-04).** Mazo APARTE de 36 cartas, catalogado en el
 índice del sitio (`hadronikle`, categoría `"GlobalEvent"`) en tabla propia `global_events` +
