@@ -192,6 +192,14 @@ class PlayerState(TypedDict):
     trade_fleets: int
     trade_fleets_used: int
 
+    # lobby_delegates/reserve_delegates: expansion Turmoil (ver
+    # backend/app/agent/turmoil.py para el mecanismo completo). Arrancan en
+    # 1 y 6 respectivamente (7 delegados totales, setup oficial). Se gastan
+    # al colocar delegados (tools.lobby, tools.play_card para Colonial
+    # Envoys) y vuelven con tools.resolve_new_government.
+    lobby_delegates: int
+    reserve_delegates: int
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -228,6 +236,7 @@ def new_player_state() -> PlayerState:
         pending_mc_discount=0, pending_requirement_tolerance_steps=0,
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
+        lobby_delegates=1, reserve_delegates=6,
     )
 
 
@@ -576,6 +585,8 @@ def check_card_requirements(
     globals_: GlobalParameters,
     player: PlayerState | None = None,
     wild_tag_choice: str | None = None,
+    turmoil: dict | None = None,
+    player_id: str | None = None,
 ) -> None:
     """
     Valida que el estado del tablero cumpla el requisito de la carta
@@ -608,6 +619,11 @@ def check_card_requirements(
         Coordination) y pasa `wild_tag_choice="<tag>"` que matchee el tag
         de este requisito, los tags "wild" en juego cuentan como ese tag
         para este chequeo puntual (ver parametro `wild_tag_choice` abajo).
+      - "ruling_or_delegates": {"party": "<partido>", "min_delegates": N
+        (default 2)} -- expansion Turmoil (ver turmoil.py), requiere que
+        `party` sea el partido Ruling actual, O que el jugador tenga al
+        menos `min_delegates` delegados propios ahi (ej. Colonial Envoys:
+        partido "unity"). Requiere pasar `turmoil` y `player_id`.
       - "min_production": {"key": "<recurso>_production", "count": N} -- requiere
         que el jugador ya tenga esa produccion en al menos N (ej. Great
         Escarpment Consortium: requiere tener produccion de steel >= 1).
@@ -666,6 +682,21 @@ def check_card_requirements(
                 raise CardRequirementNotMetError(
                     f"Requiere {spec['count']} tags de '{spec['tag']}' jugados, hay {have}"
                 )
+
+    if "ruling_or_delegates" in requirements:
+        spec = requirements["ruling_or_delegates"]
+        party = spec["party"]
+        min_delegates = spec.get("min_delegates", 2)
+        if turmoil is None or player_id is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado de Turmoil y el player_id"
+            )
+        is_ruling = turmoil["ruling_party"] == party
+        own_delegates = turmoil["parties"][party]["delegates"].get(player_id, 0)
+        if not is_ruling and own_delegates < min_delegates:
+            raise CardRequirementNotMetError(
+                f"Requiere que '{party}' este gobernando o tener {min_delegates} delegados ahi, hay {own_delegates}"
+            )
 
     if "min_production" in requirements:
         spec = requirements["min_production"]
@@ -1619,6 +1650,14 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
         es quien tiene el costo impreso de la carta -- no hay funcion en
         rules_engine.py para este pasivo especifico.
+      - "influence_bonus": N -- expansion Turmoil, suma N fijo a la
+        Influencia calculada del jugador (ej. Colonial Representation:
+        N=1, "you have influence +1"). Ver turmoil.compute_influence
+        (parametro `bonus`), sumado por tools.get_player_state -- no hay
+        funcion en rules_engine.py para este pasivo especifico porque la
+        formula base de Influencia vive en turmoil.py, no en el motor
+        puro (mismo criterio de decoupling que free_trade, ver seccion 3
+        de CLAUDE.md).
       - "on_tag_played_add_resource": {"matching_tags": ["<tag>", ...], "resource_delta": N (default 1)}
         -- suma N recurso(s) a la propia carta activa cada vez que el jugador juega
         una carta con alguno de esos tags (ej. Ecological Zone: tags animal/plant;

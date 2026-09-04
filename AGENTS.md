@@ -138,13 +138,28 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild)
+### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo)
 
-**Progreso:** catálogo en **307 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140) y la pieza de pago con
-recurso de carta. `card_review_queue` tiene 207 filas `reviewed = true` y **101 sin revisar** —
-el próximo bloque (31) son las filas #1-10 de `select * from card_review_queue where reviewed =
+**Progreso:** catálogo en **309 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140), pago con recurso de carta y
+tag wild. `card_review_queue` tiene 209 filas `reviewed = true` y **101 sin revisar** — el
+próximo bloque (31) son las filas #1-10 de `select * from card_review_queue where reviewed =
 false order by id limit 10`.
+
+**Turmoil: núcleo político, implementado (2026-09-04, decisión explícita del usuario).**
+Resolvió las últimas 2 cartas pendientes: Colonial Envoys y Colonial Representation (P70/P71,
+Prelude 2). Módulo nuevo `backend/app/agent/turmoil.py` (mismo estilo que `colonies.py`),
+verificado contra el rulebook oficial (TM_TURMOIL_ENG_RULES.pdf, 8 páginas, leído completo): 6
+partidos, delegados (7 por jugador: 1 Lobby + 6 Reserva), acción Lobbying, Party Leader/partido
+Dominante (se actualiza al instante), requisitos `ruling_or_delegates` (Ruling O 2+ delegados
+propios), Influencia (Chairman/líder del Dominante/delegado no-líder ahí, +1 cada uno, +bonus de
+carta), "New Government" (ACOTADO a un solo jugador, modo un jugador de este proyecto). Campos
+nuevos en `PlayerState`: `lobby_delegates`, `reserve_delegates`; estado compartido nuevo:
+`turmoil` en `GlobalParameters`. Tools nuevas: `lobby`, `resolve_new_government`,
+`get_turmoil_state`. **Quedan explícitamente pendientes**, cada uno del tamaño de una feature
+aparte: las Ruling Bonus/Ruling Policy de los 6 partidos (12 efectos), el mazo de 31 Global
+Event cards, y la revisión de TR (-1 a todos cada generación) -- ver sección dedicada "Turmoil:
+núcleo político" en `CARDS_LOG.md`. Tests: `test_turmoil.py`.
 
 **Tag comodín "wild", implementado (2026-09-04).** Resolvió Research Coordination (P40,
 Prelude) -- pendiente desde el bloque 30. El texto impreso ("the wild tag counts as any tag of
@@ -155,8 +170,7 @@ que la carta tenga tag `"wild"` (`tags_played` ya lo cuenta solo). Pieza nueva: 
 `wild_tag_choice` en `check_card_requirements`/`tools.play_card` -- si coincide con el tag del
 requisito, suma los tags "wild" en juego a ese conteo para ese chequeo puntual (no altera
 `tags_played`, se re-declara cada vez). Ver sección dedicada "Tag comodín 'wild'" en
-`CARDS_LOG.md`. Queda pendiente: Colonial Envoys/Representation (P70/P71, dependen de Turmoil --
-sin construir, ver abajo).
+`CARDS_LOG.md`.
 
 **Pago con recurso de carta, implementado (2026-09-04).** Resolvió Dirigibles (222, Venus Next)
 y Psychrophiles (P39, Prelude) -- pendientes desde los bloques 20-30. Pieza nueva `passive:
@@ -257,10 +271,6 @@ pieza de mecánica ya diagnosticada pero no implementada:**
   alcance"). `active_cards[card_id]["resources"]` no distingue tipo de recurso hoy -- necesita
   etiquetar el tipo por carta activa más un requirement/cost nuevo que sume sobre las que
   matcheen. Cuatro casos ya esperando -- sube de prioridad para una sesión dedicada.
-- **Colonial Envoys** (P70) y **Colonial Representation** (P71, bloque 30, Prelude 2): dependen
-  de la mecánica de **Turmoil** (delegados, partidos, influencia, chairman) -- expansión entera
-  sin construir, del mismo tamaño que Colonies. Pendiente de decisión explícita de alcance del
-  usuario antes de construir nada (a diferencia de Colonies, que sí se aprobó explícitamente).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
 checkout -b feat/review-block-31`, consultar
@@ -361,7 +371,14 @@ verificados a `COLONY_DEFS`, no tocar código. Colonies terminó de revisarse en
 (cierre C01-C49). También la expansión **Prelude** (primera carta bloque 29, House Printing) --
 a diferencia de Venus Next/Colonies, Prelude NO necesita mecánica propia nueva: son ~24 cartas
 con efecto inmediato simple que en el juego real se reparten 2 gratis en el setup (ese sorteo/
-elección de setup no está modelado todavía, no bloquea cargar las cartas individuales).
+elección de setup no está modelado todavía, no bloquea cargar las cartas individuales). También
+el **núcleo político de Turmoil** (decisión explícita del usuario, 2026-09-04):
+`backend/app/agent/turmoil.py`, verificado contra el rulebook oficial -- 6 partidos, delegados,
+acción Lobbying, Party Leader/partido Dominante, requisitos `ruling_or_delegates`, Influencia,
+"New Government" (acotado a un solo jugador) -- ver "Turmoil: núcleo político" en `CARDS_LOG.md`.
+**Explícitamente FUERA de esta primera pasada** (cada uno del tamaño de una feature aparte, no
+decidido todavía si se construyen): las Ruling Bonus/Ruling Policy de los 6 partidos, el mazo de
+31 Global Event cards, y la revisión de TR (-1 a todos cada generación).
 
 **Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, soporte para
 múltiples juegos simultáneos, milestones y awards (incluidos los nuevos de Venus Next: Hoverlord

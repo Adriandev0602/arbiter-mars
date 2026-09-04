@@ -325,6 +325,8 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `dirigibles` | Dirigibles | 222 | 11 MC | Tag venus. Pasivo: floaters guardados en esta carta valen 3 M€ cada uno para pagar cartas con tag venus (pieza nueva `card_resource_payment`, resuelta 2026-09-04 — ver sección dedicada abajo). Acción repetible sin costo: +1 floater a CUALQUIER carta activa elegida, incluida ella misma (pieza nueva `target_card_resource_delta_allow_self`) |
 | `psychrophiles` | Psychrophiles | P39 | 2 MC | Tag microbe, expansión **Prelude**. Requiere temperatura ≤-20°C. Pasivo: microbios guardados en esta carta valen 2 M€ cada uno para pagar cartas con tag plant (mismo `card_resource_payment` que Dirigibles). Acción repetible sin costo: +1 microbio a sí misma |
 | `research_coordination` | Research Coordination | P40 | 4 MC | Tag **wild** (ícono "?"), expansión **Prelude**. Sin efecto inmediato. El tag "wild" cuenta como cualquier tag elegido por el jugador para cubrir un requisito `min_tag_count` puntual al jugar OTRA carta (pieza nueva `wild_tag_choice`, resuelta 2026-09-04 — ver sección dedicada abajo) |
+| `colonial_envoys` | Colonial Envoys | P70 | 4 MC | Sin tags, expansión **Prelude 2**. Requiere que el partido Unity esté gobernando o tener 2 delegados propios ahí (pieza nueva `ruling_or_delegates`). Coloca 1 delegado por cada colonia propia, en los partidos que el jugador elija (pieza nueva `place_delegates_per_colony`, expansión **Turmoil** — ver sección dedicada abajo) |
+| `colonial_representation` | Colonial Representation | P71 | 10 MC | Sin tags, expansión **Prelude 2**. +3 MC por cada colonia propia (`resource_delta_per_colony`, ya existente). Pasivo: +1 Influencia fija (pieza nueva `influence_bonus`, expansión **Turmoil** — ver sección dedicada abajo) |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -336,8 +338,45 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 214 | Aerosport Tournament | Requisito "tener 5 floaters" — SUMA de un recurso de un tipo específico (floater) a través de TODAS las cartas activas del jugador que lo acumulen, no solo una carta puntual. `active_cards[card_id]["resources"]` es un contador sin tipo (no distingue si son floaters, microbios o animales) — no hay forma de sumar "solo los floaters" sin agregar un tipo de recurso por carta activa (ej. `active_cards[card_id] = {"resources": N, "resource_type": "floater", "action_used": bool}`) y una nueva pieza de requirement (`min_total_card_resources`: {"resource_type": "floater", "count": 5}` que sume sobre todas las cartas que matcheen). Pieza real, no un caso trivial de extender `min_tag_count`/`min_production` — pospuesta para no forzar un diseño apurado que después haya que revertir cuando aparezcan más cartas de este tipo (Venus Next tiene varias que piden "N floaters" acumulados). **Actualización bloque 25:** ya son 4 cartas las que necesitan esta pieza (ver Airliners y Floater Leasing abajo) — sube de prioridad para una sesión dedicada. |
 | C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
 | C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
-| P70 | Colonial Envoys | Prelude 2. Depende de la mecánica de **Turmoil** (delegados, partidos, "Unity ruling", chairman, influencia) — expansión entera sin construir todavía, del mismo tamaño/alcance que Colonies cuando se decidió construirla. No se puede cargar parcialmente sin la pieza de "influencia". Igual que Colonial Representation (P71) abajo, queda pendiente de una decisión explícita de alcance del usuario antes de construir nada de Turmoil (a diferencia de Colonies, que sí se aprobó explícitamente en el bloque 25). |
-| P71 | Colonial Representation | Prelude 2. "+3 MC por cada colonia propia" es técnicamente cargable ya con la pieza existente `resource_delta_per_colony` (la misma que usa Ceres Tech Market, bloque 30) — pero el resto de la carta es "+1 influencia" de forma OBLIGATORIA (no "hasta N", no opcional), y el motor no tiene ningún concepto de influencia/Turmoil todavía. Cargar solo la mitad de la carta sería deshonesto respecto al efecto real impreso. Misma dependencia de Turmoil que Colonial Envoys (P70) — pendiente de la misma decisión de alcance. |
+
+### Turmoil: núcleo político (Colonial Envoys, Colonial Representation)
+
+**Resuelto (2026-09-04, decisión explícita del usuario).** Módulo nuevo
+`backend/app/agent/turmoil.py` (mismo estilo que `colonies.py`/`board.py`), verificado contra el
+rulebook oficial de la expansión (fryxgames.se, TM_TURMOIL_ENG_RULES.pdf, 8 páginas, leído
+completo): 6 partidos (Mars First, Kelvinists, Reds, Greens, Unity, Scientists), delegados
+(cada jugador arranca con 7: 1 en el Lobby, 6 en la Reserva), acción "Lobbying" (gratis desde el
+Lobby, 5 MC desde la Reserva), Party Leader (primer delegado de un partido, reemplazado si otro
+jugador consigue más ahí), partido Dominante (el de más delegados totales, se actualiza al
+instante), requisitos de carta gateados por partido ("ruling_or_delegates": Ruling actual O 2+
+delegados propios), Influencia (Chairman +1, líder del Dominante +1, o 1+ delegados no-líder ahí
++1 — mutuamente excluyente para el mismo jugador — más bonus de carta), y "New Government"
+(Dominante pasa a Ruling, su líder se vuelve Chairman, delegados vuelven a la reserva).
+
+**Alcance de esta primera pasada — QUEDAN EXPLÍCITAMENTE PENDIENTES, cada uno del tamaño de una
+feature aparte** (mismo criterio que "solo Callisto cargada" en Colonies):
+- Las Ruling Bonus / Ruling Policy de los 6 partidos (12 efectos distintos sobre recursos de
+  TODOS los jugadores, ej. Reds: "Lose 3 M€ for each step your TR is raised").
+- El mazo de 31 Global Event cards (afectan a todos los jugadores cada generación, usan
+  Influencia para escalar contadores con tope 5).
+- La revisión de TR (-1 a TODOS los jugadores cada generación).
+- `resolve_new_government` está ACOTADO a un solo jugador (modo un jugador de este proyecto,
+  ver sección 7 de `CLAUDE.md`) — no itera sobre otros jugadores ni aplica el TR gratis del
+  Chairman.
+
+Campos nuevos en `PlayerState`: `lobby_delegates` (arranca en 1), `reserve_delegates` (arranca
+en 6). Estado compartido nuevo (cargado/guardado aparte, igual que `board`/`colonies`):
+`turmoil` en `GlobalParameters`. Tools nuevas: `lobby`, `resolve_new_government`,
+`get_turmoil_state`. Piezas nuevas en el motor: requirement `ruling_or_delegates` en
+`check_card_requirements` (necesita `turmoil` + `player_id`), pasivo `influence_bonus` en
+`register_passive_effect` (la fórmula base de Influencia vive en `turmoil.compute_influence`,
+no en `rules_engine.py` — mismo criterio de desacople que `free_trade`), effect
+`place_delegates_per_colony` resuelto en `tools.play_card` (parámetro nuevo
+`delegate_party_choices`, sale de la Reserva del jugador, no del Lobby).
+
+Esto desbloqueó **Colonial Envoys** (P70, Prelude 2) y **Colonial Representation** (P71,
+Prelude 2), las 2 cartas pendientes que dependían de esto. Tests: `test_turmoil.py` (mecanismo
+completo) y los tests de las 2 cartas en `test_rules_engine.py`.
 
 ### Tag comodín "wild" (Research Coordination)
 

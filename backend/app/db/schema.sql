@@ -86,6 +86,17 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+do $$ begin
+    alter table if exists players add column if not exists lobby_delegates integer not null default 1;
+    alter table if exists players add column if not exists reserve_delegates integer not null default 6;
+exception when undefined_table then null;
+end $$;
+
+do $$ begin
+    alter table if exists global_parameters add column if not exists turmoil jsonb not null default '{}'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
@@ -179,6 +190,12 @@ create table if not exists players (
     trade_fleets integer not null default 1,
     trade_fleets_used integer not null default 0,
 
+    -- Expansion Turmoil: delegados propios (ver backend/app/agent/turmoil.py).
+    -- lobby_delegates arranca en 1 (se rellena en tools.resolve_new_government),
+    -- reserve_delegates arranca en 6 -- 7 delegados totales, setup oficial.
+    lobby_delegates integer not null default 1,
+    reserve_delegates integer not null default 6,
+
     created_at timestamptz not null default now()
 );
 
@@ -209,7 +226,14 @@ create table if not exists global_parameters (
     -- "trade_fleet_present": bool}}. Los datos ESTATICOS de cada colonia
     -- (track de valores, bonus) viven en colonies.COLONY_DEFS, no aca.
     -- Arranca vacio hasta llamar tools.setup_colonies.
-    colonies jsonb not null default '{}'::jsonb
+    colonies jsonb not null default '{}'::jsonb,
+
+    -- Expansion Turmoil: estado de los 6 partidos (ver
+    -- backend/app/agent/turmoil.py, TurmoilState). Arranca vacio hasta la
+    -- primera llamada a tools.lobby/tools.play_card con una carta de
+    -- Turmoil -- turmoil._load_turmoil (tools.py) devuelve
+    -- turmoil.new_turmoil() por defecto cuando esta vacio.
+    turmoil jsonb not null default '{}'::jsonb
 );
 
 -- Catalogo de cartas de proyecto.
