@@ -66,6 +66,7 @@ from app.agent.rules_engine import (
     apply_city_placed_bonuses,
     apply_tag_played_choice,
     apply_any_tag_played_choice,
+    spend_active_card_resource,
 )
 
 
@@ -4518,3 +4519,68 @@ def test_cloud_tourism_mc_production_per_earth_venus_pair_action_adds_floater():
     action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
     new_player2, _ = use_card_action(active_player, globals_, "cloud_tourism", action_spec)
     assert new_player2["active_cards"]["cloud_tourism"]["resources"] == 1
+
+
+# --- Pago con recurso de carta (Dirigibles/Psychrophiles) -------------------
+
+def test_spend_active_card_resource_decrements():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=3)
+    new_player = spend_active_card_resource(player, "dirigibles", 2)
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 1
+
+
+def test_spend_active_card_resource_raises_if_not_enough():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=1)
+    with pytest.raises(InsufficientResourcesError):
+        spend_active_card_resource(player, "dirigibles", 2)
+
+
+def test_target_card_resource_delta_allow_self_adds_to_own_card_by_default():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "dirigibles")
+    action_spec = {"cost": {}, "gains": {"target_card_resource_delta_allow_self": 1}}
+    new_player, _ = use_card_action(player, globals_, "dirigibles", action_spec)
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 1
+
+
+def test_target_card_resource_delta_allow_self_can_target_other_card():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "dirigibles")
+    player = register_active_card(player, "some_jovian_card")
+    action_spec = {"cost": {}, "gains": {"target_card_resource_delta_allow_self": 1}}
+    new_player, _ = use_card_action(
+        player, globals_, "dirigibles", action_spec, target_card_id="some_jovian_card"
+    )
+    assert new_player["active_cards"]["some_jovian_card"]["resources"] == 1
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 0
+
+
+def test_dirigibles_passive_pays_venus_card_with_floaters():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=4)
+    player = register_passive_effect(player, "dirigibles", {"card_resource_payment": {"required_tag": "venus", "value_mc": 3}})
+    match = next(p for p in player["passive_effects"] if "card_resource_payment" in p)
+    assert match["card_id"] == "dirigibles"
+    assert match["card_resource_payment"]["required_tag"] == "venus"
+    assert match["card_resource_payment"]["value_mc"] == 3
+    new_player = spend_active_card_resource(player, "dirigibles", 3)
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 1
+
+
+def test_psychrophiles_requires_temperature_minus_20_action_adds_microbe():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_temperature": -20}, {**new_global_parameters(), "temperature": -18})
+    check_card_requirements({"max_temperature": -20}, {**new_global_parameters(), "temperature": -20})
+
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "psychrophiles")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player, _ = use_card_action(player, globals_, "psychrophiles", action_spec)
+    assert new_player["active_cards"]["psychrophiles"]["resources"] == 1
+
+
+def test_psychrophiles_passive_pays_plant_card_with_microbes():
+    player = register_active_card(new_player_state(), "psychrophiles", initial_resources=2)
+    player = register_passive_effect(player, "psychrophiles", {"card_resource_payment": {"required_tag": "plant", "value_mc": 2}})
+    match = next(p for p in player["passive_effects"] if "card_resource_payment" in p)
+    assert match["card_resource_payment"]["required_tag"] == "plant"
+    assert match["card_resource_payment"]["value_mc"] == 2

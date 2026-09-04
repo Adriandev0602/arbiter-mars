@@ -138,26 +138,32 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→30 + Venus Next + Lava Flows + Colonies)
+### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta)
 
-**Progreso:** catálogo en **304 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-28 y la mecánica de colonias/comercio, Lava Flows (140); los bloques 29 (rama
-`feat/review-block-29`, resolución de Titan Floating Launch-Pad) y 30 (rama
-`feat/review-block-30`) todavía no están mergeados. `card_review_queue` tiene 204 filas
-`reviewed = true` y **101 sin revisar** — el próximo bloque (31) son las filas #1-10 de
-`select * from card_review_queue where reviewed = false order by id limit 10`.
+**Progreso:** catálogo en **306 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-30 y la mecánica de colonias/comercio, Lava Flows (140). `card_review_queue` tiene
+206 filas `reviewed = true` y **101 sin revisar** — el próximo bloque (31) son las filas #1-10
+de `select * from card_review_queue where reviewed = false order by id limit 10`.
+
+**Pago con recurso de carta, implementado (2026-09-04).** Resolvió Dirigibles (222, Venus Next)
+y Psychrophiles (P39, Prelude) -- pendientes desde los bloques 20-30. Pieza nueva `passive:
+card_resource_payment` ({"required_tag", "value_mc"}) en `register_passive_effect`: un recurso
+guardado en una carta activa (floaters, microbios) paga cartas de un tag específico, a N M€ cada
+uno -- tercera moneda de pago cuyo stock vive en una carta, no en el jugador. `tools.play_card`
+suma el parámetro `card_resource_to_pay`, resuelve solo (por tag) qué carta activa habilita el
+pago; `rules_engine.spend_active_card_resource` descuenta el recurso. `use_card_action` suma
+`target_card_resource_delta_allow_self` (Dirigibles: "add floater to ANY card", incluida ella
+misma). Ver sección dedicada "Pago con recurso de carta" en `CARDS_LOG.md`. Quedan pendientes:
+Research Coordination (P40, tag wild -- refactor de conteo de tags) y Colonial Envoys/
+Representation (P70/P71, dependen de Turmoil -- sin construir, ver abajo).
 
 **Bloque 30 (2026-09-03):** 6 de 10 cargadas — Lava Tube Settlement, Martian Survey, SF
-Memorial, Space Hotels (Prelude), Ceres Tech Market, Cloud Tourism (Venus Next promo). 4
-pendientes: Psychrophiles (P39, misma pieza de "floaters/microbios como pago" ya pendiente por
-Dirigibles — ahora son 2 cartas), Research Coordination (P40, tag "wild" — requiere refactor del
-subsistema de conteo de tags), Colonial Envoys y Colonial Representation (P70/P71, Prelude 2,
-dependen de la mecánica de Turmoil — sin construir, del tamaño de Colonies, pendiente de
-decisión explícita de alcance del usuario). Piezas de motor nuevas: `board.can_place_city_on_volcanic`
-+ flag `city_placement_on_volcanic` (Lava Tube Settlement), `mc_per_discarded_card` en
-`use_card_action`, `resource_delta_per_colony` (análogo stock de `production_delta_per_colony`),
-`production_delta_per_tag_pair` (usa el mínimo de dos conteos de tags) — las 3 últimas en
-Ceres Tech Market/Cloud Tourism. Ver detalle en `CARDS_LOG.md`.
+Memorial, Space Hotels (Prelude), Ceres Tech Market, Cloud Tourism (Venus Next promo). Piezas de
+motor nuevas: `board.can_place_city_on_volcanic` + flag `city_placement_on_volcanic` (Lava Tube
+Settlement), `mc_per_discarded_card` en `use_card_action`, `resource_delta_per_colony` (análogo
+stock de `production_delta_per_colony`), `production_delta_per_tag_pair` (usa el mínimo de dos
+conteos de tags) — las 3 últimas en Ceres Tech Market/Cloud Tourism. Ver detalle en
+`CARDS_LOG.md`.
 
 **Decisión de alcance (2026-09-02/03):** primero entró **Venus Next** (bloque 20 completo era
 de esa expansión, ver sección 7). El bloque 25 trajo la primera tanda de **Colonies** -- el
@@ -240,10 +246,6 @@ pieza de mecánica ya diagnosticada pero no implementada:**
   alcance"). `active_cards[card_id]["resources"]` no distingue tipo de recurso hoy -- necesita
   etiquetar el tipo por carta activa más un requirement/cost nuevo que sume sobre las que
   matcheen. Cuatro casos ya esperando -- sube de prioridad para una sesión dedicada.
-- **Dirigibles** (222, Venus Next) y **Psychrophiles** (P39, bloque 30): floaters/microbios
-  guardados en la carta valen 3 M€ como pago para cartas Venus/plant respectivamente -- tercera
-  moneda de pago cuyo stock vive en una carta, no en el jugador. Misma categoría que
-  Self-Replicating Robots (mecánica de pago no trivial). Ya son 2 cartas -- sube de prioridad.
 - **Research Coordination** (P40, bloque 30): tag "wild" que cuenta como cualquier tag elegido
   -- requiere refactor del subsistema de conteo de tags (hoy strings exactos), no una extensión
   chica.

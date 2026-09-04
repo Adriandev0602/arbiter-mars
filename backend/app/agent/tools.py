@@ -336,6 +336,7 @@ def play_card(
     build_colony_id: str | None = None,
     colony_id_increase: str | None = None,
     colony_id_decrease: str | None = None,
+    card_resource_to_pay: int = 0,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -447,6 +448,16 @@ def play_card(
             carta no tiene esta mecanica.
         colony_id_decrease: la colonia cuyo track baja (ver
             `colony_id_increase`). Debe ser distinta de esa.
+        card_resource_to_pay: cantidad de recurso guardado en una carta
+            activa propia a usar como pago de esta carta (ej. Dirigibles:
+            floaters a 3 M€ cada uno para cartas tag "venus"; Psychrophiles:
+            microbios a 2 M€ cada uno para cartas tag "plant" -- ver pasivo
+            "card_resource_payment" en rules_engine.register_passive_effect).
+            El motor busca automaticamente, entre los pasivos activos del
+            jugador, cual carta habilita pagar la carta que se esta jugando
+            (segun sus tags) -- lanza ValueError si ninguna matchea o
+            InsufficientResourcesError si esa carta no tiene suficiente
+            recurso guardado. 0 si no se usa esta forma de pago.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -481,10 +492,30 @@ def play_card(
 
     card_tags = tuple(card.get("tags", []))
     steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
+
+    card_resource_source_id = None
+    card_resource_discount = 0
+    if card_resource_to_pay > 0:
+        match = next(
+            (
+                p for p in player["passive_effects"]
+                if "card_resource_payment" in p and p["card_resource_payment"]["required_tag"] in card_tags
+            ),
+            None,
+        )
+        if match is None:
+            raise ValueError(
+                f"Ninguna carta activa del jugador permite pagar '{card_id}' con recurso guardado"
+            )
+        card_resource_source_id = match["card_id"]
+        card_resource_value_mc = match["card_resource_payment"].get("value_mc", 3)
+        card_resource_discount = card_resource_to_pay * card_resource_value_mc
+
     discount = (
         engine.compute_card_cost_discount(player, card_tags)
         + player["pending_mc_discount"]
         + engine.compute_reserved_card_discount(player, card_id)
+        + card_resource_discount
     )
     effective_cost = max(0, card["cost"] - discount)
     change = engine.calculate_card_payment(
@@ -509,6 +540,8 @@ def play_card(
         "pending_mc_discount": 0,
         "pending_requirement_tolerance_steps": 0,
     }
+    if card_resource_source_id is not None:
+        paid_player = engine.spend_active_card_resource(paid_player, card_resource_source_id, card_resource_to_pay)
     effects = card.get("effects") or {}
 
     # Se registra como activa/pasiva ANTES de aplicar el efecto (que puede

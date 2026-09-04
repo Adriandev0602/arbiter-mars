@@ -1171,6 +1171,28 @@ def register_active_card(player: PlayerState, card_id: str, initial_resources: i
     return {**player, "active_cards": new_active_cards}
 
 
+def spend_active_card_resource(player: PlayerState, card_id: str, amount: int) -> PlayerState:
+    """
+    Descuenta `amount` recursos guardados en una carta activa (`card_id`).
+    Lanza InsufficientResourcesError si no alcanza. Usado por tools.play_card
+    para pagar con el recurso guardado en una carta (ej. Dirigibles: floaters
+    valen 3 M€ para cartas Venus; Psychrophiles: microbios valen 2 M€ para
+    cartas plant -- ver pasivo "card_resource_payment" en
+    register_passive_effect), distinto de move_from_target_card_resource_delta
+    (ese mueve recursos de una carta a OTRA carta, no los gasta como pago).
+    """
+    current = player["active_cards"][card_id]["resources"]
+    if current < amount:
+        raise InsufficientResourcesError(
+            f"'{card_id}' tiene {current} recurso(s) guardado(s), se necesitan {amount}"
+        )
+    new_active_cards = {
+        **player["active_cards"],
+        card_id: {**player["active_cards"][card_id], "resources": current - amount},
+    }
+    return {**player, "active_cards": new_active_cards}
+
+
 def use_card_action(
     player: PlayerState,
     globals_: GlobalParameters,
@@ -1222,7 +1244,11 @@ def use_card_action(
         activa (`target_card_id`, debe tener al menos N) hacia la propia carta
         (ej. Predators: mover 1 animal; Ants: mover 1 microbio) -- a diferencia
         de target_card_resource_delta, esta resta del origen ademas de sumar
-        al destino; tr_delta sube el TR directo sin pasar por un parametro global (ej.
+        al destino; "target_card_resource_delta_allow_self": N -- igual que
+        target_card_resource_delta pero el jugador puede elegir CUALQUIER
+        carta activa como destino, incluida la propia (`target_card_id` es
+        opcional -- si se omite, agrega a la propia carta) (ej. Dirigibles:
+        "Add 1 floater to ANY card"); tr_delta sube el TR directo sin pasar por un parametro global (ej.
         Equatorial Magnetizer); mc_per_counter da tanto MC como valga ese
         contador global (ej. Martian Rails: MC por cada ciudad en Marte via
         "city_tiles_placed"); place_oceans: N coloca N tiles de oceano (+N TR
@@ -1357,6 +1383,18 @@ def use_card_action(
             **new_active_cards[target_card_id],
             "resources": max(0, new_active_cards[target_card_id]["resources"] + amount),
         }
+    if "target_card_resource_delta_allow_self" in gains:
+        amount = gains["target_card_resource_delta_allow_self"]
+        dest_id = target_card_id if target_card_id is not None else card_id
+        if dest_id == card_id:
+            card_resources = max(0, card_resources + amount)
+        else:
+            if dest_id not in new_active_cards:
+                raise CardEffectError(f"La carta objetivo '{dest_id}' no esta activa para este jugador")
+            new_active_cards[dest_id] = {
+                **new_active_cards[dest_id],
+                "resources": max(0, new_active_cards[dest_id]["resources"] + amount),
+            }
     if "move_from_target_card_resource_delta" in gains:
         amount = gains["move_from_target_card_resource_delta"]
         if target_card_id is None:
@@ -1610,6 +1648,16 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         recien jugada O +1 planta para el jugador). Ver tools.play_card
         (parametro any_tag_played_choice) y
         rules_engine.apply_any_tag_played_choice.
+      - "card_resource_payment": {"required_tag": "<tag>", "value_mc": N
+        (default 3)} -- habilita pagar OTRAS cartas que tengan ese tag
+        usando los recursos guardados en ESTA carta activa, a N M€ cada
+        uno (ej. Dirigibles: floaters propios valen 3 M€ para cartas tag
+        "venus"; Psychrophiles: microbios propios valen 2 M€ para cartas
+        tag "plant"). Tercera moneda de pago cuyo stock vive en una carta,
+        no en el jugador -- distinta de acero/titanio (que valen para
+        cualquier carta con su tag, no dependen de una carta activa
+        puntual). Ver tools.play_card (parametro card_resource_to_pay) y
+        rules_engine.spend_active_card_resource.
 
     No revisa duplicados: cada carta se juega una sola vez en este motor.
     """
