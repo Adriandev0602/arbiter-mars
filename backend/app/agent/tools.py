@@ -672,6 +672,10 @@ def play_card(
 
     new_player = engine.increment_tags_played(new_player, card_tags)
     new_player = engine.increment_zero_tag_cards_played(new_player, card_tags)
+    for effect in new_player["passive_effects"]:
+        threshold_spec = effect.get("on_card_played_cost_threshold_draw")
+        if threshold_spec is not None and card["cost"] >= threshold_spec["min_cost"]:
+            new_player = engine.draw_cards_to_hand(new_player, threshold_spec.get("draw", 1))
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
         new_globals = engine.increment_events_played(new_globals)
@@ -1063,7 +1067,7 @@ def build_colony(player_id: str, colony_id: str) -> dict:
 
 
 @tool
-def use_trade_fleet(player_id: str, colony_id: str, payment: str) -> dict:
+def use_trade_fleet(player_id: str, colony_id: str, payment: str, bump_track_first: bool = False) -> dict:
     """
     Accion de comerciar de la expansion Colonies (no es un proyecto
     estandar -- una accion mas del turno). Paga el costo elegido (9 MC, 3
@@ -1080,15 +1084,22 @@ def use_trade_fleet(player_id: str, colony_id: str, payment: str) -> dict:
         colony_id: id de `colonies.COLONY_DEFS`, debe estar en juego.
         payment: "mc", "energy" o "titanium" -- que recurso usa para pagar
             el costo de comerciar.
+        bump_track_first: OPCIONAL, True solo si el jugador tiene el pasivo
+            "trade_bump_track_first" activo (ej. Trade Envoys, Trading
+            Colony: "when you trade, you may first increase that Colony
+            Tile track 1 step") y quiere ejercer esa opcion -- sube el
+            track de `colony_id` 1 paso ANTES de calcular el trade income
+            (asi cobra el valor mas alto). False (default) no la ejerce.
 
     Returns:
         dict con el estado actualizado del jugador y de las colonias, mas
         `income_type`/`income_amount`/`colony_bonus` para que el LLM le
         explique al usuario que gano.
 
-    Lanza ValueError si `payment` no es valido, InsufficientResourcesError
-    si falta el recurso o no hay flotas disponibles,
-    colonies.ColonyOccupiedError si la colonia ya tiene flota visitandola.
+    Lanza ValueError si `payment` no es valido o si `bump_track_first` es
+    True sin tener el pasivo, InsufficientResourcesError si falta el
+    recurso o no hay flotas disponibles, colonies.ColonyOccupiedError si la
+    colonia ya tiene flota visitandola.
     """
     if payment not in ("mc", "energy", "titanium"):
         raise ValueError("payment debe ser 'mc', 'energy' o 'titanium'")
@@ -1108,6 +1119,11 @@ def use_trade_fleet(player_id: str, colony_id: str, payment: str) -> dict:
         raise engine.InsufficientResourcesError(f"Se necesita {cost} de {payment}, hay {player[payment]}")
 
     colonies = _load_colonies()
+    if bump_track_first:
+        has_passive = any(effect.get("trade_bump_track_first") for effect in player["passive_effects"])
+        if not has_passive:
+            raise ValueError("El jugador no tiene el pasivo 'trade_bump_track_first' activo")
+        colonies = colonieslib.adjust_colony_track(colonies, colony_id, 1)
     new_colonies, income_type, income_amount, colony_bonus = colonieslib.trade_with_colony(colonies, colony_id)
 
     new_player: dict = {**player, payment: player[payment] - cost, "trade_fleets_used": player["trade_fleets_used"] + 1}

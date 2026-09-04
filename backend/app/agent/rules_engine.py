@@ -1513,6 +1513,16 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (expansion Colonies, 9 MC / 3 energia / 3 titanio, cualquiera sea
         el elegido) cada vez que el jugador usa tools.use_trade_fleet (ej.
         Cryo-Sleep: N=1). Ver compute_trade_cost_discount.
+      - "trade_bump_track_first": true -- habilita el parametro
+        `bump_track_first` de tools.use_trade_fleet (ej. Trade Envoys,
+        Trading Colony: "when you trade, you may first increase that
+        Colony Tile track 1 step").
+      - "on_card_played_cost_threshold_draw": {"min_cost": N, "draw": M
+        (default 1)} -- roba M cartas cada vez que el jugador juega
+        (cualquier) carta cuyo costo IMPRESO (antes de descuentos) sea >= N
+        (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
+        es quien tiene el costo impreso de la carta -- no hay funcion en
+        rules_engine.py para este pasivo especifico.
       - "on_tag_played_add_resource": {"matching_tags": ["<tag>", ...], "resource_delta": N (default 1)}
         -- suma N recurso(s) a la propia carta activa cada vez que el jugador juega
         una carta con alguno de esos tags (ej. Ecological Zone: tags animal/plant;

@@ -306,6 +306,15 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `solar_reflectors` | Solar Reflectors | C38 | 23 MC | Tag power. +5 producción calor |
 | `space_port` | Space Port | C39 | 22 MC | Tags city+building. Requiere 1 colonia propia (pieza nueva `min_colonies_owned`). +1 flota de comercio, +1 ciudad, -1 producción energía, +4 producción MC |
 | `space_port_colony` | Space Port Colony | C40 | 27 MC | Tag power. Requiere 1 colonia propia. Construye 1 colonia (puede repetirse en una donde ya tiene), +1 flota de comercio |
+| `spin_off_department` | Spin-Off Department | C41 | 10 MC | Tag building. +2 producción MC. Pasivo: roba 1 carta cada vez que juega una carta de costo impreso ≥20 MC (pieza nueva `on_card_played_cost_threshold_draw`) |
+| `sub_zero_salt_fish` | Sub-Zero Salt Fish | C42 | 5 MC | Tag animal. Requiere temperatura ≤-6°C. -1 producción plantas; acción repetible sin costo: +1 animal en la carta |
+| `titan_air_scrapping` | Titan Air-Scrapping | C43 | 21 MC | Tag jovian. Acción con elección: -1 titanio → +2 floaters a sí misma, O gastar 2 floaters propios → +1 TR |
+| `titan_shuttles` | Titan Shuttles | C45 | 23 MC | Tags jovian+power. Acción con elección: +2 floaters a OTRA carta Jovian activa elegida, O convertir X floaters propios → X titanio |
+| `trade_envoys` | Trade Envoys | C46 | 6 MC | Tag power. Pasivo: al comerciar puede subir 1 paso esa colonia antes de cobrar (pieza nueva `trade_bump_track_first`) |
+| `trading_colony` | Trading Colony | C47 | 18 MC | Tag power. Mismo pasivo que Trade Envoys, construye 1 colonia |
+| `urban_decomposers` | Urban Decomposers | C48 | 6 MC | Tags building+microbe. Requiere 1 ciudad y 1 colonia en juego. +1 producción plantas, +2 microbios a OTRA carta activa elegida |
+| `warp_drive` | Warp Drive | C49 | 14 MC | Tag science. Requiere 5 tags de ciencia. Pasivo: cartas con tag space cuestan 4 MC menos |
+| `house_printing` | House Printing | P36 | 10 MC | Tag building, expansión **Prelude** (primera carta cargada de esta expansión — no necesita mecánica propia, se dealt 2 gratis en el setup real, no modelado todavía). +1 producción steel |
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -318,6 +327,7 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 | 222 | Dirigibles | Pasivo: "when playing a Venus tag, floaters [guardados en ESTA carta] may be used as payment, and are worth 3 M€ each" — los floaters acumulados en una carta activa funcionan como una TERCERA moneda de pago (como acero/titanio, pero el stock vive en una carta, no en el jugador, y solo aplica a cartas con tag Venus). `calculate_card_payment`/`compute_conversion_rates` solo conocen mc/steel/titanium del jugador — necesitaría un parámetro nuevo tipo `floater_card_id`+`floaters_to_pay` en `tools.play_card`, validar que esa carta tenga tag Venus el objetivo, y sumar `floaters_to_pay * 3` al pago igual que steel/titanium. Pieza real de pago, no de efecto — misma categoría que Self-Replicating Robots (mecánica de pago no trivial), pospuesta para abordarla con foco dedicado en vez de forzarla en un bloque de revisión normal. Mismo patrón se repetirá en más cartas Venus Next que usan floaters como pago (verificar cuando aparezcan). |
 | C01 | Airliners (Colonies) | Requiere "tener 3 floaters" — misma pieza pendiente que Aerosport Tournament (suma de floaters entre todas las cartas activas). Efecto (+2 producción MC, +2 floaters a otra carta) no tiene problema, es solo el requirement el que bloquea. |
 | C10 | Floater Leasing (Colonies) | "+1 producción MC por cada 3 floaters que tengas" — misma pieza pendiente que Aerosport Tournament/Airliners (suma de floaters entre todas las cartas activas). |
+| C44 | Titan Floating Launch-Pad (Colonies) | Acción con elección: [+1 floater a CUALQUIER carta Jovian] (sin problema, ya cargable) O [gastar 1 floater propio → comerciar GRATIS, sin pagar el costo normal de 9 MC/3 energía/3 titanio]. La segunda rama exige integrar `use_card_action` (que hoy no conoce `colonies.py` en absoluto) con la mecánica de comercio (`tools.use_trade_fleet`) en una sola acción: gastar recurso de la carta + elegir `colony_id` + resolver `trade_with_colony` sin pasar por el costo normal. Pieza real de integración entre dos subsistemas, no una extensión chica — pospuesta en vez de forzar una implementación frágil. |
 
 ### Colonies: mecánica de colonias/comercio
 
