@@ -586,7 +586,9 @@ def play_card(
     # con el propio tag (ver apply_tag_played_resource_bonuses mas abajo).
     if effects.get("becomes_active"):
         paid_player = engine.register_active_card(
-            paid_player, card_id, initial_resources=effects.get("active_card_starting_resources", 0)
+            paid_player, card_id,
+            initial_resources=effects.get("active_card_starting_resources", 0),
+            resource_type=effects.get("active_card_resource_type"),
         )
     if effects.get("passive"):
         paid_player = engine.register_passive_effect(paid_player, card_id, effects["passive"])
@@ -1378,7 +1380,9 @@ def _compute_player_influence(
 
 
 @tool
-def resolve_global_event(player_id: str, event_id: str) -> dict:
+def resolve_global_event(
+    player_id: str, event_id: str, target_card_id: str | None = None, effect_choice: int | None = None,
+) -> dict:
     """
     Resuelve el efecto de la carta "Current Global Event" (expansion
     Turmoil, mazo separado de las cartas de proyecto -- ver
@@ -1386,8 +1390,8 @@ def resolve_global_event(player_id: str, event_id: str) -> dict:
     Events"). Calcula la Influencia de `player_id` (ver
     turmoil.compute_influence) y aplica `event.effects` con
     rules_engine.apply_card_effect (mismo motor que las cartas de
-    proyecto -- reusa su vocabulario, mas la pieza nueva
-    "resource_delta_per_capped_counter" especifica de Global Events).
+    proyecto -- reusa su vocabulario, mas las piezas nuevas especificas de
+    Global Events, ej. "resource_delta_per_capped_counter").
 
     ALCANCE (ver turmoil.py): NO simula el reparto de delegados neutrales
     al revelar la carta, ni el avance Distant -> Coming -> Current del
@@ -1398,6 +1402,13 @@ def resolve_global_event(player_id: str, event_id: str) -> dict:
     Args:
         player_id: id del jugador.
         event_id: id de `global_events` (ej. "generous_funding", "riots").
+        target_card_id: OBLIGATORIO si `effects` tiene
+            "target_card_resource_delta_typed" (ej. Corrosive Rain: "Lose
+            2 floaters from a card" -- la carta activa propia elegida
+            para perder los floaters). None si el evento no lo necesita.
+        effect_choice: OBLIGATORIO si `effects` tiene "choice" (ej.
+            Corrosive Rain: elegir entre perder floaters o 10 M€). None si
+            el evento no tiene eleccion.
 
     Returns:
         dict con el estado actualizado del jugador/parametros globales y
@@ -1416,7 +1427,8 @@ def resolve_global_event(player_id: str, event_id: str) -> dict:
     influence = _compute_player_influence(player, turmoil, player_id)
 
     new_player, new_globals = engine.apply_card_effect(
-        player, globals_, event.get("effects") or {}, influence=influence,
+        player, globals_, event.get("effects") or {}, effect_choice=effect_choice,
+        target_card_id=target_card_id, influence=influence,
     )
 
     _save_player(player_id, new_player)

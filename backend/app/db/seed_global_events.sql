@@ -50,3 +50,26 @@ insert into global_events (id, name, effects) values
 on conflict (id) do update set
     name = excluded.name,
     effects = excluded.effects;
+
+-- Bloque 3 (2026-09-04): Cloud Societies y Corrosive Rain, resueltas gracias
+-- a la pieza nueva de "recursos tipados por carta activa" (ver
+-- seed_cards.sql, mismo bloque -- Aerosport Tournament/Airliners/Floater
+-- Leasing). Piezas nuevas usadas: "add_resource_to_all_matching_type",
+-- "target_card_resource_delta_typed" (con "amount_per_influence"),
+-- "draw_cards_per_influence".
+insert into global_events (id, name, effects) values
+    (
+        'cloud_societies', 'Cloud Societies',
+        '{"add_resource_to_all_matching_type": {"resource_type": "floater", "amount": 1},
+          "target_card_resource_delta_typed": {"resource_type": "floater", "amount_per_influence": true}}'::jsonb
+    ),
+    (
+        'corrosive_rain', 'Corrosive Rain',
+        '{"choice": [
+            {"target_card_resource_delta_typed": {"resource_type": "floater", "amount": -2}, "draw_cards_per_influence": true},
+            {"resource_deltas": {"mc": -10}, "draw_cards_per_influence": true}
+          ]}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    effects = excluded.effects;

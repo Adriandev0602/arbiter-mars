@@ -657,6 +657,12 @@ def check_card_requirements(
         que el jugador ya tenga esa produccion en al menos N (ej. Great
         Escarpment Consortium: requiere tener produccion de steel >= 1).
         Requiere pasar `player`.
+      - "min_total_card_resources": {"resource_type": "<tipo>", "count": N}
+        -- requiere al menos N recursos de ese TIPO sumados entre TODAS
+        las cartas activas del jugador (ej. Aerosport Tournament: 5
+        floaters, sin importar en que carta(s) esten guardados). Ver
+        register_active_card (parametro `resource_type`) y
+        sum_card_resources_by_type. Requiere pasar `player`.
 
     requirements None o {} no exige nada. Lanza CardRequirementNotMetError
     si algun requisito no se cumple.
@@ -725,6 +731,18 @@ def check_card_requirements(
         if not is_ruling and own_delegates < min_delegates:
             raise CardRequirementNotMetError(
                 f"Requiere que '{party}' este gobernando o tener {min_delegates} delegados ahi, hay {own_delegates}"
+            )
+
+    if "min_total_card_resources" in requirements:
+        spec = requirements["min_total_card_resources"]
+        if player is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado del jugador (recursos guardados en cartas)"
+            )
+        have = sum_card_resources_by_type(player, spec["resource_type"])
+        if have < spec["count"]:
+            raise CardRequirementNotMetError(
+                f"Requiere {spec['count']} {spec['resource_type']}(s) guardados en cartas activas, hay {have}"
             )
 
     if "min_production" in requirements:
@@ -1002,6 +1020,36 @@ def apply_card_effect(
         jugado (ej. Hydrogen to Venus: +1 floater a una carta Venus por cada
         tag jovian). Si el conteo da 0, no hace nada y NO exige
         target_card_id (jugar la carta sigue siendo legal sin tags jovian).
+      - "target_card_resource_delta_typed": {"resource_type": "<tipo>",
+        "amount": N} -- igual que target_card_resource_delta, pero exige
+        que la carta objetivo (`target_card_id`) tenga ESE `resource_type`
+        (ver register_active_card) -- lanza CardEffectError si no matchea
+        (ej. Airliners: "Add 2 floaters to ANOTHER card" -- solo vale
+        apuntar a una carta que de verdad coleccione floaters, no
+        cualquier carta activa). `amount` puede ser negativo (ej.
+        Corrosive Rain, expansion Turmoil: "Lose 2 floaters from a card"
+        -> amount=-2, dentro de una rama de "choice"). Alternativa
+        "amount_per_influence": true en vez de "amount" -- usa la
+        Influencia del jugador (parametro `influence`) como cantidad
+        dinamica en vez de un numero fijo (ej. Cloud Societies, expansion
+        Turmoil: "Add 1 floater for each influence to a card").
+      - "add_resource_to_all_matching_type": {"resource_type": "<tipo>",
+        "amount": N} -- suma N al recurso de TODAS las cartas activas del
+        jugador que tengan ese `resource_type`, sin elegir una en
+        particular (ej. Cloud Societies, expansion Turmoil Global Events:
+        "Add a floater to each card that can collect floaters").
+      - "production_delta_per_card_resource_type": {"resource_type":
+        "<tipo>", "production": "<recurso>_production", "divisor": N
+        (default 1), "per_unit": N (default 1)} -- suma produccion segun
+        cuantos recursos de ese tipo tiene el jugador sumados entre TODAS
+        sus cartas activas (ver sum_card_resources_by_type), dividido
+        entero por `divisor` (ej. Floater Leasing: "+1 produccion MC por
+        cada 3 floaters que tengas" -> resource_type="floater",
+        production="mc_production", divisor=3, per_unit=1).
+      - "draw_cards_per_influence": true -- expansion Turmoil, roba tantas
+        cartas como Influencia tenga el jugador (parametro `influence`,
+        ver turmoil.compute_influence) (ej. Corrosive Rain: "Draw 1 card
+        for each influence").
 
     NOTA sobre "remove up to N <recurso> from any player": varias cartas del
     catalogo (ej. Comet, Asteroid, Big Asteroid) tienen esta clausula opcional
@@ -1020,6 +1068,7 @@ def apply_card_effect(
         return apply_card_effect(
             player, globals_, options[effect_choice], effect_amount,
             target_card_id=target_card_id, target_card_id_2=target_card_id_2,
+            discard_card_id=discard_card_id, influence=influence,
         )
 
     if "tag_count_choice" in effects:
@@ -1251,6 +1300,43 @@ def apply_card_effect(
         }
         new_player["active_cards"] = new_active_cards
 
+    if "target_card_resource_delta_typed" in effects:
+        spec = effects["target_card_resource_delta_typed"]
+        if target_card_id is None:
+            raise CardEffectError("Esta carta requiere target_card_id")
+        active_cards = new_player["active_cards"]
+        if target_card_id not in active_cards:
+            raise CardEffectError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+        if active_cards[target_card_id].get("resource_type") != spec["resource_type"]:
+            raise CardEffectError(
+                f"'{target_card_id}' no guarda recursos de tipo '{spec['resource_type']}'"
+            )
+        amount = influence if spec.get("amount_per_influence") else spec["amount"]
+        new_active_cards = dict(active_cards)
+        new_active_cards[target_card_id] = {
+            **new_active_cards[target_card_id],
+            "resources": max(0, new_active_cards[target_card_id]["resources"] + amount),
+        }
+        new_player["active_cards"] = new_active_cards
+
+    if "add_resource_to_all_matching_type" in effects:
+        spec = effects["add_resource_to_all_matching_type"]
+        new_active_cards = dict(new_player["active_cards"])
+        for cid, c in new_active_cards.items():
+            if c.get("resource_type") == spec["resource_type"]:
+                new_active_cards[cid] = {**c, "resources": max(0, c["resources"] + spec["amount"])}
+        new_player["active_cards"] = new_active_cards
+
+    if "production_delta_per_card_resource_type" in effects:
+        spec = effects["production_delta_per_card_resource_type"]
+        total = sum_card_resources_by_type(PlayerState(**new_player), spec["resource_type"])  # type: ignore[typeddict-item]
+        units = total // spec.get("divisor", 1)
+        key = spec["production"]
+        new_player[key] = _apply_production_floor(key, new_player[key] + units * spec.get("per_unit", 1))
+
+    if "draw_cards_per_influence" in effects and effects["draw_cards_per_influence"]:
+        new_player = dict(draw_cards_to_hand(PlayerState(**new_player), influence))  # type: ignore[typeddict-item]
+
     if "target_card_resource_delta_per_tag" in effects:
         spec = effects["target_card_resource_delta_per_tag"]
         count = player["tags_played"].get(spec["tag"], 0)
@@ -1279,7 +1365,9 @@ def apply_card_effect(
 # microbios guardados en la carta)
 # ---------------------------------------------------------------------------
 
-def register_active_card(player: PlayerState, card_id: str, initial_resources: int = 0) -> PlayerState:
+def register_active_card(
+    player: PlayerState, card_id: str, initial_resources: int = 0, resource_type: str | None = None,
+) -> PlayerState:
     """
     Marca una carta recien jugada como "activa" -- queda en juego frente al
     jugador porque tiene una accion repetible y/o guarda recursos propios.
@@ -1293,10 +1381,40 @@ def register_active_card(player: PlayerState, card_id: str, initial_resources: i
     que arrancan con recursos via su propio pasivo "on_tag_played_add_resource"
     autodisparado por su propio tag). Viene de `effects.active_card_starting_resources`
     en la fila de `cards`, leido por tools.play_card.
+
+    resource_type: OPCIONAL -- etiqueta el TIPO de recurso que guarda esta
+    carta (ej. "floater", "microbe", "animal", "data", "science"), viene de
+    `effects.active_card_resource_type`. Antes de esta pieza,
+    `active_cards[card_id]["resources"]` era un contador sin tipo -- no
+    permitia sumar "solo los floaters" entre varias cartas activas.
+    Necesario para requisitos/efectos que cuentan un tipo de recurso
+    especifico a traves de TODAS las cartas activas del jugador (ej.
+    Aerosport Tournament: "Requires that you have 5 floaters"; Floater
+    Leasing: "+1 produccion MC por cada 3 floaters que tengas" -- ver
+    sum_card_resources_by_type, requirement "min_total_card_resources" en
+    check_card_requirements, y las piezas nuevas en apply_card_effect
+    documentadas ahi). None si la carta no necesita esta distincion (la
+    inmensa mayoria -- solo importa cuando una carta DISTINTA necesita
+    sumar/filtrar por tipo).
     """
     new_active_cards = dict(player["active_cards"])
-    new_active_cards[card_id] = {"resources": initial_resources, "action_used": False}
+    new_active_cards[card_id] = {
+        "resources": initial_resources, "action_used": False, "resource_type": resource_type,
+    }
     return {**player, "active_cards": new_active_cards}
+
+
+def sum_card_resources_by_type(player: PlayerState, resource_type: str) -> int:
+    """
+    Suma `resources` de TODAS las cartas activas del jugador cuyo
+    `resource_type` (ver register_active_card) coincida (ej. todos los
+    floaters guardados en cualquier carta, sin importar cual). Cartas
+    activas registradas ANTES de esta pieza (o sin `resource_type` pasado)
+    no tienen esa clave -- `.get(...)` las trata como None, nunca matchean.
+    """
+    return sum(
+        c["resources"] for c in player["active_cards"].values() if c.get("resource_type") == resource_type
+    )
 
 
 def spend_active_card_resource(player: PlayerState, card_id: str, amount: int) -> PlayerState:
@@ -1446,7 +1564,9 @@ def use_card_action(
             )
         card_resources -= effect_amount
         new_player[to_key] = new_player[to_key] + effect_amount * spec.get("ratio", 1)
-        new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
+        new_active_cards[card_id] = {
+            **new_active_cards[card_id], "resources": card_resources, "action_used": True,
+        }
         new_player["active_cards"] = new_active_cards
         return PlayerState(**new_player), globals_  # type: ignore[typeddict-item]
 
@@ -1461,7 +1581,9 @@ def use_card_action(
             )
         new_player[from_key] -= effect_amount
         new_player[to_key] += effect_amount * spec.get("ratio", 1)
-        new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
+        new_active_cards[card_id] = {
+            **new_active_cards[card_id], "resources": card_resources, "action_used": True,
+        }
         new_player["active_cards"] = new_active_cards
         return PlayerState(**new_player), globals_  # type: ignore[typeddict-item]
 
@@ -1585,7 +1707,9 @@ def use_card_action(
             raise CardEffectError(f"La accion de '{card_id}' requiere reserved_card_id")
         new_player = dict(duplicate_reserved_card_resources(PlayerState(**new_player), reserved_card_id))  # type: ignore[typeddict-item]
 
-    new_active_cards[card_id] = {"resources": card_resources, "action_used": True}
+    new_active_cards[card_id] = {
+            **new_active_cards[card_id], "resources": card_resources, "action_used": True,
+        }
     new_player["active_cards"] = new_active_cards
 
     return PlayerState(**new_player), GlobalParameters(**new_globals)  # type: ignore[typeddict-item]
