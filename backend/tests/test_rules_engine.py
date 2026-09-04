@@ -4427,3 +4427,94 @@ def test_titan_floating_launch_pad_immediate_effect_targets_any_jovian_card():
         player, new_global_parameters(), {"target_card_resource_delta": 2}, target_card_id="aerial_mappers",
     )
     assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+
+
+# --- Piezas nuevas de motor (bloque 30) --------------------------------------
+
+def test_mc_per_discarded_card_action():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "ceres_tech_market")
+    action_spec = {"cost": {}, "gains": {"mc_per_discarded_card": {"per_card": 2}}}
+    new_player, _ = use_card_action(player, globals_, "ceres_tech_market", action_spec, effect_amount=3)
+    assert new_player["mc"] == 6
+
+
+def test_resource_delta_per_colony():
+    player = {**new_player_state(), "colonies_owned": ["callisto"]}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"resource_delta_per_colony": {"resource": "mc", "per_colony": 2}},
+    )
+    assert new_player["mc"] == 2
+
+
+def test_production_delta_per_tag_pair_uses_minimum_of_both_counts():
+    player = {**new_player_state(), "tags_played": {"earth": 3, "venus": 1}}
+    effects = {"production_delta_per_tag_pair": {"tag_a": "earth", "tag_b": "venus", "production": "mc_production", "per_set": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 1  # min(3,1) = 1 set
+
+
+def test_production_delta_per_tag_pair_no_pairs_no_change():
+    player = {**new_player_state(), "tags_played": {"earth": 3}}
+    effects = {"production_delta_per_tag_pair": {"tag_a": "earth", "tag_b": "venus", "production": "mc_production", "per_set": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1
+
+
+# --- Bloque de revision 30 (Prelude + Venus Next promo + Prelude 2) ---------
+
+def test_lava_tube_settlement_swaps_energy_for_mc_places_city_flag():
+    effects = {"production_deltas": {"energy_production": -1, "mc_production": 2}, "place_city_tiles": 1}
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), effects)
+    assert new_player["energy_production"] == 0
+    assert new_player["mc_production"] == 3
+    assert new_globals["city_tiles_placed"] == 1
+
+
+def test_martian_survey_requires_max_oxygen_4_draws_2():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_oxygen": 4}, {**new_global_parameters(), "oxygen": 6})
+    player = {**new_player_state(), "deck": ["a", "b"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 2})
+    assert new_player["hand"] == ["a", "b"]
+
+
+def test_sf_memorial_draws_1():
+    player = {**new_player_state(), "deck": ["a"]}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {"draw_cards": 1})
+    assert new_player["hand"] == ["a"]
+
+
+def test_space_hotels_requires_2_earth_tags_mc_production():
+    req = {"min_tag_count": {"tag": "earth", "count": 2}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"earth": 1}})
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 4}})
+    assert new_player["mc_production"] == 5
+
+
+def test_ceres_tech_market_mc_per_colony_and_discard_action():
+    player = {**new_player_state(), "colonies_owned": ["callisto"]}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"resource_delta_per_colony": {"resource": "mc", "per_colony": 2}},
+    )
+    assert new_player["mc"] == 2
+
+    globals_ = new_global_parameters()
+    active_player = register_active_card(new_player_state(), "ceres_tech_market")
+    action_spec = {"cost": {}, "gains": {"mc_per_discarded_card": {"per_card": 2}}}
+    new_player2, _ = use_card_action(active_player, globals_, "ceres_tech_market", action_spec, effect_amount=2)
+    assert new_player2["mc"] == 4
+
+
+def test_cloud_tourism_mc_production_per_earth_venus_pair_action_adds_floater():
+    player = {**new_player_state(), "tags_played": {"earth": 2, "venus": 2}}
+    effects = {"production_delta_per_tag_pair": {"tag_a": "earth", "tag_b": "venus", "production": "mc_production", "per_set": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 3
+
+    globals_ = new_global_parameters()
+    active_player = register_active_card(new_player_state(), "cloud_tourism")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player2, _ = use_card_action(active_player, globals_, "cloud_tourism", action_spec)
+    assert new_player2["active_cards"]["cloud_tourism"]["resources"] == 1

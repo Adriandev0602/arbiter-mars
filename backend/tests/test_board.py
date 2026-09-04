@@ -19,6 +19,7 @@ from app.agent.board import (
     count_tiles_of_type,
     can_place_ocean,
     can_place_city,
+    can_place_city_on_volcanic,
     can_place_greenery,
     can_place_special_tile,
     resolve_hex_bonus,
@@ -283,6 +284,24 @@ def test_lava_flows_can_only_place_on_one_of_the_4_named_volcanoes():
 
     with pytest.raises(InvalidPlacementError):
         place_special_tile(board, non_volcanic_land_hex, requirement, "player-1", "lava_flows")
+
+
+def test_can_place_city_on_volcanic_ignores_city_adjacency():
+    board = new_board()
+    volcano_hex = "09"  # Tharsis Tholus
+    assert can_place_city_on_volcanic(board, volcano_hex) is True
+
+    # A diferencia de can_place_city, IGNORA la adyacencia a otra ciudad
+    board, _, _ = place_city_tile(board, "08", "player-1")  # vecino de 09
+    assert can_place_city(board, volcano_hex) is False  # rechazado por adyacencia normal
+    assert can_place_city_on_volcanic(board, volcano_hex) is True  # Lava Tube Settlement la ignora
+
+
+def test_can_place_city_on_volcanic_rejects_non_volcanic_hex():
+    board = new_board()
+    non_volcanic_land_hex = "05"
+    assert HEX_DEFS[non_volcanic_land_hex]["volcanic"] is False
+    assert can_place_city_on_volcanic(board, non_volcanic_land_hex) is False
 
 
 def test_mining_rights_no_adjacency_required():

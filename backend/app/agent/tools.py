@@ -557,12 +557,16 @@ def play_card(
                 f"Esta carta coloca {cities_delta} ciudad(es); se recibieron {len(chosen)} hex_id(s)"
             )
         require_adjacent_cities = effects.get("city_placement_requires_adjacent_cities")
+        on_volcanic = effects.get("city_placement_on_volcanic")
         for hid in chosen:
             if require_adjacent_cities is not None:
                 if not boardlib.can_place_city_adjacent_to_cities(board, hid, require_adjacent_cities):
                     raise boardlib.InvalidPlacementError(
                         f"'{hid}' no es adyacente a al menos {require_adjacent_cities} ciudad(es)"
                     )
+            elif on_volcanic:
+                if not boardlib.can_place_city_on_volcanic(board, hid):
+                    raise boardlib.InvalidPlacementError(f"'{hid}' no es un hexagono volcanico vacio")
             elif not boardlib.can_place_city(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hid}'")
             board, new_player = _place_city_and_apply_bonus(

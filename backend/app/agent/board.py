@@ -283,6 +283,22 @@ def can_place_city_adjacent_to_cities(board: Board, hex_id: str, min_adjacent_ci
     return adjacent_cities >= min_adjacent_cities
 
 
+def can_place_city_on_volcanic(board: Board, hex_id: str) -> bool:
+    """
+    Para cartas como Lava Tube Settlement: "place a city tile ON A VOLCANIC
+    AREA, same as Lava Flows, REGARDLESS OF ADJACENT CITIES" -- exige que
+    el hex sea uno de los 4 volcanicos nombrados (ver VOLCANO_NAMES) y este
+    vacio, pero a diferencia de can_place_city NO rechaza adyacencia a
+    otras ciudades (la carta la ignora explicitamente).
+    """
+    hex_def = HEX_DEFS.get(hex_id)
+    if hex_def is None:
+        raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
+    if not hex_def["volcanic"] or not is_hex_empty(board, hex_id):
+        return False
+    return True
+
+
 def place_city_tile_adjacent_to_cities(
     board: Board, hex_id: str, player_id: str, min_adjacent_cities: int
 ) -> tuple[Board, list[tuple[str, int]], int]:
