@@ -138,20 +138,22 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→28 + Venus Next + Lava Flows + Colonies)
+### 📍 Punto de retoma (última sesión: 2026-09-03, bloques 12→29 + Venus Next + Lava Flows + Colonies)
 
-**Progreso:** catálogo en **288 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-27 y la mecánica de colonias/comercio, Lava Flows (140). `card_review_queue` tiene
-183 filas `reviewed = true` y **121 sin revisar** — el próximo bloque (29) son las filas #1-10
+**Progreso:** catálogo en **297 cartas** cargadas en `cards`. `main` tiene mergeados los
+bloques 13-28 y la mecánica de colonias/comercio, Lava Flows (140). `card_review_queue` tiene
+193 filas `reviewed = true` y **111 sin revisar** — el próximo bloque (30) son las filas #1-10
 de `select * from card_review_queue where reviewed = false order by id limit 10`.
 
 **Decisión de alcance (2026-09-02/03):** primero entró **Venus Next** (bloque 20 completo era
 de esa expansión, ver sección 7). El bloque 25 trajo la primera tanda de **Colonies** -- el
 usuario confirmó seguir cargando cartas de cualquier expansión que aparezca sin preguntar cada
 vez, así que Colonies también entró, **incluida su mecánica central** (el usuario pidió
-implementarla explícitamente después de ver el bloque 25). Si aparecen expansiones nuevas
-(Prelude, Ares) el criterio es el mismo: cargar lo que se pueda con vocabulario existente,
-diagnosticar y posponer lo que necesite mecánica grande nueva.
+implementarla explícitamente después de ver el bloque 25). El bloque 29 cerró Colonies
+(llegó a C49, el último) y trajo la primera carta de **Prelude** -- esa expansión NO necesita
+mecánica propia (ver sección 7), así que sigue el mismo flujo de siempre sin nada especial que
+construir. Si aparece una expansión que sí necesite mecánica grande nueva, la misma pregunta
+aplica: cargar lo que se pueda con vocabulario existente, diagnosticar y posponer el resto.
 
 **Verificación contra el rulebook oficial (2026-09-02):** se releyó el reglamento completo
 (fryxgames/Stronghold Games, 16 páginas) y se cruzó contra el motor -- sin discrepancias
@@ -177,12 +179,12 @@ de cartas; el mecanismo ya es genérico, agregar una colonia nueva es solo datos
 detalle completo en `CARDS_LOG.md`, sección "Colonies: mecánica de colonias/comercio". Tests:
 `test_colonies.py`.
 
-**Bloques 21-28, 76 de 80 cargadas** (4 pendientes, ver abajo). Piezas de motor nuevas
-agregadas a lo largo de los ocho bloques, todas extensiones chicas de vocabulario existente:
+**Bloques 21-29, 85 de 90 cargadas** (5 pendientes, ver abajo). Piezas de motor nuevas
+agregadas a lo largo de los nueve bloques, todas extensiones chicas de vocabulario existente:
 - `production_delta_per_tag` acepta una LISTA de specs (Gyropolis, bloque 21).
 - `target_card_resource_delta_per_tag` (Hydrogen to Venus, bloque 21).
 - `min_tag_count` en lista de 3+ tags distintos, patrón reusado sin cambios en motor (bloques
-  22-28).
+  22-29).
 - `mc_or_titanium` en el `cost` de `use_card_action` -- el titanio puede cubrir parte/todo un
   costo de acción en MC, igual que al pagar cartas (Rotator Impacts, bloque 23; nuevo parámetro
   `titanium_to_pay`).
@@ -198,8 +200,12 @@ agregadas a lo largo de los ocho bloques, todas extensiones chicas de vocabulari
   Services, bloque 25, primera carta Colonies cargada).
 - `colonies_owned`/`trade_fleets`/`trade_fleets_used` (campos nuevos) + `production_delta_per_colony`
   + pasivo `trade_cost_discount` + `mc_per_card_resource` (gana MC por recurso guardado en la
-  carta SIN gastarlo, con tope opcional) + `trade_fleet_delta` + `draw_cards_per_tag` -- ver
-  mecánica de colonias arriba (bloques 25-28).
+  carta SIN gastarlo, con tope opcional) + `trade_fleet_delta` + `draw_cards_per_tag` + pasivo
+  `trade_bump_track_first` (bloque 29: sube el track de una colonia 1 paso antes de comerciar,
+  parámetro nuevo `bump_track_first` en `tools.use_trade_fleet`) + pasivo
+  `on_card_played_cost_threshold_draw` (bloque 29: roba cartas al jugar una carta cuyo costo
+  IMPRESO supere un umbral, chequeado en `tools.play_card` porque necesita el costo de catálogo)
+  -- ver mecánica de colonias arriba (bloques 25-29).
 
 **Flujo de ramas:** cada bloque de revisión vive en su propia rama `feat/review-block-N`,
 creada a partir de `main` una vez que el bloque anterior ya se mergeó, o de la rama del bloque
@@ -216,9 +222,13 @@ pieza de mecánica ya diagnosticada pero no implementada:**
 - **Dirigibles** (222, Venus Next): floaters guardados en la carta valen 3 M€ como pago para
   cartas Venus -- tercera moneda de pago cuyo stock vive en una carta, no en el jugador. Misma
   categoría que Self-Replicating Robots (mecánica de pago no trivial).
+- **Titan Floating Launch-Pad** (C44, Colonies): una de sus dos ramas de acción es "gastar 1
+  floater propio para comerciar GRATIS" -- integra `use_card_action` (que hoy no conoce
+  `colonies.py`) con `tools.use_trade_fleet` en una sola acción. Pieza de integración entre
+  subsistemas, no una extensión chica.
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-29`, consultar
+checkout -b feat/review-block-30`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans
@@ -312,7 +322,11 @@ colony bonus, reset de track, paso de producción de colonias en la fase solar) 
 `COLONY_DEFS` por ahora (verificada con dos fuentes independientes); las otras 10 colonias
 reales del juego quedan sin cargar hasta verificarlas de la misma forma que el catálogo de
 cartas -- el mecanismo ya es genérico, agregar una colonia nueva es solo agregar datos
-verificados a `COLONY_DEFS`, no tocar código.
+verificados a `COLONY_DEFS`, no tocar código. Colonies terminó de revisarse en el bloque 29
+(cierre C01-C49). También la expansión **Prelude** (primera carta bloque 29, House Printing) --
+a diferencia de Venus Next/Colonies, Prelude NO necesita mecánica propia nueva: son ~24 cartas
+con efecto inmediato simple que en el juego real se reparten 2 gratis en el setup (ese sorteo/
+elección de setup no está modelado todavía, no bloquea cargar las cartas individuales).
 
 **Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, soporte para
 múltiples juegos simultáneos, milestones y awards (incluidos los nuevos de Venus Next: Hoverlord

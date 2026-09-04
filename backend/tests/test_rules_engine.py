@@ -4303,3 +4303,97 @@ def test_space_port_requires_1_colony_gains_trade_fleet_city_and_production():
     assert new_player["energy_production"] == 0
     assert new_player["mc_production"] == 5
     assert new_globals["city_tiles_placed"] == 1
+
+
+# --- Pieza nueva de motor (bloque 29): trade_bump_track_first + registro ----
+
+def test_trade_bump_track_first_passive_registration():
+    player = register_passive_effect(new_player_state(), "trade_envoys", {"trade_bump_track_first": True})
+    assert any(e.get("trade_bump_track_first") for e in player["passive_effects"])
+
+
+# --- Bloque de revision 29 (cierre Colonies + primera carta Prelude) --------
+
+def test_spin_off_department_mc_production():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"mc_production": 2}})
+    assert new_player["mc_production"] == 3
+
+
+def test_sub_zero_salt_fish_requires_max_temperature_action_adds_animal():
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"max_temperature": -6}, {**new_global_parameters(), "temperature": -4})
+    check_card_requirements({"max_temperature": -6}, {**new_global_parameters(), "temperature": -6})
+
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"plant_production": -1}})
+    assert new_player["plant_production"] == 0
+
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "sub_zero_salt_fish")
+    action_spec = {"cost": {}, "gains": {"card_resource_delta": 1}}
+    new_player2, _ = use_card_action(player, globals_, "sub_zero_salt_fish", action_spec)
+    assert new_player2["active_cards"]["sub_zero_salt_fish"]["resources"] == 1
+
+
+def test_titan_air_scrapping_action_choice_titanium_or_tr():
+    globals_ = new_global_parameters()
+    player = {**register_active_card(new_player_state(), "titan_air_scrapping"), "titanium": 1}
+    action_spec = {"choice": [
+        {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 2}},
+        {"cost": {"card_resource": 2}, "gains": {"tr_delta": 1}},
+    ]}
+    p1, _ = use_card_action(player, globals_, "titan_air_scrapping", action_spec, effect_choice=0)
+    assert p1["active_cards"]["titan_air_scrapping"]["resources"] == 2
+    assert p1["titanium"] == 0
+
+    player_with_floaters = {**player, "active_cards": {"titan_air_scrapping": {"resources": 2, "action_used": False}}}
+    p2, _ = use_card_action(player_with_floaters, globals_, "titan_air_scrapping", action_spec, effect_choice=1)
+    assert p2["tr"] == 21
+    assert p2["active_cards"]["titan_air_scrapping"]["resources"] == 0
+
+
+def test_titan_shuttles_action_choice_target_or_convert_to_titanium():
+    globals_ = new_global_parameters()
+    player = register_active_card(new_player_state(), "titan_shuttles")
+    player = register_active_card(player, "aerial_mappers")
+    action_spec = {"choice": [
+        {"gains": {"target_card_resource_delta": 2}},
+        {"convert_card_resource_amount": {"to": "titanium", "ratio": 1}},
+    ]}
+    p1, _ = use_card_action(player, globals_, "titan_shuttles", action_spec, effect_choice=0, target_card_id="aerial_mappers")
+    assert p1["active_cards"]["aerial_mappers"]["resources"] == 2
+
+    player_with_floaters = register_active_card(new_player_state(), "titan_shuttles", initial_resources=3)
+    p2, _ = use_card_action(player_with_floaters, globals_, "titan_shuttles", action_spec, effect_choice=1, effect_amount=3)
+    assert p2["titanium"] == 3
+    assert p2["active_cards"]["titan_shuttles"]["resources"] == 0
+
+
+def test_urban_decomposers_requires_city_and_colony_plant_production_and_target():
+    req = {"min_city_tiles": 1, "min_colonies_owned": 1}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, {**new_global_parameters(), "city_tiles_placed": 0}, player={**new_player_state(), "colonies_owned": ["callisto"]})
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, {**new_global_parameters(), "city_tiles_placed": 1}, player=new_player_state())
+    check_card_requirements(req, {**new_global_parameters(), "city_tiles_placed": 1}, player={**new_player_state(), "colonies_owned": ["callisto"]})
+
+    player = register_active_card(new_player_state(), "urban_decomposers")
+    player = register_active_card(player, "aerial_mappers")
+    effects = {"production_deltas": {"plant_production": 1}, "target_card_resource_delta": 2}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, target_card_id="aerial_mappers")
+    assert new_player["plant_production"] == 2
+    assert new_player["active_cards"]["aerial_mappers"]["resources"] == 2
+
+
+def test_warp_drive_requires_5_science_tags_passive_discounts_space_cards():
+    req = {"min_tag_count": {"tag": "science", "count": 5}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player={**new_player_state(), "tags_played": {"science": 4}})
+
+    player = register_passive_effect(new_player_state(), "warp_drive", {"card_cost_discount_mc": 4, "tag_filter": "space"})
+    assert compute_card_cost_discount(player, ("space",)) == 4
+    assert compute_card_cost_discount(player, ("earth",)) == 0
+
+
+def test_house_printing_steel_production():
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), {"production_deltas": {"steel_production": 1}})
+    assert new_player["steel_production"] == 2

@@ -1396,3 +1396,63 @@ on conflict (id) do update set
     effects = excluded.effects;
 
 update cards set is_event = true where id in ('solar_probe');
+
+-- Bloque de revision 29 (cierre de Colonies, C41-C49, + primera carta de
+-- Prelude). 9 de 10 cargadas -- Titan Floating Launch-Pad (C44) queda
+-- pendiente (ver CARDS_LOG.md). Piezas nuevas chicas: pasivo
+-- "trade_bump_track_first" (habilita tools.use_trade_fleet bump_track_first)
+-- y pasivo "on_card_played_cost_threshold_draw" (roba cartas al jugar una
+-- carta cuyo costo impreso supere un umbral).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'spin_off_department', 'Spin-Off Department', 10, '{building}', null,
+        '{"production_deltas": {"mc_production": 2},
+          "passive": {"on_card_played_cost_threshold_draw": {"min_cost": 20, "draw": 1}}}'::jsonb
+    ),
+    (
+        'sub_zero_salt_fish', 'Sub-Zero Salt Fish', 5, '{animal}', '{"max_temperature": -6}'::jsonb,
+        '{"production_deltas": {"plant_production": -1}, "becomes_active": true, "active_card_starting_resources": 0,
+          "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'titan_air_scrapping', 'Titan Air-Scrapping', 21, '{jovian}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 2}},
+            {"cost": {"card_resource": 2}, "gains": {"tr_delta": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'titan_shuttles', 'Titan Shuttles', 23, '{jovian,power}', null,
+        '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"choice": [
+            {"gains": {"target_card_resource_delta": 2}},
+            {"convert_card_resource_amount": {"to": "titanium", "ratio": 1}}
+        ]}}'::jsonb
+    ),
+    (
+        'trade_envoys', 'Trade Envoys', 6, '{power}', null,
+        '{"passive": {"trade_bump_track_first": true}}'::jsonb
+    ),
+    (
+        'trading_colony', 'Trading Colony', 18, '{power}', null,
+        '{"passive": {"trade_bump_track_first": true}, "build_colony": true}'::jsonb
+    ),
+    (
+        'urban_decomposers', 'Urban Decomposers', 6, '{building,microbe}',
+        '{"min_city_tiles": 1, "min_colonies_owned": 1}'::jsonb,
+        '{"production_deltas": {"plant_production": 1}, "target_card_resource_delta": 2}'::jsonb
+    ),
+    (
+        'warp_drive', 'Warp Drive', 14, '{science}',
+        '{"min_tag_count": {"tag": "science", "count": 5}}'::jsonb,
+        '{"passive": {"card_cost_discount_mc": 4, "tag_filter": "space"}}'::jsonb
+    ),
+    (
+        'house_printing', 'House Printing', 10, '{building}', null,
+        '{"production_deltas": {"steel_production": 1}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
