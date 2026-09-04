@@ -2191,6 +2191,14 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
         es quien tiene el costo impreso de la carta -- no hay funcion en
         rules_engine.py para este pasivo especifico.
+      - "on_tag_played_resource_delta": {"matching_tags": ["<tag>", ...],
+        "resource": "<recurso>", "resource_delta": N} -- suma N de ese
+        recurso al STOCK del jugador por cada tag coincidente de la carta
+        recien jugada (ej. Albedo Plants: +3 calor por cada tag plant,
+        incluida ella misma). Forma general de "on_tag_played_mc_delta"
+        (que sigue funcionando y equivale a resource="mc"). Distinto de
+        "on_tag_played_add_resource", que suma a la carta activa que tiene
+        el pasivo en vez de al stock del jugador.
       - "mc_delta_on_trade": N -- suma N MC cada vez que el jugador
         comercia (ej. Venus Trade Hub: "when you trade, gain 3 M€").
         Aplicado en tools.use_trade_fleet junto al trade income --
@@ -2283,7 +2291,9 @@ def compute_card_cost_discount(player: PlayerState, card_tags: tuple[str, ...]) 
     Suma los descuentos de costo ("card_cost_discount_mc") de todos los
     efectos pasivos activos del jugador que apliquen a esta carta (segun
     `tag_filter`, si el efecto lo tiene) (ej. Mass Converter: -2 MC en
-    cartas con tag "space"). Se resta del costo antes de calcular el pago
+    cartas con tag "space"). `tag_filter` puede ser un tag suelto o una
+    LISTA de tags, en cuyo caso alcanza con que la carta tenga alguno (ej.
+    Space Lanes: "planet tag" = jovian/earth/venus). Se resta del costo antes de calcular el pago
     en tools.play_card -- nunca deja el costo por debajo de 0.
     """
     discount = 0
@@ -2292,6 +2302,10 @@ def compute_card_cost_discount(player: PlayerState, card_tags: tuple[str, ...]) 
         if bonus is None:
             continue
         tag_filter = effect.get("tag_filter")
+        # `tag_filter` acepta un tag suelto o una LISTA (ej. Space Lanes:
+        # "planet tag" son tres tags distintos -- jovian/earth/venus).
+        if isinstance(tag_filter, list):
+            tag_filter = None if any(t in card_tags for t in tag_filter) else "__no_match__"
         if tag_filter is not None and tag_filter not in card_tags:
             continue
         discount += bonus
@@ -2387,20 +2401,26 @@ def apply_tag_played_resource_bonuses(
     # microbe tag, including this, gain 2 M€"). El FAQ aclara que cada tag
     # distinto de la misma carta dispara por separado -- por eso se cuenta
     # `matches`, no un booleano.
-    mc_delta = 0
+    stock_gains: dict[str, int] = {}
     for effect in player["passive_effects"]:
-        spec = effect.get("on_tag_played_mc_delta")
+        # "on_tag_played_mc_delta" es la forma vieja, equivalente a
+        # on_tag_played_resource_delta con resource="mc".
+        spec = effect.get("on_tag_played_resource_delta") or effect.get("on_tag_played_mc_delta")
         if spec is None:
             continue
         matching_tags = set(spec.get("matching_tags", []))
         matches = sum(1 for t in played_card_tags if t in matching_tags)
-        mc_delta += matches * spec.get("mc_delta", 0)
+        if not matches:
+            continue
+        key = spec.get("resource", "mc")
+        amount = spec.get("resource_delta", spec.get("mc_delta", 0))
+        stock_gains[key] = stock_gains.get(key, 0) + matches * amount
 
-    if not changed and not mc_delta:
+    if not changed and not stock_gains:
         return player
     new_player = {**player, "active_cards": new_active_cards}
-    if mc_delta:
-        new_player["mc"] = new_player["mc"] + mc_delta
+    for key, amount in stock_gains.items():
+        new_player[key] = max(0, new_player[key] + amount)
     return new_player
 
 

@@ -140,9 +140,15 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 
 ### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events + floaters por carta activa)
 
-**Progreso:** catálogo en **340 cartas de proyecto**, **36 Global Events** (mazo completo) y
-**22 cartas Prelude** (tabla nueva `prelude_cards`). Colas: 71 cartas de proyecto y 46 preludes
-sin revisar.
+**Progreso:** catálogo en **340 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. Colas: 71 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
+revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Nota operativa:** el host de Supabase resuelve **solo por IPv6**. Si la máquina pierde
+conectividad IPv6, la base queda inalcanzable aunque IPv4 ande bien (pasó una vez, 2026-09-04) --
+`ip -6 addr show scope global` lo diagnostica en un segundo. Por eso los seeds se escriben
+idempotentes (`on conflict do update`) e incluyen el marcado de sus colas: si un apply falla, se
+re-corre entero sin efectos secundarios.
 
 **Hueco de alcance descubierto (2026-09-04):** `enqueue_card_review_queue.py` filtra
 `cat != "Project"`, así que tres categorías enteras del índice del sitio nunca entraron al

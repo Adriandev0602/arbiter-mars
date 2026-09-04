@@ -5361,3 +5361,30 @@ def test_prelude_business_empire_pays_its_own_cost():
     )
     assert new_player["mc"] == 0
     assert new_player["mc_production"] == 1 + 6
+
+
+def test_on_tag_played_resource_delta_generalizes_to_any_resource():
+    # Albedo Plants: +3 calor por cada tag plant, incluida ella misma
+    player = register_passive_effect(
+        new_player_state(), "albedo_plants",
+        {"on_tag_played_resource_delta": {"matching_tags": ["plant"], "resource": "heat", "resource_delta": 3}},
+    )
+    new_player = apply_tag_played_resource_bonuses(player, ("plant",))
+    assert new_player["heat"] == 3
+    # la forma vieja (mc) sigue funcionando
+    viejo = register_passive_effect(
+        new_player_state(), "gmo_contract",
+        {"on_tag_played_mc_delta": {"matching_tags": ["microbe"], "mc_delta": 2}},
+    )
+    assert apply_tag_played_resource_bonuses(viejo, ("microbe",))["mc"] == 2
+
+
+def test_card_cost_discount_accepts_tag_filter_list():
+    # Space Lanes: "planet tag" son jovian/earth/venus
+    player = register_passive_effect(
+        new_player_state(), "space_lanes",
+        {"card_cost_discount_mc": 2, "tag_filter": ["jovian", "earth", "venus"]},
+    )
+    assert compute_card_cost_discount(player, ("venus",)) == 2
+    assert compute_card_cost_discount(player, ("jovian", "space")) == 2
+    assert compute_card_cost_discount(player, ("building",)) == 0
