@@ -1601,3 +1601,51 @@ on conflict (id) do update set
     tags = excluded.tags,
     requirements = excluded.requirements,
     effects = excluded.effects;
+
+-- Pendientes resueltos: recursos tipados por carta activa (floaters entre
+-- cartas) -- ver backend/app/agent/turmoil.py NO, esta pieza vive en
+-- rules_engine.py (register_active_card parametro resource_type,
+-- sum_card_resources_by_type, requirement min_total_card_resources,
+-- effects target_card_resource_delta_typed/add_resource_to_all_matching_type/
+-- production_delta_per_card_resource_type). Desbloquea Aerosport Tournament,
+-- Airliners y Floater Leasing (ver tambien Cloud Societies/Corrosive Rain en
+-- seed_global_events.sql).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'aerosport_tournament', 'Aerosport Tournament', 7, '{venus}',
+        '{"min_total_card_resources": {"resource_type": "floater", "count": 5}}'::jsonb,
+        '{"mc_per_counter": "city_tiles_placed"}'::jsonb
+    ),
+    (
+        'airliners', 'Airliners', 11, '{}',
+        '{"min_total_card_resources": {"resource_type": "floater", "count": 3}}'::jsonb,
+        '{"production_deltas": {"mc_production": 2},
+          "target_card_resource_delta_typed": {"resource_type": "floater", "amount": 2}}'::jsonb
+    ),
+    (
+        'floater_leasing', 'Floater Leasing', 3, '{}', null,
+        '{"production_delta_per_card_resource_type": {"resource_type": "floater", "production": "mc_production", "divisor": 3, "per_unit": 1}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name,
+    cost = excluded.cost,
+    tags = excluded.tags,
+    requirements = excluded.requirements,
+    effects = excluded.effects;
+
+update cards set is_event = true where id in ('aerosport_tournament');
+
+-- Retrofit: las cartas ya cargadas que guardan floaters en su PROPIA caja de
+-- recursos (becomes_active) no declaraban `active_card_resource_type` porque
+-- esa pieza no existia todavia -- sin esto, Aerosport Tournament/Airliners/
+-- Floater Leasing nunca podrian cumplirse de verdad (sum_card_resources_by_type
+-- no las encontraria). Lista verificada contra el texto ya registrado en
+-- CARDS_LOG.md para cada una (todas dicen "a si misma"/"floaters propios").
+update cards set effects = effects || '{"active_card_resource_type": "floater"}'::jsonb
+where id in (
+    'aerial_mappers', 'extractor_balloons', 'atmo_collectors', 'jovian_lanterns',
+    'red_spot_observatory', 'titan_air_scrapping', 'titan_shuttles', 'cloud_tourism',
+    'dirigibles', 'deuterium_export', 'floating_habs', 'forced_precipitation',
+    'jet_stream_microscrappers', 'local_shading', 'jupiter_floating_station',
+    'titan_floating_launch_pad'
+);

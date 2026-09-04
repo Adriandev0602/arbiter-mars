@@ -138,31 +138,41 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events)
+### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events + floaters por carta activa)
 
-**Progreso:** catálogo en **309 cartas** cargadas en `cards`. `main` tiene mergeados los
-bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140), pago con recurso de carta,
-tag wild y el núcleo político de Turmoil. `card_review_queue` tiene 209 filas `reviewed = true`
-y **101 sin revisar** — el próximo bloque de cartas de proyecto (31) son las filas #1-10 de
-`select * from card_review_queue where reviewed = false order by id limit 10`.
+**Progreso:** catálogo en **312 cartas** cargadas en `cards`, 8 Global Events en `global_events`.
+`main` tiene mergeados los bloques 13-30, la mecánica de colonias/comercio, Lava Flows (140),
+pago con recurso de carta, tag wild y el núcleo político de Turmoil. `card_review_queue` tiene
+212 filas `reviewed = true` y **101 sin revisar** — el próximo bloque de cartas de proyecto (31)
+son las filas #1-10 de `select * from card_review_queue where reviewed = false order by id
+limit 10`.
+
+**Recursos tipados por carta activa, implementado (2026-09-04).** Resolvió las últimas 5 cartas
+pendientes por esta pieza: Aerosport Tournament, Airliners, Floater Leasing (catálogo normal) +
+Cloud Societies, Corrosive Rain (Global Events). `active_cards[card_id]` suma la clave
+`resource_type` (parámetro nuevo en `register_active_card`, viene de
+`effects.active_card_resource_type`) -- permite `sum_card_resources_by_type` sumar "solo los
+floaters" entre TODAS las cartas activas del jugador. Piezas nuevas: requirement
+`min_total_card_resources`; effects `target_card_resource_delta_typed` (con
+`amount`/`amount_per_influence`), `add_resource_to_all_matching_type`,
+`production_delta_per_card_resource_type`, `draw_cards_per_influence`. **Retrofit**: 16 cartas
+ya cargadas que guardan floaters en su propia caja (Dirigibles, Titan Shuttles, etc.) se
+actualizaron con `active_card_resource_type: "floater"` -- sin esto las 5 cartas nuevas nunca
+serían satisfacibles de verdad contra el resto del catálogo. Ver sección dedicada "Recursos
+tipados por carta activa" en `CARDS_LOG.md`.
 
 **Turmoil: Global Events, EN PROGRESO (empezado 2026-09-04).** Mazo APARTE de 36 cartas (el
 rulebook dice 31 en su lista de componentes -- diferencia sin explicar todavía, no bloquea
 seguir cargando), catalogado en el mismo índice del sitio (`hadronikle`, categoría
 `"GlobalEvent"`) pero en tabla nueva `global_events` + cola `global_event_review_queue` (mismo
 patrón que `card_review_queue`, sin `scan_number`). Los Global Events REUSAN
-`rules_engine.apply_card_effect` (mismo `effects` jsonb que las cartas) -- pieza nueva:
-`resource_delta_per_capped_counter` (tope 5 + ajuste por Influencia, regla del rulebook página
-5). Tool nueva: `resolve_global_event(player_id, event_id)`. **6 de 36 cargadas**: Generous
-Funding y Riots (bloque 1, verificadas contra el rulebook oficial -- texto + ejemplo numérico
-resuelto, más fuerte que un scan individual); Aquifer Released by Public Council, Asteroid
-Mining, Celebrity Leaders, Diversity (bloque 2, 2026-09-04, verificadas contra su scan real --
-piezas nuevas `resource_delta_per_influence` sin tope y `resource_delta_if_tag_diversity`,
-umbral booleano sin tope). 2 pendientes del bloque 2 (Cloud Societies, Corrosive Rain) necesitan
-la misma pieza de "floaters por carta activa" ya pendiente por Aerosport Tournament -- ahora son
-6 cartas esperando esa pieza. **28 pendientes** en la cola. Ver sección dedicada "Turmoil:
-Global Events" en `CARDS_LOG.md` para la lista completa y el flujo para seguir cargando de a
-bloques.
+`rules_engine.apply_card_effect` (mismo `effects` jsonb que las cartas). Tool nueva:
+`resolve_global_event(player_id, event_id, target_card_id=None, effect_choice=None)`. **8 de 36
+cargadas**: Generous Funding, Riots (bloque 1, verificados contra el rulebook oficial); Aquifer
+Released by Public Council, Asteroid Mining, Celebrity Leaders, Diversity (bloque 2); Cloud
+Societies, Corrosive Rain (bloque 3, desbloqueadas por la pieza de recursos tipados). **28
+pendientes** en la cola. Ver sección dedicada "Turmoil: Global Events" en `CARDS_LOG.md` para la
+lista completa y el flujo para seguir cargando de a bloques.
 
 **Turmoil: núcleo político, implementado (2026-09-04, decisión explícita del usuario).**
 Resolvió las últimas 2 cartas pendientes del catálogo normal: Colonial Envoys y Colonial
@@ -281,14 +291,12 @@ agregadas a lo largo de los nueve bloques, todas extensiones chicas de vocabular
 creada a partir de `main` una vez que el bloque anterior ya se mergeó, o de la rama del bloque
 anterior si todavía no se mergeó. Commiteada y pusheada a `origin` individualmente.
 
-**Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"), cada una con su
-pieza de mecánica ya diagnosticada pero no implementada:**
-- **Suma de floaters entre todas las cartas activas** (ya son 4 cartas: Aerosport Tournament
-  #214, Airliners #C01, Floater Leasing #C10, y el costo de Air Raid #C02 -- esta última además
-  excluida por depender de un robo obligatorio sin sentido en single-player, ver "Fuera de
-  alcance"). `active_cards[card_id]["resources"]` no distingue tipo de recurso hoy -- necesita
-  etiquetar el tipo por carta activa más un requirement/cost nuevo que sume sobre las que
-  matcheen. Cuatro casos ya esperando -- sube de prioridad para una sesión dedicada.
+**Cartas pendientes identificadas (`CARDS_LOG.md`, sección "Pendientes"):** ninguna por ahora --
+la última (suma de floaters entre cartas activas) se resolvió 2026-09-04, ver "Recursos tipados
+por carta activa" arriba. Quedan las 28 filas sin revisar de `global_event_review_queue` (no son
+"pendientes por mecánica", son bloques de Global Events todavía sin leer) y, en Air Raid (#C02,
+Colonies), la única exclusión permanente por diseño (robo obligatorio sin sentido en
+single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
 checkout -b feat/review-block-31`, consultar

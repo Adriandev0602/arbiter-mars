@@ -67,6 +67,7 @@ from app.agent.rules_engine import (
     apply_tag_played_choice,
     apply_any_tag_played_choice,
     spend_active_card_resource,
+    sum_card_resources_by_type,
 )
 
 
@@ -683,7 +684,9 @@ def test_check_card_requirements_min_oxygen():
 def test_register_active_card_starts_with_0_resources_and_action_available():
     player = new_player_state()
     new_player = register_active_card(player, "ironworks")
-    assert new_player["active_cards"] == {"ironworks": {"resources": 0, "action_used": False}}
+    assert new_player["active_cards"] == {
+        "ironworks": {"resources": 0, "action_used": False, "resource_type": None}
+    }
 
 
 def test_ironworks_action_spends_4_energy_gives_1_steel_and_raises_oxygen():
@@ -4783,3 +4786,94 @@ def test_diversity_grants_mc_when_tag_diversity_meets_threshold():
 
     new_player2, _ = apply_card_effect(player, new_global_parameters(), effects, influence=1)
     assert new_player2["mc"] == 10  # 8 + 1 influencia = 9
+
+
+# --- Recursos tipados en cartas activas (floaters entre cartas) ------------
+
+def test_sum_card_resources_by_type_across_multiple_cards():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=2, resource_type="floater")
+    player = register_active_card(player, "titan_shuttles", initial_resources=3, resource_type="floater")
+    player = register_active_card(player, "psychrophiles", initial_resources=5, resource_type="microbe")
+    assert sum_card_resources_by_type(player, "floater") == 5
+    assert sum_card_resources_by_type(player, "microbe") == 5
+    assert sum_card_resources_by_type(player, "animal") == 0
+
+
+def test_min_total_card_resources_requirement():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=4, resource_type="floater")
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"min_total_card_resources": {"resource_type": "floater", "count": 5}}, new_global_parameters(), player,
+        )
+    player2 = register_active_card(player, "titan_shuttles", initial_resources=1, resource_type="floater")
+    check_card_requirements(
+        {"min_total_card_resources": {"resource_type": "floater", "count": 5}}, new_global_parameters(), player2,
+    )
+
+
+def test_target_card_resource_delta_typed_requires_matching_type():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=0, resource_type="floater")
+    player = register_active_card(player, "psychrophiles", initial_resources=0, resource_type="microbe")
+    effects = {"target_card_resource_delta_typed": {"resource_type": "floater", "amount": 2}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, target_card_id="dirigibles")
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 2
+
+    with pytest.raises(CardEffectError):
+        apply_card_effect(player, new_global_parameters(), effects, target_card_id="psychrophiles")
+
+
+def test_add_resource_to_all_matching_type():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=0, resource_type="floater")
+    player = register_active_card(player, "titan_shuttles", initial_resources=1, resource_type="floater")
+    player = register_active_card(player, "psychrophiles", initial_resources=0, resource_type="microbe")
+    effects = {"add_resource_to_all_matching_type": {"resource_type": "floater", "amount": 1}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 1
+    assert new_player["active_cards"]["titan_shuttles"]["resources"] == 2
+    assert new_player["active_cards"]["psychrophiles"]["resources"] == 0
+
+
+def test_production_delta_per_card_resource_type_floater_leasing():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=7, resource_type="floater")
+    effects = {
+        "production_delta_per_card_resource_type": {
+            "resource_type": "floater", "production": "mc_production", "divisor": 3, "per_unit": 1,
+        }
+    }
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 2  # 7 // 3 = 2
+
+
+def test_draw_cards_per_influence():
+    player = {**new_player_state(), "deck": ["a", "b", "c"]}
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), {"draw_cards_per_influence": True}, influence=2,
+    )
+    assert new_player["hand"] == ["a", "b"]
+
+
+def test_corrosive_rain_choice_lose_floaters_or_mc_draws_per_influence():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=5, resource_type="floater")
+    player = {**player, "mc": 20, "deck": ["a"]}
+    effects = {
+        "choice": [
+            {"target_card_resource_delta_typed": {"resource_type": "floater", "amount": -2}, "draw_cards_per_influence": True},
+            {"resource_deltas": {"mc": -10}, "draw_cards_per_influence": True},
+        ]
+    }
+    new_player, _ = apply_card_effect(
+        player, new_global_parameters(), effects, effect_choice=0, target_card_id="dirigibles", influence=1,
+    )
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 3
+    assert new_player["hand"] == ["a"]
+
+    new_player2, _ = apply_card_effect(player, new_global_parameters(), effects, effect_choice=1, influence=1)
+    assert new_player2["mc"] == 10
+    assert new_player2["hand"] == ["a"]
+
+
+def test_target_card_resource_delta_typed_amount_per_influence():
+    player = register_active_card(new_player_state(), "dirigibles", initial_resources=0, resource_type="floater")
+    effects = {"target_card_resource_delta_typed": {"resource_type": "floater", "amount_per_influence": True}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects, target_card_id="dirigibles", influence=3)
+    assert new_player["active_cards"]["dirigibles"]["resources"] == 3
