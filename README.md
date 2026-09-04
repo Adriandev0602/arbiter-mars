@@ -1,90 +1,106 @@
-# Árbitro Asistente de Reglas — Terraforming Mars
+# Rules Arbiter — Terraforming Mars
 
-Un agente conversacional que resuelve los cálculos de una partida de **Terraforming Mars**: fase de
-producción, proyectos estándar, pago de cartas, colocación de tiles, comercio con colonias y la
-política de Turmoil. El usuario escribe en lenguaje natural ("cerrá mi fase de producción", "quiero
-jugar Lava Tube Settlement pagando 4 MC y 3 de acero") y recibe un veredicto con el estado
-actualizado.
+A conversational agent that resolves the calculations of a **Terraforming Mars** game: production
+phase, standard projects, card payments, tile placement, colony trading, and Turmoil politics. The
+user writes in natural language ("close my production phase", "I want to play Lava Tube Settlement
+paying 4 MC and 3 steel") and gets back a verdict with the updated game state.
 
-Es un proyecto de portfolio, y su tesis es específica: **no es un chatbot más, es una demostración
-de control arquitectónico estricto sobre un LLM probabilístico.**
+### What is Terraforming Mars?
 
-## La idea central: el LLM nunca hace matemática
+[Terraforming Mars](https://www.fryxgames.se/games/terraforming-mars/) is a board game by
+FryxGames in which players compete as corporations terraforming Mars over several generations
+(turns). Each generation opens with a production phase, then players take turns playing project
+cards, using standard projects, or converting resources — all funded by megacredits (MC) and
+secondary resources like steel, titanium, plants, energy, and heat. Progress is tracked through
+three global parameters (temperature, oxygen, and ocean tiles) that must reach their maximum
+values to end the game, and through each player's Terraform Rating (TR), which acts as both score
+and income. Cards add tags, one-time effects, or repeatable actions, and several expansions
+(Venus Next, Colonies, Turmoil, Prelude, Corporate Era) layer extra mechanics — a Venus scale,
+colony trading, political parties, faster starts — on top of that core loop. The rules involve a
+lot of bookkeeping: tracking resource balances, checking placement adjacency, validating that a
+card's requirements are met, and applying dozens of distinct card effects correctly. This project
+exists to arbitrate exactly that bookkeeping.
 
-El modelo tiene exactamente un trabajo: leer la intención del usuario y extraer argumentos
-estructurados — `{"card_id": "lava_tube_settlement", "mc_to_pay": 4, "steel_to_pay": 3}`. Todo
-cálculo de saldos, validación de reglas y comparación contra el estado del juego ocurre en
-funciones Python puras y deterministas.
+This is a portfolio project, and its thesis is specific: **it isn't just another chatbot, it's a
+demonstration of strict architectural control over a probabilistic LLM.**
 
-Eso se sostiene en dos capas:
+## The core idea: the LLM never does math
 
-1. **El system prompt** le prohíbe responder con números calculados por él mismo; su única salida
-   legítima es una tool call o repetir literalmente lo que devolvió la tool.
-2. **El grafo de LangGraph** enruta *siempre* por el `ToolNode` antes de la respuesta final: no
-   existe un camino donde el modelo conteste directo una consulta que implique un cálculo.
+The model has exactly one job: read the user's intent and extract structured arguments —
+`{"card_id": "lava_tube_settlement", "mc_to_pay": 4, "steel_to_pay": 3}`. Every balance
+calculation, rule validation, and comparison against game state happens in pure, deterministic
+Python functions.
 
-Cualquier cambio que le permita al LLM "adivinar" un número es un bug de arquitectura, no una
-mejora de UX.
+That's enforced by two layers:
 
-## Cómo está separado el código
+1. **The system prompt** explicitly forbids the model from answering with numbers it computed
+   itself; its only legitimate output is a tool call, or a response that literally repeats what
+   the tool returned.
+2. **The LangGraph graph** *always* routes through the `ToolNode` before the final response —
+   there is no path where the model answers a calculation-bearing query directly.
+
+Any change that lets the LLM "guess" a number is an architecture bug, not a UX improvement.
+
+## How the code is split
 
 ```
 backend/app/agent/
-├── rules_engine.py   # motor puro: recursos, producción, TR, efectos de cartas
-├── board.py          # mapa hexagonal Tharsis (61 hexágonos, adyacencia, colocación)
-├── colonies.py       # colonias y comercio (expansión Colonies)
-├── turmoil.py        # partidos, delegados, influencia (expansión Turmoil)
-├── tools.py          # ÚNICA capa con I/O — carga/guarda estado en Supabase
-├── graph.py          # StateGraph: LLM → ToolNode → respuesta
+├── rules_engine.py   # pure engine: resources, production, TR, card effects
+├── board.py          # Tharsis hex map (61 hexes, adjacency, tile placement)
+├── colonies.py       # colonies and trading (Colonies expansion)
+├── turmoil.py        # parties, delegates, influence (Turmoil expansion)
+├── tools.py          # THE ONLY layer with I/O — loads/saves state in Supabase
+├── graph.py          # StateGraph: LLM → ToolNode → response
 └── prompts.py        # system prompt
 ```
 
-Los cuatro módulos de reglas son funciones puras sin dependencias de FastAPI, Supabase ni
-LangGraph: reciben estado y devuelven estado nuevo. Están deliberadamente **desacoplados entre
-sí** — `rules_engine.py` no importa `board.py`, `colonies.py` ni `turmoil.py`. Cuando un efecto
-necesita datos de otro subsistema (la influencia política, el conteo de tiles del mapa), `tools.py`
-los resuelve antes y se los pasa al motor como valores simples.
+The four rules modules are pure functions with no dependency on FastAPI, Supabase, or LangGraph:
+they take state in and return new state. They're deliberately **decoupled from each other** —
+`rules_engine.py` doesn't import `board.py`, `colonies.py`, or `turmoil.py`. When an effect needs
+data from another subsystem (political influence, map tile counts), `tools.py` resolves it first
+and passes it to the engine as plain values.
 
-## Estado actual
+## Current status
 
 | | |
 |---|---|
-| Cartas de proyecto cargadas | **312** |
-| Global Events (Turmoil) | **36 / 36** — mazo completo |
-| Tests | **533**, todos verdes |
-| Cartas pendientes de revisar | 101 |
+| Project cards loaded | **340** |
+| Global Events (Turmoil) | **36 / 36** — full deck |
+| Prelude cards loaded | **48** |
+| Cards pending review | 71 |
 
-Expansiones con cartas cargadas: Base (62), Venus Next (51), Colonies (48), Corporate Era (26),
-Prelude (7), Prelude 2 (2), Promo (3).
+Expansions with cards loaded: Base, Venus Next, Colonies, Corporate Era, Prelude, Turmoil (Global
+Events + political core), Promo.
 
-**Mecánicas implementadas:** los 4 parámetros globales (temperatura, oxígeno, océanos, Venus scale),
-los 6 proyectos estándar, mazo/mano/investigación, efectos pasivos y acciones repetibles, el mapa
-Tharsis completo, colonias y comercio, y el núcleo político de Turmoil (partidos, delegados,
-lobbying, party leader, partido dominante, chairman e influencia).
+**Implemented mechanics:** all 4 global parameters (temperature, oxygen, oceans, Venus scale), the
+6 standard projects, deck/hand/research system, passive effects and repeatable card actions, the
+full Tharsis map, colony building and trading, and Turmoil's political core (parties, delegates,
+lobbying, party leader, dominant party, chairman, and influence).
 
-**Fuera de alcance, deliberadamente:** una IA que juegue sola, partidas simultáneas, milestones y
-awards, mapas alternativos (Hellas/Elysium), y — dentro de Turmoil — las Ruling Policies de los 6
-partidos. El modo de un jugador se trata como una partida estándar (TR 20), no como la variante
-solitario oficial del reglamento.
+**Explicitly out of scope:** an AI that plays autonomously, simultaneous games, milestones and
+awards, alternate maps (Hellas/Elysium), and — within Turmoil — the Ruling Policies of the 6
+parties. Single-player mode is treated as a standard game (TR 20), not the official rulebook's
+solo variant. Corporations (the Corporation and Automa card categories) are a known gap not yet
+modeled.
 
-## Cómo se construye el catálogo (y por qué importa)
+## How the catalog is built (and why it matters)
 
-El criterio de éxito del proyecto es 100% de precisión en los cálculos, y un número mal recordado
-lo rompe. Por eso **no se generan datos de cartas al voleo**: cada carta se carga a mano, leyendo su
-scan oficial, mapeando su texto exacto al vocabulario del motor y escribiendo su test.
+The project's success criterion is 100% calculation accuracy, and a misremembered number breaks
+that. So **card data is never generated off the cuff**: each card is loaded by hand, reading its
+official scan, mapping its exact text to the engine's vocabulary, and writing its test.
 
-Las consecuencias prácticas de esa regla:
+The practical consequences of that rule:
 
-- Cuando una carta no encaja en el vocabulario existente, la respuesta por defecto es **extender el
-  motor**, no descartarla. Solo se posponen las que necesitan una pieza de mecánica grande, y
-  quedan documentadas con el diagnóstico exacto de qué les falta.
-- Si una cláusula no se puede modelar con honestidad, la carta **no se carga a medias**: cargar
-  media carta es cargar una carta distinta.
-- Las decisiones de interpretación quedan escritas con su fuente. Cuando el rulebook no alcanza, se
-  cita el FAQ oficial de la comunidad — que, entre otras cosas, destapó cuatro cartas ya cargadas
-  cuyos números estaban mal (incluida una con errata oficial del texto impreso).
+- When a card doesn't fit the existing vocabulary, the default response is to **extend the
+  engine**, not skip the card. Only cards that need a large new mechanic get postponed, and they're
+  documented with an exact diagnosis of what's missing.
+- If a clause can't be modeled honestly, the card **isn't loaded halfway** — loading half a card is
+  loading a different card.
+- Interpretation decisions are written down with their source. When the rulebook isn't enough, the
+  official community FAQ is cited — which, among other things, surfaced four already-loaded cards
+  with wrong numbers (including one with an official printed errata).
 
-El registro completo de qué está cargado, qué está pendiente y con qué criterio vive en
+The full record of what's loaded, what's pending, and under what criteria lives in
 [`backend/app/db/CARDS_LOG.md`](./backend/app/db/CARDS_LOG.md).
 
 ## Quick start
@@ -107,19 +123,19 @@ cd backend && PYTHONPATH=. pytest tests/ -v
 
 ## Stack
 
-| Capa | Tecnología |
+| Layer | Technology |
 |---|---|
-| Orquestación de IA | Python + LangGraph (`StateGraph` con tool-calling explícito) |
+| AI orchestration | Python + LangGraph (`StateGraph` with explicit tool-calling) |
 | Backend | FastAPI |
-| Base de datos | Supabase (Postgres) |
+| Database | Supabase (Postgres) |
 | Frontend | Next.js (App Router) + TypeScript + Tailwind |
-| Infraestructura | Docker (backend) |
+| Infrastructure | Docker (backend) |
 
-## Documentación
+## Documentation
 
-- [`CLAUDE.md`](./CLAUDE.md) — contexto arquitectónico completo y estado de avance. Leelo antes de
-  iterar con Claude Code. ([`AGENTS.md`](./AGENTS.md) es el mismo contenido, agnóstico de herramienta.)
-- [`backend/app/db/CARDS_LOG.md`](./backend/app/db/CARDS_LOG.md) — catálogo: cargadas, pendientes y
-  fuera de alcance, con el vocabulario de efectos que consume cada una.
-- [`backend/app/db/HEX_MAP_RESEARCH.md`](./backend/app/db/HEX_MAP_RESEARCH.md) — investigación del
-  mapa hexagonal y sus fuentes.
+- [`CLAUDE.md`](./CLAUDE.md) — full architectural context and progress log. Read it before
+  iterating with Claude Code. ([`AGENTS.md`](./AGENTS.md) is the same content, tool-agnostic.)
+- [`backend/app/db/CARDS_LOG.md`](./backend/app/db/CARDS_LOG.md) — catalog: loaded, pending, and
+  out-of-scope cards, with the effect vocabulary each one consumes.
+- [`backend/app/db/HEX_MAP_RESEARCH.md`](./backend/app/db/HEX_MAP_RESEARCH.md) — research on the
+  hex map and its sources.
