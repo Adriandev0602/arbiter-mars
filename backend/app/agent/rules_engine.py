@@ -715,6 +715,13 @@ def check_card_requirements(
         sea el Chairman (`turmoil["chairman"] == player_id`, ver
         turmoil.py). Requiere pasar `turmoil` y `player_id` (ej. Banned
         Delegate).
+      - "party_leader_and_neutral_chairman": true -- expansion Turmoil,
+        requiere que el jugador sea Party Leader de AL MENOS un partido y
+        que la silla de Chairman este vacante/neutral (`turmoil["chairman"]
+        is None`, el valor inicial de new_turmoil() antes de la primera
+        "New Government" -- ver turmoil.py). Requiere pasar `turmoil` y
+        `player_id` (ej. Vote of No Confidence, bloque 31: reemplaza al
+        Chairman neutral, efecto `become_chairman_from_neutral`).
       - "min_total_card_resources": {"resource_type": "<tipo>", "count": N}
         -- requiere al menos N recursos de ese TIPO sumados entre TODAS
         las cartas activas del jugador (ej. Aerosport Tournament: 5
@@ -798,6 +805,19 @@ def check_card_requirements(
             )
         if turmoil["chairman"] != player_id:
             raise CardRequirementNotMetError("Requiere ser el Chairman")
+
+    if requirements.get("party_leader_and_neutral_chairman"):
+        if turmoil is None or player_id is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado de Turmoil y el player_id"
+            )
+        if turmoil["chairman"] is not None:
+            raise CardRequirementNotMetError("Requiere que el Chairman actual sea neutral")
+        is_leader_somewhere = any(
+            party["leader"] == player_id for party in turmoil["parties"].values()
+        )
+        if not is_leader_somewhere:
+            raise CardRequirementNotMetError("Requiere ser Party Leader de algun partido")
 
     if "min_total_card_resources" in requirements:
         spec = requirements["min_total_card_resources"]
@@ -1758,7 +1778,11 @@ def use_card_action(
         "ratio": N (default 1)} -- convierte `effect_amount` (X, elegido por
         el jugador) unidades de stock de un recurso a X*ratio del otro,
         limitado al stock disponible (ej. Power Infrastructure: gastar
-        cualquier cantidad de energia para ganar esa cantidad de MC). A
+        cualquier cantidad de energia para ganar esa cantidad de MC).
+        `ratio` puede ser fraccionario (ej. Energy Market, bloque 31: 0.5,
+        "spend 2X MC to gain X energy" -- effect_amount es el MC gastado,
+        no el energy ganado); lanza CardEffectError si X*ratio no da un
+        entero exacto (ej. effect_amount impar con ratio 0.5). A
         diferencia de "convert_production" (apply_card_effect, convierte
         PRODUCCION), esta convierte STOCK. Lanza CardEffectError si falta
         effect_amount o es negativo, InsufficientResourcesError si no hay
@@ -1777,7 +1801,12 @@ def use_card_action(
         Advanced Alloys tambien lo beneficia) (ej. Rotator Impacts: 6 MC,
         "titanium may be used"). Otra clave especial
         "card_resource" gasta N recursos guardados en la propia carta (ej.
-        Regolith Eaters: remover 2 microbios).
+        Regolith Eaters: remover 2 microbios). El VALOR de cualquier clave
+        (no solo las especiales de arriba) puede ser el string literal
+        "effect_amount" en vez de un N fijo -- costo VARIABLE, X elegido
+        por el jugador via `effect_amount` (ej. Hi-Tech Lab, bloque 31:
+        gastar X energia sin tope, combinado con gains.start_research.n
+        tambien en "effect_amount" para robar esa misma cantidad).
       - "gains": {"resource_deltas": {...}, "production_deltas": {...},
         "raise_oxygen_steps": N, "raise_temperature_steps": N, "raise_venus_steps": N,
         "card_resource_delta": N, "target_card_resource_delta": N,
@@ -1800,7 +1829,9 @@ def use_card_action(
         "city_tiles_placed"); place_oceans: N coloca N tiles de oceano (+N TR
         cada uno) (ej. Water Import from Europa); draw_cards: N roba N cartas
         del mazo directo a la mano, sin fase de investigacion (ej. Development
-        Center); start_research: {"n": N} roba N cartas a pending_research -- el
+        Center); start_research: {"n": N} roba N cartas a pending_research (N
+        puede ser el string "effect_amount" para un N variable, ver la
+        entrada de "cost" arriba) -- el
         jugador todavia tiene que resolver la compra por separado con
         resolve_research_phase (tipicamente a costo 0, ej. Inventors' Guild: n=1).
         "mc_per_card_resource": {"per_resource": N (default 1), "cap": M
@@ -1879,8 +1910,13 @@ def use_card_action(
             raise InsufficientResourcesError(
                 f"No hay suficiente {from_key} ({new_player[from_key]}) para convertir {effect_amount}"
             )
+        gained = effect_amount * spec.get("ratio", 1)
+        if gained != int(gained):
+            raise CardEffectError(
+                f"effect_amount {effect_amount} con ratio {spec.get('ratio', 1)} no da un {to_key} entero"
+            )
         new_player[from_key] -= effect_amount
-        new_player[to_key] += effect_amount * spec.get("ratio", 1)
+        new_player[to_key] += int(gained)
         new_active_cards[card_id] = {
             **new_active_cards[card_id], "resources": card_resources, "action_used": True,
         }
@@ -1943,9 +1979,17 @@ def use_card_action(
             new_player["titanium"] -= titanium_to_pay
             new_player["mc"] -= mc_needed
         else:
-            if new_player[key] < amount:
-                raise InsufficientResourcesError(f"Se necesita {amount} de {key}, hay {new_player[key]}")
-            new_player[key] -= amount
+            # amount == "effect_amount": costo VARIABLE, el jugador elige
+            # cuanto gastar de `key` (ej. Hi-Tech Lab: gastar X energia, sin
+            # tope fijo -- distinto de convert_resource_amount porque el
+            # "destino" de este gasto no es otro recurso numerico sino
+            # start_research, ver gains.start_research abajo).
+            resolved_amount = effect_amount if amount == "effect_amount" else amount
+            if amount == "effect_amount" and (effect_amount is None or effect_amount < 0):
+                raise CardEffectError("Esta accion requiere effect_amount (X) >= 0")
+            if new_player[key] < resolved_amount:
+                raise InsufficientResourcesError(f"Se necesita {resolved_amount} de {key}, hay {new_player[key]}")
+            new_player[key] -= resolved_amount
 
     gains = action_spec.get("gains", {})
     new_globals: dict = dict(globals_)
@@ -2029,7 +2073,11 @@ def use_card_action(
     if "draw_cards" in gains:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), gains["draw_cards"]))  # type: ignore[typeddict-item]
     if "start_research" in gains:
-        new_player = dict(start_research_phase(PlayerState(**new_player), gains["start_research"]["n"]))  # type: ignore[typeddict-item]
+        n_spec = gains["start_research"]["n"]
+        n = effect_amount if n_spec == "effect_amount" else n_spec
+        if n_spec == "effect_amount" and (effect_amount is None or effect_amount < 0):
+            raise CardEffectError("Esta accion requiere effect_amount (X) >= 0")
+        new_player = dict(start_research_phase(PlayerState(**new_player), n))  # type: ignore[typeddict-item]
     if "reserve_card_from_hand" in gains:
         if reserved_card_id is None:
             raise CardEffectError(f"La accion de '{card_id}' requiere reserved_card_id")

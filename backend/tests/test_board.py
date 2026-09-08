@@ -20,6 +20,7 @@ from app.agent.board import (
     can_place_ocean,
     can_place_city,
     count_tiles_adjacent_to_ocean,
+    count_empty_hexes_adjacent_to_owner,
     remove_ocean_tile,
     can_place_city_on_volcanic,
     can_place_greenery,
@@ -495,6 +496,20 @@ def test_count_tiles_adjacent_to_ocean_counts_each_tile_once():
     board2, _, _ = place_ocean_tile(board2, "06")
     board2, _, _ = place_ocean_tile(board2, "07")
     assert count_tiles_adjacent_to_ocean(board2) == 2
+
+
+def test_count_empty_hexes_adjacent_to_owner_counts_each_hex_once():
+    # Red Tourism Wave (T12, bloque 31): "Gain 1 M€ for each EMPTY AREA
+    # ADJACENT TO YOUR TILES" -- mismo criterio de conteo unico que
+    # count_tiles_adjacent_to_ocean.
+    board = new_board()
+    assert count_empty_hexes_adjacent_to_owner(board, "p1") == 0
+
+    board, _, _ = place_city_tile(board, "05", "p1")
+    neighbors = get_neighbors("05")
+    empty_neighbors = [n for n in neighbors if n not in board]
+    assert count_empty_hexes_adjacent_to_owner(board, "p1") == len(empty_neighbors)
+    assert count_empty_hexes_adjacent_to_owner(board, "p2") == 0
 
 
 def test_remove_ocean_tile_frees_the_hex():

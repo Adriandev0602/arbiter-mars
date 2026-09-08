@@ -1860,3 +1860,63 @@ insert into cards (id, name, cost, tags, requirements, effects) values
 on conflict (id) do update set
     name = excluded.name, cost = excluded.cost, tags = excluded.tags,
     requirements = excluded.requirements, effects = excluded.effects;
+
+-- Bloque 31 (2026-09-07): T12-T16 (Turmoil, salvo T11 pendiente) y X01/X03/X04
+-- (Promo, X02 pendiente). T16 (Vote of No Confidence) trae el nuevo
+-- requirement/effect de Chairman neutral. Ver CARDS_LOG.md para el detalle
+-- de cada pieza nueva y de las dos pendientes (T11, X02).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'sponsored_mohole', 'Sponsored Mohole', 5, '{building}',
+        '{"ruling_or_delegates": {"party": "kelvinists", "min_delegates": 2}}'::jsonb,
+        '{"production_deltas": {"heat_production": 2}}'::jsonb
+    ),
+    (
+        'supported_research', 'Supported Research', 3, '{science}',
+        '{"ruling_or_delegates": {"party": "scientists", "min_delegates": 2}}'::jsonb,
+        '{"draw_cards": 2}'::jsonb
+    ),
+    (
+        'wildlife_dome', 'Wildlife Dome', 15, '{animal,plant,building}',
+        '{"ruling_or_delegates": {"party": "greens", "min_delegates": 2}}'::jsonb,
+        '{"place_greenery": {}, "raise_oxygen_steps": 1}'::jsonb
+    ),
+    (
+        'red_tourism_wave', 'Red Tourism Wave', 3, '{earth}',
+        '{"ruling_or_delegates": {"party": "reds", "min_delegates": 2}}'::jsonb,
+        '{"mc_per_empty_hex_adjacent_to_own_tiles": true}'::jsonb
+    ),
+    (
+        'vote_of_no_confidence', 'Vote of No Confidence', 5, '{}',
+        '{"party_leader_and_neutral_chairman": true}'::jsonb,
+        '{"become_chairman_from_neutral": true}'::jsonb
+    ),
+    (
+        'dusk_laser_mining', 'Dusk Laser Mining', 8, '{power}',
+        '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "titanium_production": 1},
+          "resource_deltas": {"titanium": 4}}'::jsonb
+    ),
+    (
+        'energy_market', 'Energy Market', 3, '{power}', null,
+        '{"becomes_active": true,
+          "action": {"choice": [
+              {"convert_resource_amount": {"from": "mc", "to": "energy", "ratio": 0.5}},
+              {"cost": {"energy_production": 1}, "gains": {"resource_deltas": {"mc": 8}}}
+          ]}}'::jsonb
+    ),
+    (
+        'hi_tech_lab', 'Hi-Tech Lab', 17, '{science,building}', null,
+        '{"becomes_active": true,
+          "action": {"cost": {"energy": "effect_amount"},
+                     "gains": {"start_research": {"n": "effect_amount"}}}}'::jsonb
+    ),
+    (
+        'project_inspection', 'Project Inspection', 0, '{}', null,
+        '{"reset_card_action_used": true}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in ('red_tourism_wave', 'vote_of_no_confidence', 'project_inspection');

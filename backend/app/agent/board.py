@@ -252,6 +252,22 @@ def count_tiles_adjacent_to_ocean(board: Board) -> int:
     return sum(1 for hex_id in board if count_adjacent_oceans(board, hex_id) > 0)
 
 
+def count_empty_hexes_adjacent_to_owner(board: Board, player_id: str) -> int:
+    """
+    Cuenta hexagonos VACIOS (sin tile todavia) que son adyacentes a por lo
+    menos un tile propio de `player_id`. Cada hexagono vacio se cuenta UNA
+    SOLA VEZ, sin importar a cuantos tiles propios este pegado -- mismo
+    criterio que count_tiles_adjacent_to_ocean.
+
+    Usada por Red Tourism Wave (T12, Turmoil, bloque 31): "Gain 1 M€ for
+    each EMPTY AREA ADJACENT TO YOUR TILES."
+    """
+    return sum(
+        1 for hex_id in HEX_DEFS
+        if hex_id not in board and count_adjacent_owned_by(board, hex_id, player_id) > 0
+    )
+
+
 def remove_ocean_tile(board: Board, hex_id: str) -> Board:
     """
     Saca un tile de oceano del mapa y libera el hexagono (Global Event Dry
