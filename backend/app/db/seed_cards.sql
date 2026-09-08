@@ -2267,3 +2267,115 @@ on conflict (id) do update set
     requirements = excluded.requirements, effects = excluded.effects;
 
 update cards set is_event = true where id in ('diversity_support');
+
+-- Bloque 38 (2026-09-08): X67-X76 y X79 (Promo). CIERRA la cola de cartas de
+-- proyecto. Piezas nuevas: spend_any_card_resource (efecto inmediato que gasta
+-- un recurso de CUALQUIER carta), min_own_city_tiles (ciudades PROPIAS, ojo:
+-- distinto de min_city_tiles que es el contador global) y gains.
+-- mc_per_city_on_mars (cuenta del tablero, no del contador, que incluye las
+-- ciudades fuera del mapa).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'soil_enrichment', 'Soil Enrichment', 6, '{microbe,plant}', null,
+        '{"spend_any_card_resource": {"amount": 1, "resource_type": "microbe"},
+          "resource_deltas": {"plants": 5}}'::jsonb
+    ),
+    (
+        'supermarkets', 'Supermarkets', 9, '{}',
+        '{"min_city_tiles": 2}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'hospitals', 'Hospitals', 8, '{building}', null,
+        '{"production_deltas": {"energy_production": -1},
+          "becomes_active": true, "active_card_resource_type": "disease",
+          "passive": {"on_city_tile_placed_add_resource": {"resource_delta": 1}},
+          "action": {"cost": {"any_card_resource": {"amount": 1, "resource_type": "disease"}},
+                     "gains": {"mc_per_counter": "city_tiles_placed"}}}'::jsonb
+    ),
+    (
+        'public_baths', 'Public Baths', 6, '{building}',
+        '{"min_oceans": 6}'::jsonb,
+        '{"resource_deltas": {"mc": 6}}'::jsonb
+    ),
+    (
+        'city_parks', 'City Parks', 7, '{plant}',
+        '{"min_own_city_tiles": 3}'::jsonb,
+        '{"resource_deltas": {"plants": 2}}'::jsonb
+    ),
+    (
+        'casinos', 'Casinos', 5, '{building}',
+        '{"min_own_city_tiles": 1}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 4}}'::jsonb
+    ),
+    (
+        'protected_growth', 'Protected Growth', 2, '{plant}',
+        '{"max_oxygen": 7}'::jsonb,
+        '{"resource_delta_per_tag": {"tag": "power", "resource": "plants", "per_tag": 1}}'::jsonb
+    ),
+    (
+        'static_harvesting', 'Static Harvesting', 5, '{power}',
+        '{"max_oceans": 3}'::jsonb,
+        '{"production_deltas": {"energy_production": 1},
+          "resource_delta_per_tag": {"tag": "building", "resource": "mc", "per_tag": 1}}'::jsonb
+    ),
+    (
+        'vermin', 'Vermin', 8, '{microbe,animal}', null,
+        '{"becomes_active": true, "active_card_resource_type": "animal",
+          "passive": {"on_city_tile_placed_add_resource": {"resource_delta": 1}},
+          "action": {"choice": [
+              {"gains": {"card_resource_delta": 1}},
+              {"gains": {"target_card_resource_delta": 1}}
+          ]}}'::jsonb
+    ),
+    (
+        'weather_balloons', 'Weather Balloons', 11, '{science}', null,
+        '{"draw_cards": 1, "becomes_active": true, "active_card_resource_type": "floater",
+          "action": {"choice": [
+              {"gains": {"card_resource_delta": 1}},
+              {"cost": {"card_resource": 1}, "gains": {"mc_per_city_on_mars": true}}
+          ]}}'::jsonb
+    ),
+    (
+        'sterling_vents', 'Sterling Vents', 5, '{power,building}', null,
+        '{"production_deltas": {"heat_production": -2, "energy_production": 2}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in ('soil_enrichment', 'protected_growth');
+
+-- ---------------------------------------------------------------------------
+-- FIX de iconografia (2026-09-08, bloque 38): tag "space" leido como "power"
+-- ---------------------------------------------------------------------------
+-- El tag POWER es un RAYO blanco sobre circulo MORADO. El SOL DORADO de 8
+-- puntas sobre circulo NEGRO es el tag SPACE. En los prompts de las tandas
+-- multi-agente de los bloques 31-36 se describio mal el icono de power ("sol
+-- dorado"), y varias cartas quedaron cargadas con `power` donde va `space`.
+--
+-- Prueba directa de ambos iconos, en cartas de este mismo set:
+--   * Magnetic Shield (X24): su REQUISITO dice "Requires 3 power tags" y
+--     muestra tres circulos MORADOS CON RAYO -> rayo morado = power.
+--   * Asteroid Deflection System (X14): su accion dice "if it has a SPACE
+--     tag" y el icono que la acompana es el SOL DORADO -> sol dorado = space.
+--
+-- Se corrigen solo las cartas verificadas una por una contra su scan. El
+-- requisito `min_tag_count power` de Magnetic Shield NO cambia: ese si son
+-- rayos morados en la carta.
+update cards set tags = '{space}'                where id = 'dusk_laser_mining';
+update cards set tags = '{space}'                where id = 'interplanetary_trade';
+update cards set tags = '{earth,space}'          where id = 'orbital_cleanup';
+update cards set tags = '{earth,space,building}' where id = 'asteroid_deflection_system';
+update cards set tags = '{earth,space}'          where id = 'imported_nutrients';
+update cards set tags = '{space}'                where id = 'magnetic_shield';
+update cards set tags = '{earth,space}'          where id = 'asteroid_rights';
+update cards set tags = '{space}'                where id = 'sixteen_psyche';
+update cards set tags = '{space}'                where id = 'icy_impactors';
+update cards set tags = '{earth,space}'          where id = 'solar_logistics';
+
+-- Interplanetary Trade cuenta "1 M€ de produccion por cada tag DISTINTO,
+-- incluido el propio": su `extra_tags` tambien tenia el tag equivocado.
+update cards
+set effects = jsonb_set(effects, '{production_delta_per_distinct_tag,extra_tags}', '["space"]'::jsonb)
+where id = 'interplanetary_trade';

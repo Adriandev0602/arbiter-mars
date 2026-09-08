@@ -138,11 +138,36 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-08, bloque 37: mecánicas pendientes)
+### 📍 Punto de retoma (última sesión: 2026-09-08, bloque 38: COLA DE PROYECTOS CERRADA)
 
-**Progreso:** catálogo en **397 cartas de proyecto**, **36 Global Events** y **48 cartas
-Prelude**. Colas: 11 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
-revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+**Progreso:** catálogo en **408 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. **La cola `card_review_queue` quedó en 0: no hay más cartas de proyecto por revisar.**
+La cola de preludes también está en 0 (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes
+por mecánica).
+
+**Bloque 38 (2026-09-08): las 11 últimas cargadas**, cerrando la cola. Piezas nuevas:
+`spend_any_card_resource` (Soil Enrichment: gasta un recurso de CUALQUIER carta como efecto
+inmediato — la versión de `apply_card_effect` del `cost.any_card_resource` que ya existía para
+acciones), `min_own_city_tiles` (City Parks/Casinos: "requires that YOU have N city tiles", que
+NO es lo mismo que `min_city_tiles`, el contador global) y `gains.mc_per_city_on_mars` (Weather
+Balloons: cuenta los tiles del tablero, porque el contador global incluye las ciudades fuera del
+mapa, que no están "on Mars").
+
+**⚠️ ERROR DE ICONOGRAFÍA ENCONTRADO Y CORREGIDO (leer antes de cargar cartas nuevas):** el tag
+`power` es un **RAYO blanco sobre círculo MORADO**; el **SOL DORADO de 8 puntas sobre negro es
+`space`**. En los prompts multi-agente de los bloques 31-36 se describió mal ese ícono y varias
+cartas quedaron con `power` donde va `space`. Hay prueba directa de ambos en el propio set:
+Magnetic Shield dice "Requires 3 power tags" junto a rayos morados, y Asteroid Deflection System
+dice "if it has a SPACE tag" junto al sol dorado. Se corrigieron 10 cartas verificadas una por
+una (ver "Iconografía de tags" en `CARDS_LOG.md`).
+
+**AUDITORÍA PENDIENTE, el próximo trabajo natural:** las cartas de los bloques 1-30 nunca se
+revisaron con ese criterio y hay varias con `power` que parecen `space` (`space_station`,
+`mining_colony`, `soletta`, `lunar_beam`, `titan_shuttles`, `rim_freighters`,
+`giant_space_mirror`, `nitrogen_from_titan`, `interplanetary_colony_ship`, ...). Hay que volver a
+bajar cada scan (espaciado 3s) y mirarlo, sin adivinar. Importa porque el tag alimenta
+requisitos de otras cartas (`min_tag_count`), descuentos por tag y conteos como
+`production_delta_per_distinct_tag`.
 
 **Bloque 37 (2026-09-08): NO fue revisión de cola, sino resolver mecánicas pendientes.** Se
 cargaron las 5 cartas que estaban trabadas: las 4 del bloque 36 (Kaguya Tech, Mars Nomads,
@@ -437,15 +462,24 @@ por carta activa" arriba. Quedan las 28 filas sin revisar de `global_event_revie
 Colonies), la única exclusión permanente por diseño (robo obligatorio sin sentido en
 single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
-**Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-37`, consultar
-la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
-host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
-rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans
-espaciados 4s, leer cada uno, decidir vocabulario (extender el motor si hace falta), cargar en
-`seed_cards.sql` + tests en `test_rules_engine.py`/`test_board.py`, probar contra Supabase real,
-marcar `card_review_queue` con `card_id` (o `null` si queda pendiente/fuera de alcance),
-actualizar `CARDS_LOG.md`, commitear, pushear la rama.
+**Para retomar: la cola de cartas de proyecto está VACÍA**, así que el flujo de "revisar un
+bloque de 10" ya no aplica. Lo que queda, en orden de valor:
+
+1. **Auditoría de tags `power`/`space` en los bloques 1-30** (ver el aviso de iconografía más
+   arriba). Es el trabajo más valioso: mecánico, acotado y corrige datos ya cargados.
+2. **Corporaciones (48 cartas):** el hueco grande que sigue sin modelarse en ningún lado
+   (`enqueue_card_review_queue.py` filtraba `cat != "Project"`, así que nunca entraron al
+   pipeline). Necesitan tabla, cola y mecánica propias, como se hizo con Prelude.
+3. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
+   neutrales por partido en Turmoil).
+4. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
+
+El flujo de trabajo, si vuelve a haber cartas para revisar: consultar la cola en Supabase
+(conexión directa con `psycopg2` y parámetros individuales de host/user/password — el
+`SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que rompe el parseo de
+`psycopg2.connect(url)` con un solo string), descargar los scans espaciados 3s, leer cada uno,
+decidir vocabulario (extender el motor si hace falta), cargar en `seed_cards.sql` + tests,
+probar contra Supabase real, marcar `card_review_queue`, actualizar `CARDS_LOG.md`, commitear.
 
 ## 5. Stack tecnológico
 
