@@ -276,7 +276,15 @@ class CardNotInHandError(Exception):
 # ---------------------------------------------------------------------------
 
 def raise_temperature(player: PlayerState, globals_: GlobalParameters, steps: int = 1) -> tuple[PlayerState, GlobalParameters]:
-    """Sube la temperatura `steps` pasos (2 grados cada uno). +1 TR por paso aplicado."""
+    """
+    Sube la temperatura `steps` pasos (2 grados cada uno). +1 TR por paso aplicado.
+
+    Tambien dispara el pasivo "on_temperature_raised" que el jugador tenga
+    activo (ej. Homeostasis Bureau: +3 M€), UNA VEZ POR PASO APLICADO -- no
+    por llamada: subir 2 pasos de una paga el bonus dos veces, y si la
+    temperatura ya estaba al tope no paga nada, igual criterio que el TR.
+    Mismo patron que on_ocean_placed en place_ocean.
+    """
     if globals_["temperature"] >= TEMPERATURE_MAX:
         raise GlobalParameterMaxedError("La temperatura ya esta en su maximo (+8 C)")
 
@@ -284,8 +292,14 @@ def raise_temperature(player: PlayerState, globals_: GlobalParameters, steps: in
     applied_steps = min(steps, max_possible_steps)
 
     new_globals = {**globals_, "temperature": globals_["temperature"] + applied_steps * TEMPERATURE_STEP}
-    new_player = {**player, "tr": player["tr"] + applied_steps}
-    return new_player, new_globals
+    new_player: dict = {**player, "tr": player["tr"] + applied_steps}
+    for effect in player["passive_effects"]:
+        bonus = effect.get("on_temperature_raised")
+        if bonus is None:
+            continue
+        new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0) * applied_steps
+        new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0) * applied_steps
+    return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
 
 
 def raise_oxygen(player: PlayerState, globals_: GlobalParameters, steps: int = 1) -> tuple[PlayerState, GlobalParameters]:
@@ -2403,6 +2417,21 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
         es quien tiene el costo impreso de la carta -- no hay funcion en
         rules_engine.py para este pasivo especifico.
+      - "on_temperature_raised": {"mc_delta": N, "heat_delta": N} -- se suma
+        cada vez que el jugador sube la temperatura, UNA VEZ POR PASO
+        APLICADO y sin importar la fuente (proyecto estandar Asteroid, una
+        carta, una accion, 8 de calor) (ej. Homeostasis Bureau, bloque 36:
+        +3 M€). Aplicado directo dentro de raise_temperature, igual que
+        on_ocean_placed en place_ocean: si la temperatura ya estaba al
+        tope no paga nada, mismo criterio que el TR.
+      - "stock_resource_payment": {"resource": "<recurso>", "required_tag":
+        "<tag>" (o LISTA), "value_mc": N} -- habilita pagar cartas con ese
+        tag usando un recurso de STOCK del jugador distinto de acero y
+        titanio, a N M€ cada uno (ej. Martian Lumber Corp, bloque 36: las
+        plantas valen 3 M€ al jugar cartas building). Es la cuarta via de
+        pago: acero/titanio estan cableados en el motor, card_resource_payment
+        gasta recursos guardados EN UNA CARTA, y esta gasta stock normal.
+        La consume `tools.play_card` con el parametro `stock_resource_to_pay`.
       - "optional_energy_to_heat": true -- hace OPCIONAL (unidad por unidad)
         la conversion de energia a calor de la fase de produccion, que la
         regla base aplica entera y sin preguntar (ej. Supercapacitors,
@@ -2590,11 +2619,21 @@ def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str,
         bonus = effect.get("on_event_played")
         if bonus is None:
             continue
-        tag_filter = effect.get("tag_filter")
+        # El tag_filter puede vivir DENTRO del bonus, no solo al nivel del
+        # pasivo: hace falta cuando una misma carta registra dos pasivos con
+        # filtros distintos (ej. Solar Logistics, bloque 36: descuento en
+        # cartas "earth" Y robo al jugar un evento "space" -- un solo
+        # tag_filter compartido no alcanzaria).
+        tag_filter = bonus.get("tag_filter", effect.get("tag_filter"))
         if tag_filter is not None and tag_filter not in played_card_tags:
             continue
         new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
         new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0)
+        # Solar Logistics (X63, bloque 36): "when any player plays a space
+        # event, draw 1 card" -- mismo pasivo, pero robando en vez de sumar
+        # recursos. En single-player "any player" es el propio jugador.
+        if bonus.get("draw_cards"):
+            new_player = dict(draw_cards_to_hand(PlayerState(**new_player), bonus["draw_cards"]))  # type: ignore[typeddict-item]
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
 
 

@@ -268,6 +268,23 @@ def count_empty_hexes_adjacent_to_owner(board: Board, player_id: str) -> int:
     )
 
 
+def count_cities_and_special_tiles_adjacent_to_ocean(board: Board) -> int:
+    """
+    Cuenta los tiles de CIUDAD y de SPECIAL adyacentes a por lo menos un
+    oceano, de CUALQUIER dueno. Cada tile se cuenta una sola vez, sin
+    importar a cuantos oceanos este pegado -- mismo criterio que
+    count_tiles_adjacent_to_ocean, del que este es una version filtrada por
+    tipo de tile.
+
+    Usada por Red Ships (X62, bloque 36): "gain 1 M€ for each CITY AND
+    SPECIAL TILE ADJACENT TO OCEAN, regardless of owner".
+    """
+    return sum(
+        1 for hex_id, tile in board.items()
+        if tile["tile_type"] in ("city", "special") and count_adjacent_oceans(board, hex_id) > 0
+    )
+
+
 def has_city_adjacent_to_ocean(board: Board, owner: str | None = None) -> bool:
     """
     True si hay al menos un tile de CIUDAD adyacente a por lo menos un

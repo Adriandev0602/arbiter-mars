@@ -406,6 +406,26 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `astra_mechanica` | Astra Mechanica | X51 | 7 MC | Tag science, **Promo**. Recupera a la mano 2 cartas de la "pila de eventos" que no coloquen special tiles (pieza nueva `retrieve_played_events_to_hand`). La pila de eventos no es un campo aparte: es `played_cards` filtrado por `cards.is_event` del catálogo, por eso se resuelve en `tools.play_card` |
 | `carbon_nanosystems` | Carbon Nanosystems | X52 | 14 MC | Tags science+building, **Promo**. Guarda "graphenes" (`active_card_resource_type` nuevo). Pasivo doble en un solo dict: +1 graphene al jugar un tag science (incluido el propio, se autodispara) y los graphenes pagan cartas con tag space **O** city a 4 M€ (extensión: `card_resource_payment.required_tag` ahora acepta LISTA, ver `tools._matches_required_tag`) |
 | `cyberia_systems` | Cyberia Systems | X53 | 16 MC | **Sin tags**, **Promo**. +1 producción acero y copia la caja de producción de 2 cartas building ya jugadas (extensión: `duplicate_production` acepta `count`, y `tools.play_card` suma `duplicate_production_target_card_ids` — deben ser cartas distintas y tener caja de producción) |
+| `hermetic_order_of_mars` | Hermetic Order of Mars | X56 | 10 MC | **Sin tags**, **Promo (set CEO)**. Requiere oxígeno ≤4%. +2 producción MC y +1 MC por hexágono vacío adyacente a tiles propios — **reuso puro** de `mc_per_empty_hex_adjacent_to_own_tiles` (Red Tourism Wave, bloque 31), sin piezas nuevas |
+| `homeostasis_bureau` | Homeostasis Bureau | X57 | 16 MC | Tag building, **Promo (set CEO)**. +2 producción calor. Pasivo `on_temperature_raised` (pieza nueva): +3 M€ cada vez que sube la temperatura, **una vez por PASO aplicado** y sin importar la fuente; si la temperatura ya está al tope no paga nada, mismo criterio que el TR. Aplicado dentro de `raise_temperature`, igual que `on_ocean_placed` en `place_ocean` |
+| `martian_lumber_corp` | Martian Lumber Corp | X60 | 6 MC | Tags building+plant, **Promo (set CEO)**. Requiere 2 greeneries propios (`min_greenery_tiles_owned`, del bloque 34). +1 producción plantas. Pasivo `stock_resource_payment` (pieza nueva): las plantas valen 3 M€ al jugar cartas building — ver sección dedicada abajo |
+| `red_ships` | Red Ships | X62 | 2 MC | **Sin tags**, **Promo (set CEO)**. Requiere 4% oxígeno. Acción: +1 M€ por cada CIUDAD y SPECIAL TILE del mapa adyacente a un océano, **de cualquier dueño** (pieza nueva `board.count_cities_and_special_tiles_adjacent_to_ocean` + `gains.mc_per_city_or_special_tile_adjacent_to_ocean`, resuelta en `tools.use_card_action` porque necesita el tablero). Los greeneries y los océanos entre sí NO cuentan |
+| `solar_logistics` | Solar Logistics | X63 | 20 MC | Tags earth+power, **Promo (set CEO)**. +2 titanio. Dos pasivos en el mismo dict: -2 M€ al jugar cartas earth, y robar 1 carta al jugar un evento con tag space (extensión: `on_event_played` acepta `draw_cards`, y admite un `tag_filter` PROPIO dentro del bonus — hacía falta porque los dos pasivos de esta carta filtran por tags distintos y un `tag_filter` compartido no alcanzaba) |
+| `teslaract` | Teslaract | X66 | 14 MC | Tags power+building, **Promo (set CEO)**. +1 TR. Acción: -1 producción de energía → +1 producción de plantas. **Sin piezas nuevas**: el `cost` de `use_card_action` ya acepta claves de producción por su rama genérica (mismo patrón que Energy Market, bloque 31) |
+
+## Pago con un recurso de stock (`stock_resource_payment`, bloque 36)
+
+Martian Lumber Corp (X60): *"when playing a building tag, plants may be used as 3 M€ each"*.
+Es la **cuarta vía de pago** del motor, y conviene no confundirla con las otras tres:
+- Acero y titanio están cableados en el motor (`calculate_card_payment` + `compute_conversion_rates`).
+- `card_resource_payment` gasta recursos guardados **en una carta activa** (floaters de Dirigibles,
+  microbios de Psychrophiles, graphenes de Carbon Nanosystems).
+- `stock_resource_payment` gasta **stock normal del jugador** de un recurso que no es acero ni
+  titanio (acá, plantas), habilitado por un pasivo y filtrado por tag de la carta pagada.
+
+Forma: `{"resource": "<recurso>", "required_tag": "<tag>" (o lista), "value_mc": N}`. Lo consume
+`tools.play_card` con el parámetro nuevo `stock_resource_to_pay`, que descuenta del stock y suma
+al descuento antes de calcular el pago, junto a los demás descuentos.
 
 ## Conversión opcional de energía a calor (`optional_energy_to_heat`, bloque 35)
 
@@ -516,6 +536,10 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
+| X58 | Kaguya Tech (Promo) | **Remover un greenery PROPIO ya colocado y poner una ciudad en ese mismo hexágono** (ignorando restricciones de adyacencia, cobrando bonus de colocación normales, y SIN tocar el oxígeno). `board.py` solo sabe agregar tiles: no existe nada para quitar un greenery (sí `remove_ocean_tile`, del Global Event correspondiente). Haría falta `board.remove_greenery_tile` + un effect que encadene quitar y colocar en el mismo hex. El resto de la carta (+2 producción MC, robar 1 carta) ya es vocabulario existente |
+| X59 | Mars Nomads (Promo) | **Marcador móvil que NO es un tile**: los "Nomads" (cubo dorado) ocupan un hexágono vacío, bloquean colocar tiles ahí, y su acción los mueve a un hexágono adyacente cobrando el bonus impreso de ese hex como si se colocara un special tile. Hoy `Board` es un dict hex→tile y todo lo que ocupa un hex es un tile permanente con dueño; un marcador movible que cobra bonus repetidamente es un concepto nuevo del tablero (habría que decidir además si el bonus del hex se "consume", ya que hoy `bonus_consumed` es definitivo) |
+| X61 | Neptunian Power Consultants (Promo) | **`on_ocean_placed` OPCIONAL y PAGADO**: "when any ocean is placed, you MAY spend 5 M€ (steel may be used) to raise your energy production 1 step and add 1 hydroelectric resource here". El pasivo `on_ocean_placed` de hoy es automático, gratis y solo suma `plants_delta` (Arctic Algae), y se aplica DENTRO de `place_ocean` — un pago opcional necesita una decisión del jugador en un punto donde el motor puro no puede pedirla, y los océanos se colocan desde muchísimos caminos distintos. Requiere sacar el disparo a `tools.py` con un parámetro de decisión, o un mecanismo de "ofertas pendientes" |
+| X64 | St. Joseph of Cupertino Mission (Promo) | **Marcador (catedral) SOBRE un tile de ciudad ya existente**, máximo 1 por ciudad. `place_special_tile` exige hexágono vacío por diseño (`is_hex_empty`), así que no sirve: haría falta una capa de marcadores encima de tiles ocupados. Además pide `cost.mc_or_steel` (existe el análogo `mc_or_titanium`, sería una extensión chica) y una oferta opcional post-colocación de "pagar 2 M€ para robar 1 carta" |
 | T11 | Recruitment | Delegados NEUTRALES por partido (`turmoil.py` hoy solo trackea `delegates: {player_id: N}`, sin entrada para "neutral" -- ver comentario en `turmoil.py` "neutrales/de otros jugadores... no se simulan"). El texto es "exchange one NEUTRAL non-leader delegate with one of your own from reserve", en el partido que el jugador elija -- necesita saber cuántos delegados neutrales hay en cada partido, algo que el setup actual nunca inicializa. Distinto de Vote of No Confidence (T16, bloque 31, sí cargada): esa solo necesitaba el Chairman neutral, que YA es representable (`chairman is None`) sin tocar `delegates` |
 
 ### Turmoil: núcleo político (Colonial Envoys, Colonial Representation)

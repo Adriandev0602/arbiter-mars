@@ -2183,3 +2183,47 @@ insert into cards (id, name, cost, tags, requirements, effects) values
 on conflict (id) do update set
     name = excluded.name, cost = excluded.cost, tags = excluded.tags,
     requirements = excluded.requirements, effects = excluded.effects;
+
+-- Bloque 36 (2026-09-08): X56, X57, X60, X62, X63, X66 (Promo, set "CEO").
+-- El "CEO: APELLIDO" del encabezado es el credito del disenador, NO un tag
+-- ni un requisito. X58/X59/X61/X64 quedaron pendientes por mecanica grande
+-- (ver "Pendientes" en CARDS_LOG.md).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'hermetic_order_of_mars', 'Hermetic Order of Mars', 10, '{}',
+        '{"max_oxygen": 4}'::jsonb,
+        '{"production_deltas": {"mc_production": 2},
+          "mc_per_empty_hex_adjacent_to_own_tiles": true}'::jsonb
+    ),
+    (
+        'homeostasis_bureau', 'Homeostasis Bureau', 16, '{building}', null,
+        '{"production_deltas": {"heat_production": 2},
+          "passive": {"on_temperature_raised": {"mc_delta": 3}}}'::jsonb
+    ),
+    (
+        'martian_lumber_corp', 'Martian Lumber Corp', 6, '{building,plant}',
+        '{"min_greenery_tiles_owned": 2}'::jsonb,
+        '{"production_deltas": {"plant_production": 1},
+          "passive": {"stock_resource_payment": {"resource": "plants", "required_tag": "building", "value_mc": 3}}}'::jsonb
+    ),
+    (
+        'red_ships', 'Red Ships', 2, '{}',
+        '{"min_oxygen": 4}'::jsonb,
+        '{"becomes_active": true,
+          "action": {"gains": {"mc_per_city_or_special_tile_adjacent_to_ocean": true}}}'::jsonb
+    ),
+    (
+        'solar_logistics', 'Solar Logistics', 20, '{earth,power}', null,
+        '{"resource_deltas": {"titanium": 2},
+          "passive": {"card_cost_discount_mc": 2, "tag_filter": "earth",
+                      "on_event_played": {"draw_cards": 1, "tag_filter": "space"}}}'::jsonb
+    ),
+    (
+        'teslaract', 'Teslaract', 14, '{power,building}', null,
+        '{"tr_delta": 1, "becomes_active": true,
+          "action": {"cost": {"energy_production": 1},
+                     "gains": {"production_deltas": {"plant_production": 1}}}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;

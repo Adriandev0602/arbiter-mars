@@ -22,6 +22,7 @@ from app.agent.board import (
     count_tiles_adjacent_to_ocean,
     count_empty_hexes_adjacent_to_owner,
     has_city_adjacent_to_ocean,
+    count_cities_and_special_tiles_adjacent_to_ocean,
     remove_ocean_tile,
     can_place_city_on_volcanic,
     can_place_greenery,
@@ -523,6 +524,26 @@ def test_has_city_adjacent_to_ocean_filtra_por_dueno():
     assert has_city_adjacent_to_ocean(board) is True
     assert has_city_adjacent_to_ocean(board, owner="p1") is False
     assert has_city_adjacent_to_ocean(board, owner="p2") is True
+
+
+def test_count_cities_and_special_tiles_adjacent_to_ocean_ignora_greeneries():
+    # Red Ships (X62, bloque 36): cuenta ciudades Y special tiles, de cualquier
+    # dueno; los greeneries y los oceanos entre si NO cuentan
+    board = new_board()
+    board, _, _ = place_ocean_tile(board, "04")
+    assert count_cities_and_special_tiles_adjacent_to_ocean(board) == 0
+
+    board, _, _ = place_city_tile(board, "05", "p1")          # vecino de 04
+    board, _, _ = place_greenery_tile(board, "03", "p2", ignore_restrictions=True)  # vecino de 04
+    assert count_cities_and_special_tiles_adjacent_to_ocean(board) == 1  # solo la ciudad
+
+    # un special tile pegado al mismo oceano SI suma (y es de otro dueno)
+    free_neighbor = next(
+        h for h in get_neighbors("04")
+        if h not in board and can_place_special_tile(board, h, {}, "p2")
+    )
+    board = place_special_tile(board, free_neighbor, {}, "p2", "una_carta")[0]
+    assert count_cities_and_special_tiles_adjacent_to_ocean(board) == 2
 
 
 def test_has_city_adjacent_to_ocean_ignora_ciudad_lejos_del_agua():
