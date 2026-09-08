@@ -138,11 +138,32 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 35)
+### 📍 Punto de retoma (última sesión: 2026-09-08, bloque 36)
 
-**Progreso:** catálogo en **386 cartas de proyecto**, **36 Global Events** y **48 cartas
-Prelude**. Colas: 21 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
+**Progreso:** catálogo en **392 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. Colas: 11 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
 revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Bloque 36 (2026-09-08): 6 de 10 cargadas, 4 pendientes por mecánica grande.** Las 10 son del
+set "CEO" de promos (ojo: el "CEO: APELLIDO" del encabezado es el crédito del diseñador, NO un
+tag ni un requisito). Piezas nuevas: pasivo `on_temperature_raised` (Homeostasis Bureau, +3 M€
+por PASO de temperatura, aplicado dentro de `raise_temperature` igual que `on_ocean_placed`);
+pasivo `stock_resource_payment` (Martian Lumber Corp: las plantas pagan cartas building a 3 M€
+— cuarta vía de pago, ver `CARDS_LOG.md`); `board.count_cities_and_special_tiles_adjacent_to_ocean`
++ `gains.mc_per_city_or_special_tile_adjacent_to_ocean` (Red Ships); `on_event_played` acepta
+`draw_cards` y un `tag_filter` PROPIO dentro del bonus (Solar Logistics tiene dos pasivos con
+filtros distintos, y el `tag_filter` compartido del dict no alcanzaba). Hermetic Order of Mars y
+Teslaract salieron con vocabulario ya existente, sin tocar el motor.
+
+**4 pendientes del bloque 36, todas por mecánica de TABLERO/decisión que no existe hoy** (ver la
+tabla "Pendientes" de `CARDS_LOG.md` para el diagnóstico completo de cada una): Kaguya Tech
+(remover un greenery propio y poner ciudad en ese hex), Mars Nomads (marcador móvil que no es un
+tile y cobra bonus al moverse), Neptunian Power Consultants (`on_ocean_placed` opcional y pagado,
+que necesita una decisión del jugador donde hoy el motor no puede pedirla) y St. Joseph of
+Cupertino Mission (marcador de catedral SOBRE una ciudad ya colocada). Las tres primeras
+comparten el mismo tema de fondo: **el tablero hoy solo sabe de tiles permanentes que ocupan un
+hex vacío**; marcadores móviles, superpuestos o removibles son un concepto nuevo. Si se quiere
+avanzar con ellas, conviene diseñarlo una sola vez para las cuatro.
 
 **Bloque 35 (2026-09-07): 10 de 10 cargadas**, otra vez con orquestación multi-agente (10
 subagentes Sonnet en paralelo). Piezas de motor nuevas: requisitos `any_city_adjacent_to_ocean`
@@ -396,7 +417,7 @@ Colonies), la única exclusión permanente por diseño (robo obligatorio sin sen
 single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-36`, consultar
+checkout -b feat/review-block-37`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans

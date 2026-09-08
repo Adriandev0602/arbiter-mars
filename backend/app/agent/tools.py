@@ -377,6 +377,7 @@ def play_card(
     colony_id_increase: str | None = None,
     colony_id_decrease: str | None = None,
     card_resource_to_pay: int = 0,
+    stock_resource_to_pay: int = 0,
     wild_tag_choice: str | None = None,
     delegate_party_choices: list[str] | None = None,
     removal_party: str | None = None,
@@ -610,11 +611,40 @@ def play_card(
         card_resource_value_mc = match["card_resource_payment"].get("value_mc", 3)
         card_resource_discount = card_resource_to_pay * card_resource_value_mc
 
+    # Pago con un recurso de STOCK distinto de acero/titanio (Martian Lumber
+    # Corp, X60 bloque 36: las plantas valen 3 M€ al jugar cartas building).
+    # Es la cuarta forma de pago: acero/titanio estan cableados en el motor,
+    # `card_resource_to_pay` gasta recursos guardados en una carta, y esto
+    # gasta stock normal del jugador habilitado por un pasivo.
+    stock_resource_discount = 0
+    stock_resource_key = None
+    if stock_resource_to_pay > 0:
+        match = next(
+            (
+                p for p in player["passive_effects"]
+                if "stock_resource_payment" in p
+                and _matches_required_tag(p["stock_resource_payment"]["required_tag"], card_tags)
+            ),
+            None,
+        )
+        if match is None:
+            raise ValueError(
+                f"Ningun pasivo del jugador permite pagar '{card_id}' con un recurso de stock"
+            )
+        stock_resource_key = match["stock_resource_payment"]["resource"]
+        if player[stock_resource_key] < stock_resource_to_pay:
+            raise engine.InsufficientResourcesError(
+                f"El jugador tiene {player[stock_resource_key]} de {stock_resource_key}, "
+                f"declaro pagar {stock_resource_to_pay}"
+            )
+        stock_resource_discount = stock_resource_to_pay * match["stock_resource_payment"].get("value_mc", 1)
+
     discount = (
         engine.compute_card_cost_discount(player, card_tags, has_requirement=bool(requirements))
         + player["pending_mc_discount"]
         + engine.compute_reserved_card_discount(player, card_id)
         + card_resource_discount
+        + stock_resource_discount
     )
     effective_cost = max(0, card["cost"] - discount)
     change = engine.calculate_card_payment(
@@ -641,6 +671,8 @@ def play_card(
     }
     if card_resource_source_id is not None:
         paid_player = engine.spend_active_card_resource(paid_player, card_resource_source_id, card_resource_to_pay)
+    if stock_resource_key is not None:
+        paid_player = {**paid_player, stock_resource_key: paid_player[stock_resource_key] - stock_resource_to_pay}
     effects = card.get("effects") or {}
 
     # Se registra como activa/pasiva ANTES de aplicar el efecto (que puede
@@ -1120,6 +1152,21 @@ def use_card_action(
     if free_trade and trade_colony_id is None:
         raise ValueError(f"La accion de '{card_id}' requiere trade_colony_id")
 
+    # MC por cada ciudad/special tile del mapa adyacente a un oceano, de
+    # cualquier dueno (Red Ships, X62 bloque 36). Se resuelve aca porque
+    # necesita el tablero, igual que los requisitos de adyacencia: se
+    # convierte a un resource_deltas concreto antes de llamar al motor.
+    board_mc_spec = resolved_spec.get("gains", {}).get("mc_per_city_or_special_tile_adjacent_to_ocean")
+    spec_for_engine = action_spec
+    if board_mc_spec:
+        earned = boardlib.count_cities_and_special_tiles_adjacent_to_ocean(_load_board())
+        new_gains = {k: v for k, v in resolved_spec.get("gains", {}).items()
+                     if k != "mc_per_city_or_special_tile_adjacent_to_ocean"}
+        resource_deltas = {**new_gains.get("resource_deltas", {})}
+        resource_deltas["mc"] = resource_deltas.get("mc", 0) + earned
+        new_gains["resource_deltas"] = resource_deltas
+        spec_for_engine = {**resolved_spec, "gains": new_gains}
+
     # Algunas acciones tienen su PROPIO requisito, distinto del de jugar la
     # carta (ej. Red Appeasement: la accion exige que Reds gobierne o tener 2
     # delegados ahi). Se valida con la misma funcion del motor.
@@ -1135,7 +1182,6 @@ def use_card_action(
     # no en el motor puro, que no conoce Turmoil -- mismo criterio que
     # free_trade y que remove_own_delegate en play_card.
     remove_delegates_count = resolved_spec.get("cost", {}).get("remove_own_delegates", 0)
-    spec_for_engine = action_spec
     if remove_delegates_count:
         chosen_parties = removal_parties or []
         if len(chosen_parties) != remove_delegates_count:

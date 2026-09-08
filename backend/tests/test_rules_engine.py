@@ -315,6 +315,42 @@ def test_production_phase_converts_leftover_energy_to_heat():
     assert result["energy"] == 1  # solo la produccion nueva, el stock viejo se vacio
 
 
+def test_on_temperature_raised_paga_por_paso_aplicado():
+    # Homeostasis Bureau (X57, bloque 36): +3 MC cada vez que sube la temperatura
+    player = register_passive_effect(new_player_state(), "homeostasis_bureau", {"on_temperature_raised": {"mc_delta": 3}})
+    globals_ = new_global_parameters()
+    new_player, new_globals = raise_temperature(player, globals_, steps=2)
+    assert new_player["mc"] == 6           # 2 pasos * 3 MC
+    assert new_player["tr"] == 20 + 2
+
+
+def test_on_temperature_raised_no_paga_pasos_no_aplicados():
+    # si solo entra 1 paso antes del tope, paga 1 vez (mismo criterio que el TR)
+    player = register_passive_effect(new_player_state(), "homeostasis_bureau", {"on_temperature_raised": {"mc_delta": 3}})
+    globals_ = {**new_global_parameters(), "temperature": 6}  # tope +8, entra 1 paso
+    new_player, new_globals = raise_temperature(player, globals_, steps=3)
+    assert new_globals["temperature"] == 8
+    assert new_player["mc"] == 3
+    assert new_player["tr"] == 20 + 1
+
+
+def test_on_event_played_puede_robar_cartas_con_su_propio_tag_filter():
+    # Solar Logistics (X63, bloque 36): descuento earth Y robo al jugar evento space,
+    # dos filtros distintos en el MISMO pasivo
+    player = register_passive_effect(
+        {**new_player_state(), "deck": ["a", "b"]}, "solar_logistics",
+        {"card_cost_discount_mc": 2, "tag_filter": "earth",
+         "on_event_played": {"draw_cards": 1, "tag_filter": "space"}},
+    )
+    # evento con tag space: roba
+    assert apply_event_played_bonuses(player, ("space",))["hand"] == ["a"]
+    # evento sin tag space: no roba
+    assert apply_event_played_bonuses(player, ("earth",))["hand"] == []
+    # y el descuento sigue filtrando por su propio tag
+    assert compute_card_cost_discount(player, ("earth",)) == 2
+    assert compute_card_cost_discount(player, ("space",)) == 0
+
+
 def test_production_phase_optional_energy_to_heat_conserva_el_resto():
     # Supercapacitors (X46, bloque 35): la conversion es opcional, unidad por unidad
     player = register_passive_effect(
