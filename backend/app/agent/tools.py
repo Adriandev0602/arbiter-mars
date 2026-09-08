@@ -561,7 +561,7 @@ def play_card(
         card_resource_discount = card_resource_to_pay * card_resource_value_mc
 
     discount = (
-        engine.compute_card_cost_discount(player, card_tags)
+        engine.compute_card_cost_discount(player, card_tags, has_requirement=bool(requirements))
         + player["pending_mc_discount"]
         + engine.compute_reserved_card_discount(player, card_id)
         + card_resource_discount

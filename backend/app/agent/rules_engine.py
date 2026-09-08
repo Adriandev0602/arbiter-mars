@@ -2418,7 +2418,9 @@ def compute_conversion_rates(player: PlayerState) -> tuple[int, int]:
     return steel_value, titanium_value
 
 
-def compute_card_cost_discount(player: PlayerState, card_tags: tuple[str, ...]) -> int:
+def compute_card_cost_discount(
+    player: PlayerState, card_tags: tuple[str, ...], has_requirement: bool = False,
+) -> int:
     """
     Suma los descuentos de costo ("card_cost_discount_mc") de todos los
     efectos pasivos activos del jugador que apliquen a esta carta (segun
@@ -2427,11 +2429,20 @@ def compute_card_cost_discount(player: PlayerState, card_tags: tuple[str, ...]) 
     LISTA de tags, en cuyo caso alcanza con que la carta tenga alguno (ej.
     Space Lanes: "planet tag" = jovian/earth/venus). Se resta del costo antes de calcular el pago
     en tools.play_card -- nunca deja el costo por debajo de 0.
+
+    `requires_requirement`: bool en el efecto -- en vez de filtrar por tag,
+    filtra por si la carta jugada TIENE algun `requirements` propio (ej.
+    Cutting Edge Technology, bloque 33: -2 MC en cartas con requisito,
+    sin importar sus tags). Necesita `has_requirement` (si `cards.
+    requirements` de la carta jugada no es null/vacio), que tools.play_card
+    calcula del catalogo.
     """
     discount = 0
     for effect in player["passive_effects"]:
         bonus = effect.get("card_cost_discount_mc")
         if bonus is None:
+            continue
+        if effect.get("requires_requirement") and not has_requirement:
             continue
         tag_filter = effect.get("tag_filter")
         # `tag_filter` acepta un tag suelto o una LISTA (ej. Space Lanes:

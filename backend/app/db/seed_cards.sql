@@ -1973,3 +1973,56 @@ insert into cards (id, name, cost, tags, requirements, effects) values
 on conflict (id) do update set
     name = excluded.name, cost = excluded.cost, tags = excluded.tags,
     requirements = excluded.requirements, effects = excluded.effects;
+
+-- Bloque 33 (2026-09-07): X15, X16, X18, X19, X21-X24 (Promo), salvo X17
+-- Crash Site Cleanup (fuera de alcance, mismo motivo que Law Suit) y X20
+-- Diversity Support (pendiente, ver CARDS_LOG.md).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'asteroid_hollowing', 'Asteroid Hollowing', 16, '{power}', null,
+        '{"becomes_active": true, "active_card_resource_type": "asteroid",
+          "action": {"cost": {"titanium": 1},
+                     "gains": {"card_resource_delta": 1, "production_deltas": {"mc_production": 1}}}}'::jsonb
+    ),
+    (
+        'comet_aiming', 'Comet Aiming', 17, '{power}', null,
+        '{"becomes_active": true, "active_card_resource_type": "asteroid",
+          "action": {"choice": [
+              {"cost": {"titanium": 1}, "gains": {"target_card_resource_delta_allow_self": 1}},
+              {"cost": {"card_resource": 1}, "gains": {"place_oceans": 1}}
+          ]}}'::jsonb
+    ),
+    (
+        'cutting_edge_technology', 'Cutting Edge Technology', 12, '{science}', null,
+        '{"passive": {"card_cost_discount_mc": 2, "requires_requirement": true}}'::jsonb
+    ),
+    (
+        'directed_impactors', 'Directed Impactors', 8, '{power}', null,
+        '{"becomes_active": true, "active_card_resource_type": "asteroid",
+          "action": {"choice": [
+              {"cost": {"mc_or_titanium": 6}, "gains": {"target_card_resource_delta_allow_self": 1}},
+              {"cost": {"card_resource": 1}, "gains": {"raise_temperature_steps": 1}}
+          ]}}'::jsonb
+    ),
+    (
+        'field_capped_city', 'Field-Capped City', 29, '{power,city,building}', null,
+        '{"production_deltas": {"mc_production": 2, "energy_production": 1}, "resource_deltas": {"plants": 3}}'::jsonb
+    ),
+    (
+        'imported_nutrients', 'Imported Nutrients', 14, '{earth,power}', null,
+        '{"resource_deltas": {"plants": 4}, "target_card_resource_delta": 4}'::jsonb
+    ),
+    (
+        'jovian_embassy', 'Jovian Embassy', 14, '{jovian,building}', null,
+        '{"tr_delta": 1}'::jsonb
+    ),
+    (
+        'magnetic_shield', 'Magnetic Shield', 24, '{power}',
+        '{"min_tag_count": {"tag": "power", "count": 3}}'::jsonb,
+        '{"tr_delta": 4}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in ('imported_nutrients');
