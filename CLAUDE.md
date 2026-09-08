@@ -138,11 +138,33 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 33)
+### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 34)
 
-**Progreso:** catálogo en **366 cartas de proyecto**, **36 Global Events** y **48 cartas
-Prelude**. Colas: 41 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
+**Progreso:** catálogo en **376 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. Colas: 31 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
 revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Bloque 34 (2026-09-07): 10 de 10 cargadas**, hecho con **orquestación multi-agente** (10
+subagentes Sonnet en paralelo, uno por carta, analizando/diseñando sin tocar el repo;
+integración y verificación centralizadas). Piezas de motor nuevas: pasivo
+`on_card_resource_gained` (Meat Industry: +2 M€ por animal ganado en CUALQUIER carta; Topsoil
+Contract: +1 M€ por microbio) -- implementado con **diff de totales** vía
+`snapshot_card_resource_totals` + `apply_card_resource_gained_bonuses` en vez de enganchar los
+~8 caminos que agregan recursos a cartas; y requirement `min_greenery_tiles_owned` (Harvest),
+resuelto en `tools.play_card` porque necesita el tablero.
+
+**Retrofit importante del bloque 34:** las cartas que guardan MICROBIOS (11) y ANIMALES (13) no
+declaraban `active_card_resource_type` -- mismo hueco que tenían las de floaters. Ya está
+corregido en `seed_cards.sql`, verificado carta por carta contra `CARDS_LOG.md`. Esto además
+**desbloquea Diversity Support (X20)**, que quedó pendiente en el bloque 33 por esa misma
+carencia: ahora se pueden contar los "9 tipos de recurso distintos" de verdad. Es el próximo
+pendiente natural para retomar.
+
+**Aprendizaje de la tanda multi-agente (confirma lo ya documentado):** 4 de los 10 informes
+leyeron mal los tags o el banner (dos reportaron "sin tags" cartas que sí los tienen, uno omitió
+`building`, otro marcó evento una carta de banner verde). Los efectos y el vocabulario propuesto,
+en cambio, estuvieron bien en los 10. **Los agentes sirven para mapear el efecto al vocabulario;
+los tags y el banner hay que verificarlos SIEMPRE contra el scan antes de cargar.**
 
 **Bloque 33 (2026-09-07): 8 de 10 cargadas** (X15, X16, X18, X19, X21-X24 Promo; X17 Crash
 Site Cleanup fuera de alcance -- mismo motivo que Law Suit; X20 Diversity Support pendiente
@@ -356,7 +378,7 @@ Colonies), la única exclusión permanente por diseño (robo obligatorio sin sen
 single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-34`, consultar
+checkout -b feat/review-block-35`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans

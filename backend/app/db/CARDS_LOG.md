@@ -386,10 +386,68 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `imported_nutrients` | Imported Nutrients | X22 | 14 MC | Tags earth+power, evento, **Promo**. +4 plantas, +4 microbios a OTRA carta elegida (`target_card_resource_delta`). Vocabulario existente |
 | `jovian_embassy` | Jovian Embassy | X23 | 14 MC | Tags jovian+building, **Promo**. +1 TR, sin requisito. Vocabulario existente |
 | `magnetic_shield` | Magnetic Shield | X24 | 24 MC | Tag power, **Promo**. Requiere 3 tags power. +4 TR. Vocabulario existente |
+| `meat_industry` | Meat Industry | X25 | 5 MC | Tag building, **Promo**. Pasivo: +2 MC por cada animal que el jugador gane en CUALQUIER carta (pieza nueva `on_card_resource_gained`, ver sección dedicada abajo) |
+| `meltworks` | Meltworks | X26 | 4 MC | Tag building, **Promo**. Acción: gastar 5 calor → +3 acero. Vocabulario existente |
+| `mohole_lake` | Mohole Lake | X27 | 31 MC | Tag building, **Promo**. Coloca 1 océano, +1 paso temperatura, +3 plantas. Acción: agrega 1 microbio o animal a OTRA carta (`target_card_resource_delta` — el motor no distingue el TIPO al agregar: lo determina la carta destino que elige el jugador, mismo criterio que Thermophiles/Bio Printing Facility) |
+| `potatoes` | Potatoes | X28 | 2 MC | Tag plant, **Promo**. -2 plantas (costo obligatorio, mismo patrón que Nitrophilic Moss), +2 producción MC |
+| `sub_crust_measurements` | Sub-Crust Measurements | X29 | 20 MC | Tags earth+science+building, **Promo**. Requiere 2 tags science. Acción gratis: robar 1 carta |
+| `topsoil_contract` | Topsoil Contract | X30 | 8 MC | Tags earth+microbe, **Promo**. +3 plantas. Pasivo: +1 MC por cada microbio que el jugador gane en CUALQUIER carta (misma pieza `on_card_resource_gained` que Meat Industry) |
+| `asteroid_rights` | Asteroid Rights | X34 | 10 MC | Tags earth+power, **Promo**. Arranca con 2 asteroides propios. Acción con 3 ramas: 1 MC → +1 asteroide a CUALQUIER carta; O gastar 1 asteroide propio → +1 producción MC; O gastar 1 asteroide propio → +2 titanio |
+| `bactoviral_research` | Bactoviral Research | X35 | 10 MC | Tags microbe+science, **Promo**. Roba 1 carta y agrega 1 microbio a una carta elegida por cada tag science, incluido el propio (`target_card_resource_delta_per_tag` con `include_this`, mismo patrón que Hydrogen to Venus) |
+| `bio_printing_facility` | Bio Printing Facility | X36 | 7 MC | Tag building, **Promo**. Acción con elección: gastar 2 energía → +2 plantas, O gastar 2 energía → +1 animal a OTRA carta |
+| `harvest` | Harvest | X37 | 4 MC | Tag plant, evento, **Promo**. Requiere 3 greeneries PROPIOS en el mapa (pieza nueva `min_greenery_tiles_owned`, resuelta en `tools.play_card` con `board.count_tiles_of_type(board, "greenery", owner=player_id)` porque el motor puro no conoce el tablero — mismo criterio que `free_trade`). +12 MC |
+
+## Recursos ganados en cualquier carta (`on_card_resource_gained`, bloque 34)
+
+Pasivo nuevo: **"cuando ganás un recurso de tipo X en CUALQUIER carta, ganás N M€"**
+(Meat Industry: 2 M€ por animal; Topsoil Contract: 1 M€ por microbio). Las dos cartas
+comparten exactamente la misma pieza, así que se resolvió una sola vez.
+
+**Cómo se implementó, y por qué así:** hay muchísimos caminos que agregan recursos a una
+carta activa (acción propia, `target_card_resource_delta` de otra carta, pasivos
+`on_tag_played_add_resource` / `on_greenery_placed_add_resource` / `on_city_tile_placed_add_resource`,
+recursos iniciales al jugarla, etc.). Enganchar cada uno por separado sería frágil y fácil de
+olvidar al agregar la próxima pieza. En vez de eso se usa el mismo patrón de **diff** que
+`tools.play_card` ya usaba para océanos/ciudades: `snapshot_card_resource_totals(player)` al
+principio de `play_card`/`use_card_action`, y `apply_card_resource_gained_bonuses(player, before)`
+al final. Solo cuenta la ganancia NETA positiva por tipo: gastar recursos nunca resta MC, y
+MOVER un recurso entre dos cartas (ej. Ants, Predators) no paga, porque el total no cambia —
+coherente con el texto oficial, que premia *ganar* el recurso, no reubicarlo.
+
+**Requisito previo: retrofit de `active_card_resource_type` para microbio y animal.** El pasivo
+depende de `sum_card_resources_by_type`, que solo ve cartas con `resource_type` declarado. Igual
+que pasó con los floaters, ninguna carta de microbios/animales lo declaraba. El retrofit está en
+`seed_cards.sql` (idempotente, mismo estilo que el de floaters) y cubre **11 cartas de microbio**
+(`ants`, `decomposers`, `extremophiles`, `ghg_producing_bacteria`, `nitrite_reducing_bacteria`,
+`psychrophiles`, `regolith_eaters`, `sulphur_eating_bacteria`, `tardigrades`, `thermophiles`,
+`venusian_insects`) y **13 de animal** (`birds`, `ecological_zone`, `fish`, `herbivores`,
+`livestock`, `martian_zoo`, `penguins`, `pets`, `predators`, `small_animals`,
+`stratospheric_birds`, `sub_zero_salt_fish`, `venusian_animals`). Lista verificada una por una
+contra la fila ya registrada de cada carta acá y cruzada con su tag propio en `cards`.
+**Excluida a propósito:** `security_fleet` ("+1 recurso en la carta", tag power) — en el juego
+real guarda *fighters*, no animales.
+
+Este retrofit además **desbloquea Diversity Support (X20)**, que quedó pendiente en el bloque 33
+justamente por falta de tipado confiable de microbios/animales (ver "Cartas pendientes del
+bloque 33"): ahora se pueden contar los 9 tipos de recurso distintos de verdad.
+
+**Tanda multi-agente del bloque 34 (10 subagentes Sonnet, uno por carta):** los agentes
+analizaron y diseñaron sin tocar el repo; la integración, verificación y código quedaron
+centralizados. **4 de los 10 informes tenían errores de lectura de la imagen**, todos del tipo ya
+documentado: X27 y X30 reportaron "sin tags" cuando tienen `building` y `earth+microbe`
+respectivamente; X29 omitió el tag `building` (lo tomó por "indicador de requisito"); X35 marcó
+`is_event: true` sobre una carta de banner verde. Los efectos y el vocabulario propuesto, en
+cambio, fueron correctos en los 10 casos, incluidas las dos piezas nuevas, que ambos agentes
+involucrados identificaron bien como faltantes. **Conclusión operativa: los agentes sirven para
+mapear el texto del efecto al vocabulario del motor, pero los tags y el banner hay que
+verificarlos siempre contra el scan antes de cargar.**
 
 **Cartas pendientes del bloque 33 (2026-09-07):**
 - **X17 Crash Site Cleanup:** fuera de alcance, mismo motivo que Law Suit (bloque 32) -- su requisito de juego es "un jugador removió las plantas de otro jugador esta generación", inexistente en single-player.
-- **X20 Diversity Support:** pendiente por mecánica -- requiere "9 tipos de recursos distintos" (los 6 de stock: MC/acero/titanio/plantas/energía/calor, más 3 tipos de recurso de carta: microbio/animal/floater). El motor solo puede contar de forma confiable los tipos de recurso de carta que tienen `resource_type` seteado explícitamente (ver `sum_card_resources_by_type`) -- hoy solo `floater` y `asteroid` lo tienen, ningún microbio/animal lo declara. Se resuelve con un retrofit análogo al de floaters (ver la migración `update cards set effects = effects || '{"active_card_resource_type": "floater"}'` más abajo): identificar TODAS las cartas que guardan microbios/animales en su propia caja (`becomes_active` + su texto dice "add a microbe/animal to this card") y agregarles `active_card_resource_type` correspondiente, verificado una por una contra `CARDS_LOG.md` (no adivinar). No se hizo en este bloque para no arriesgar un conteo de "9 tipos" incorrecto sin esa base sólida.
+- **X20 Diversity Support:** ~~pendiente por mecánica~~ **DESBLOQUEADA en el bloque 34** por el
+  retrofit de `active_card_resource_type` para microbio/animal (ver sección "Recursos ganados en
+  cualquier carta"); queda solo cargarla con un requirement que cuente los 9 tipos. El diagnóstico
+  original era: requiere "9 tipos de recursos distintos" (los 6 de stock: MC/acero/titanio/plantas/energía/calor, más 3 tipos de recurso de carta: microbio/animal/floater). El motor solo puede contar de forma confiable los tipos de recurso de carta que tienen `resource_type` seteado explícitamente (ver `sum_card_resources_by_type`) -- hoy solo `floater` y `asteroid` lo tienen, ningún microbio/animal lo declara. Se resuelve con un retrofit análogo al de floaters (ver la migración `update cards set effects = effects || '{"active_card_resource_type": "floater"}'` más abajo): identificar TODAS las cartas que guardan microbios/animales en su propia caja (`becomes_active` + su texto dice "add a microbe/animal to this card") y agregarles `active_card_resource_type` correspondiente, verificado una por una contra `CARDS_LOG.md` (no adivinar). No se hizo en este bloque para no arriesgar un conteo de "9 tipos" incorrecto sin esa base sólida.
 
 **Bug encontrado y corregido en la prueba de humo del bloque 32 (2026-09-07):**
 `tools.play_card`/`tools.play_prelude` calculaban `cities_delta` comparando

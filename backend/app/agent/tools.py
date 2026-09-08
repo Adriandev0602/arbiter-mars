@@ -536,8 +536,24 @@ def play_card(
         requirements, globals_, player, wild_tag_choice=wild_tag_choice, turmoil=turmoil, player_id=player_id,
     )
 
+    # Requisito de greeneries PROPIOS en el mapa: se resuelve aca y no en
+    # el motor puro porque necesita el tablero (mismo criterio que
+    # free_trade/duplicate_production) (ej. Harvest, bloque 34: 3 greeneries).
+    min_greeneries = requirements.get("min_greenery_tiles_owned")
+    if min_greeneries is not None:
+        own_greeneries = boardlib.count_tiles_of_type(_load_board(), "greenery", owner=player_id)
+        if own_greeneries < min_greeneries:
+            raise engine.CardRequirementNotMetError(
+                f"Requiere {min_greeneries} greenery(s) propios en el mapa, hay {own_greeneries}"
+            )
+
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:
         raise engine.InsufficientResourcesError("El jugador no tiene el stock declarado")
+
+    # Snapshot para el pasivo "on_card_resource_gained" (ej. Meat Industry:
+    # +2 MC por cada animal ganado en cualquier carta) -- se compara contra
+    # el estado final de la jugada, ver engine.apply_card_resource_gained_bonuses.
+    card_resource_totals_before = engine.snapshot_card_resource_totals(player)
 
     card_tags = tuple(card.get("tags", []))
     steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
@@ -892,6 +908,7 @@ def play_card(
 
     new_player = engine.apply_tag_played_choice(new_player, card_tags, tag_played_choice)
     new_player = engine.apply_any_tag_played_choice(new_player, card_id, card_tags, any_tag_played_choice)
+    new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -996,6 +1013,8 @@ def use_card_action(
 
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
+    # Ver el mismo snapshot en play_card: pasivo "on_card_resource_gained".
+    card_resource_totals_before = engine.snapshot_card_resource_totals(player)
 
     resolved_spec = action_spec
     if effect_choice is not None and "choice" in (action_spec or {}):
@@ -1138,6 +1157,8 @@ def use_card_action(
                 new_player[key] = new_player[key] + delta
         _save_colonies(new_colonies)
         trade_result = {"income_type": income_type, "income_amount": income_amount, "colony_bonus": colony_bonus}
+
+    new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:

@@ -69,6 +69,8 @@ from app.agent.rules_engine import (
     apply_any_tag_played_choice,
     spend_active_card_resource,
     sum_card_resources_by_type,
+    snapshot_card_resource_totals,
+    apply_card_resource_gained_bonuses,
     is_blue_card,
     resolve_active_card_starting_resources,
 )
@@ -4802,6 +4804,61 @@ def test_sum_card_resources_by_type_across_multiple_cards():
     assert sum_card_resources_by_type(player, "floater") == 5
     assert sum_card_resources_by_type(player, "microbe") == 5
     assert sum_card_resources_by_type(player, "animal") == 0
+
+
+def test_snapshot_card_resource_totals_agrupa_por_tipo():
+    player = register_active_card(new_player_state(), "pets", initial_resources=1, resource_type="animal")
+    player = register_active_card(player, "birds", initial_resources=3, resource_type="animal")
+    player = register_active_card(player, "ants", initial_resources=2, resource_type="microbe")
+    player = register_active_card(player, "ironworks")  # sin resource_type: no aparece
+    assert snapshot_card_resource_totals(player) == {"animal": 4, "microbe": 2}
+
+
+def test_on_card_resource_gained_paga_por_unidad_ganada():
+    # Meat Industry (X25, bloque 34): 2 MC por cada animal ganado en CUALQUIER carta
+    player = register_active_card(new_player_state(), "pets", initial_resources=1, resource_type="animal")
+    player = register_passive_effect(
+        player, "meat_industry", {"on_card_resource_gained": {"resource_type": "animal", "mc_delta": 2}},
+    )
+    before = snapshot_card_resource_totals(player)
+    player = {**player, "active_cards": {
+        **player["active_cards"],
+        "pets": {**player["active_cards"]["pets"], "resources": 4},  # +3 animales
+    }}
+    new_player = apply_card_resource_gained_bonuses(player, before)
+    assert new_player["mc"] == 6  # 3 animales * 2 MC
+
+
+def test_on_card_resource_gained_ignora_gastos_y_otros_tipos():
+    player = register_active_card(new_player_state(), "ants", initial_resources=5, resource_type="microbe")
+    player = register_active_card(player, "pets", initial_resources=2, resource_type="animal")
+    player = register_passive_effect(
+        player, "topsoil_contract", {"on_card_resource_gained": {"resource_type": "microbe", "mc_delta": 1}},
+    )
+    before = snapshot_card_resource_totals(player)
+    # gasta microbios y gana animales: ninguna de las dos cosas paga
+    player = {**player, "active_cards": {
+        "ants": {**player["active_cards"]["ants"], "resources": 2},
+        "pets": {**player["active_cards"]["pets"], "resources": 9},
+    }}
+    new_player = apply_card_resource_gained_bonuses(player, before)
+    assert new_player["mc"] == 0
+
+
+def test_on_card_resource_gained_no_paga_por_mover_entre_cartas():
+    # Ants mueve 1 microbio desde otra carta: el TOTAL no cambia, no paga
+    player = register_active_card(new_player_state(), "ants", initial_resources=0, resource_type="microbe")
+    player = register_active_card(player, "tardigrades", initial_resources=3, resource_type="microbe")
+    player = register_passive_effect(
+        player, "topsoil_contract", {"on_card_resource_gained": {"resource_type": "microbe", "mc_delta": 1}},
+    )
+    before = snapshot_card_resource_totals(player)
+    player = {**player, "active_cards": {
+        "ants": {**player["active_cards"]["ants"], "resources": 1},
+        "tardigrades": {**player["active_cards"]["tardigrades"], "resources": 2},
+    }}
+    new_player = apply_card_resource_gained_bonuses(player, before)
+    assert new_player["mc"] == 0
 
 
 def test_min_total_card_resources_requirement():
