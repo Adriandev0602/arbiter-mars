@@ -21,6 +21,7 @@ from app.agent.board import (
     can_place_city,
     count_tiles_adjacent_to_ocean,
     count_empty_hexes_adjacent_to_owner,
+    has_city_adjacent_to_ocean,
     remove_ocean_tile,
     can_place_city_on_volcanic,
     can_place_greenery,
@@ -510,6 +511,24 @@ def test_count_empty_hexes_adjacent_to_owner_counts_each_hex_once():
     empty_neighbors = [n for n in neighbors if n not in board]
     assert count_empty_hexes_adjacent_to_owner(board, "p1") == len(empty_neighbors)
     assert count_empty_hexes_adjacent_to_owner(board, "p2") == 0
+
+
+def test_has_city_adjacent_to_ocean_filtra_por_dueno():
+    # Outdoor Sports (X38) mira cualquier ciudad; Aqueduct Systems (X50), solo las propias
+    board = new_board()
+    assert has_city_adjacent_to_ocean(board) is False
+
+    board, _, _ = place_ocean_tile(board, "04")
+    board, _, _ = place_city_tile(board, "05", "p2")  # "05" es vecino de "04"
+    assert has_city_adjacent_to_ocean(board) is True
+    assert has_city_adjacent_to_ocean(board, owner="p1") is False
+    assert has_city_adjacent_to_ocean(board, owner="p2") is True
+
+
+def test_has_city_adjacent_to_ocean_ignora_ciudad_lejos_del_agua():
+    board = new_board()
+    board, _, _ = place_city_tile(board, "35", "p1")
+    assert has_city_adjacent_to_ocean(board, owner="p1") is False
 
 
 def test_remove_ocean_tile_frees_the_hex():

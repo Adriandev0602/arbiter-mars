@@ -268,6 +268,26 @@ def count_empty_hexes_adjacent_to_owner(board: Board, player_id: str) -> int:
     )
 
 
+def has_city_adjacent_to_ocean(board: Board, owner: str | None = None) -> bool:
+    """
+    True si hay al menos un tile de CIUDAD adyacente a por lo menos un
+    oceano. `owner=None` mira las ciudades de cualquier jugador (ej. Outdoor
+    Sports: "requires ANY city adjacent to ocean"); con `owner=player_id`
+    solo cuentan las ciudades propias (ej. Aqueduct Systems: "requires that
+    YOU have a city next to an ocean").
+
+    Las ciudades fuera del mapa (contador `city_tiles_placed`, ej. Stanford
+    Torus) no cuentan: no tienen hexagono ni vecinos, asi que no pueden
+    estar "adyacentes a un oceano".
+    """
+    return any(
+        tile["tile_type"] == "city"
+        and (owner is None or tile["owner"] == owner)
+        and count_adjacent_oceans(board, hex_id) > 0
+        for hex_id, tile in board.items()
+    )
+
+
 def remove_ocean_tile(board: Board, hex_id: str) -> Board:
     """
     Saca un tile de oceano del mapa y libera el hexagono (Global Event Dry

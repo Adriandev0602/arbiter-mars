@@ -159,6 +159,18 @@ def _place_city_and_apply_bonus(
     return new_board, new_player  # type: ignore[return-value]
 
 
+def _matches_required_tag(required_tag, card_tags: tuple[str, ...]) -> bool:
+    """
+    `required_tag` de un pasivo acepta un tag suelto o una LISTA de tags, en
+    cuyo caso alcanza con que la carta tenga alguno (ej. Carbon Nanosystems:
+    los graphenes pagan cartas con tag space O city). Mismo criterio que
+    `tag_filter` en compute_card_cost_discount.
+    """
+    if isinstance(required_tag, list):
+        return any(t in card_tags for t in required_tag)
+    return required_tag in card_tags
+
+
 def _place_greenery_and_apply_bonus(
     board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str,
     ignore_restrictions: bool = False,
@@ -306,7 +318,7 @@ def convert_resources(player_id: str, conversion: str, hex_id: str | None = None
 
 
 @tool
-def run_production_phase(player_id: str) -> dict:
+def run_production_phase(player_id: str, energy_to_convert: int | None = None) -> dict:
     """
     Corre la fase de produccion de fin de generacion para un jugador:
     convierte energia sobrante en calor y aplica toda su produccion
@@ -315,12 +327,17 @@ def run_production_phase(player_id: str) -> dict:
 
     Args:
         player_id: id del jugador.
+        energy_to_convert: OPCIONAL, solo valido si el jugador tiene un
+            pasivo que haga opcional la conversion de energia a calor (ej.
+            Supercapacitors). Cuanta energia convertir; la que no se
+            convierte queda en stock para la generacion siguiente. None
+            (default) convierte toda la energia, que es la regla base.
 
     Returns:
         dict con el estado actualizado del jugador.
     """
     player = _load_player(player_id)
-    new_player = engine.run_production_phase(player)
+    new_player = engine.run_production_phase(player, energy_to_convert=energy_to_convert)
     new_player = {**new_player, "trade_fleets_used": 0}
 
     colonies = _load_colonies()
@@ -349,6 +366,8 @@ def play_card(
     special_tile_hex_id: str | None = None,
     discard_for_draw_card_id: str | None = None,
     duplicate_production_target_card_id: str | None = None,
+    duplicate_production_target_card_ids: list[str] | None = None,
+    retrieve_event_card_ids: list[str] | None = None,
     target_card_id: str | None = None,
     target_card_id_2: str | None = None,
     tag_played_choice: str | None = None,
@@ -547,6 +566,20 @@ def play_card(
                 f"Requiere {min_greeneries} greenery(s) propios en el mapa, hay {own_greeneries}"
             )
 
+    # Ciudad adyacente a oceano: de cualquier jugador (Outdoor Sports) o
+    # propia (Aqueduct Systems). Tambien necesita el tablero, igual que el
+    # requisito de greeneries de arriba.
+    if requirements.get("any_city_adjacent_to_ocean"):
+        if not boardlib.has_city_adjacent_to_ocean(_load_board()):
+            raise engine.CardRequirementNotMetError(
+                "Requiere alguna ciudad en el mapa adyacente a un oceano"
+            )
+    if requirements.get("own_city_adjacent_to_ocean"):
+        if not boardlib.has_city_adjacent_to_ocean(_load_board(), owner=player_id):
+            raise engine.CardRequirementNotMetError(
+                "Requiere una ciudad PROPIA adyacente a un oceano"
+            )
+
     if player["mc"] < mc_to_pay or player["steel"] < steel_to_pay or player["titanium"] < titanium_to_pay:
         raise engine.InsufficientResourcesError("El jugador no tiene el stock declarado")
 
@@ -564,7 +597,8 @@ def play_card(
         match = next(
             (
                 p for p in player["passive_effects"]
-                if "card_resource_payment" in p and p["card_resource_payment"]["required_tag"] in card_tags
+                if "card_resource_payment" in p
+                and _matches_required_tag(p["card_resource_payment"]["required_tag"], card_tags)
             ),
             None,
         )
@@ -850,27 +884,72 @@ def play_card(
 
     duplicate_spec = effects.get("duplicate_production")
     if duplicate_spec is not None:
-        if duplicate_production_target_card_id is None:
-            raise ValueError(f"La carta '{card_id}' requiere duplicate_production_target_card_id")
-        if duplicate_production_target_card_id not in new_player["played_cards"]:
-            raise ValueError(
-                f"'{duplicate_production_target_card_id}' no esta entre las cartas jugadas por el jugador"
-            )
-        target_res = supabase.table("cards").select("*").eq("id", duplicate_production_target_card_id).single().execute()
-        target_card = target_res.data
-        if target_card is None:
-            raise ValueError(f"Carta '{duplicate_production_target_card_id}' no encontrada en el catalogo")
+        # `count` (default 1) permite duplicar la caja de produccion de MAS de
+        # una carta jugada (ej. Cyberia Systems, bloque 35: 2 cartas building).
+        # Con count > 1 hay que pasar `duplicate_production_target_card_ids`,
+        # que ademas deben ser cartas DISTINTAS entre si.
+        count = duplicate_spec.get("count", 1)
+        if count > 1:
+            chosen = duplicate_production_target_card_ids or []
+            if len(chosen) != count:
+                raise ValueError(
+                    f"La carta '{card_id}' duplica la produccion de {count} cartas; "
+                    f"se recibieron {len(chosen)}"
+                )
+            if len(set(chosen)) != len(chosen):
+                raise ValueError("Las cartas a duplicar deben ser distintas entre si")
+        else:
+            if duplicate_production_target_card_id is None:
+                raise ValueError(f"La carta '{card_id}' requiere duplicate_production_target_card_id")
+            chosen = [duplicate_production_target_card_id]
+
         required_tag = duplicate_spec.get("requires_tag")
-        if required_tag is not None and required_tag not in (target_card.get("tags") or []):
-            raise ValueError(
-                f"'{duplicate_production_target_card_id}' no tiene el tag requerido '{required_tag}'"
+        for target_id in chosen:
+            if target_id not in new_player["played_cards"]:
+                raise ValueError(f"'{target_id}' no esta entre las cartas jugadas por el jugador")
+            target_res = supabase.table("cards").select("*").eq("id", target_id).single().execute()
+            target_card = target_res.data
+            if target_card is None:
+                raise ValueError(f"Carta '{target_id}' no encontrada en el catalogo")
+            if required_tag is not None and required_tag not in (target_card.get("tags") or []):
+                raise ValueError(f"'{target_id}' no tiene el tag requerido '{required_tag}'")
+            target_production = (target_card.get("effects") or {}).get("production_deltas")
+            if not target_production:
+                raise ValueError(f"'{target_id}' no tiene una caja de produccion para duplicar")
+            new_player, new_globals = engine.apply_card_effect(
+                new_player, new_globals, {"production_deltas": target_production}
             )
-        target_production = (target_card.get("effects") or {}).get("production_deltas")
-        if not target_production:
-            raise ValueError(f"'{duplicate_production_target_card_id}' no tiene una caja de produccion para duplicar")
-        new_player, new_globals = engine.apply_card_effect(
-            new_player, new_globals, {"production_deltas": target_production}
-        )
+
+    retrieve_spec = effects.get("retrieve_played_events_to_hand")
+    if retrieve_spec is not None:
+        # Astra Mechanica (X51, bloque 35): "choose 2 project cards from your
+        # EVENT PILE and take them to hand. It may not be cards that place
+        # special tiles". La "pila de eventos" no es un campo aparte: es
+        # `played_cards` filtrado por `cards.is_event` del catalogo -- por eso
+        # se resuelve aca y no en el motor puro (mismo criterio que
+        # duplicate_production).
+        count = retrieve_spec.get("count", 1)
+        chosen = retrieve_event_card_ids or []
+        if len(chosen) != count:
+            raise ValueError(
+                f"La carta '{card_id}' recupera {count} evento(s) jugados; se recibieron {len(chosen)}"
+            )
+        if len(set(chosen)) != len(chosen):
+            raise ValueError("Los eventos a recuperar deben ser distintos entre si")
+        for event_id in chosen:
+            if event_id not in new_player["played_cards"]:
+                raise ValueError(f"'{event_id}' no esta entre las cartas jugadas por el jugador")
+            event_res = supabase.table("cards").select("*").eq("id", event_id).single().execute()
+            event_card = event_res.data
+            if event_card is None:
+                raise ValueError(f"Carta '{event_id}' no encontrada en el catalogo")
+            if not event_card.get("is_event"):
+                raise ValueError(f"'{event_id}' no es un evento: no esta en la pila de eventos")
+            if retrieve_spec.get("exclude_special_tile_cards") and (
+                (event_card.get("effects") or {}).get("place_special_tile") is not None
+            ):
+                raise ValueError(f"'{event_id}' coloca un special tile: esta carta no permite recuperarla")
+            new_player = {**new_player, "hand": [*new_player["hand"], event_id]}
 
     new_player = engine.increment_tags_played(new_player, card_tags)
     new_player = engine.increment_zero_tag_cards_played(new_player, card_tags)

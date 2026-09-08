@@ -138,11 +138,29 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 34)
+### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 35)
 
-**Progreso:** catálogo en **376 cartas de proyecto**, **36 Global Events** y **48 cartas
-Prelude**. Colas: 31 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
+**Progreso:** catálogo en **386 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. Colas: 21 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
 revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Bloque 35 (2026-09-07): 10 de 10 cargadas**, otra vez con orquestación multi-agente (10
+subagentes Sonnet en paralelo). Piezas de motor nuevas: requisitos `any_city_adjacent_to_ocean`
+y `own_city_adjacent_to_ocean` (Outdoor Sports / Aqueduct Systems, sobre
+`board.has_city_adjacent_to_ocean`); pasivo `optional_energy_to_heat` + parámetro
+`energy_to_convert` en `run_production_phase` (Supercapacitors: la conversión energía→calor deja
+de ser obligatoria y la energía no convertida se conserva); effect
+`retrieve_played_events_to_hand` (Astra Mechanica: la "pila de eventos" es `played_cards`
+filtrado por `cards.is_event`); `card_resource_payment.required_tag` acepta LISTA (Carbon
+Nanosystems: graphenes pagan space O city); `duplicate_production` acepta `count` +
+`duplicate_production_target_card_ids` (Cyberia Systems: copia la producción de 2 cartas).
+
+**Aprendizaje repetido de las tandas multi-agente:** 3 de 10 informes volvieron a fallar SOLO en
+la lectura de tags/íconos (uno inventó un tag `water` inexistente confundiendo el recuadro de
+requisito con los tags; otro reportó un tag `plant` en una carta sin tags, lo que además habría
+metido un `include_this` de más; otro leyó "add 2 asteroids HERE" como "a cualquier carta"). El
+mapeo del efecto al vocabulario, en cambio, sale bien. **Delegar el análisis del efecto sí;
+verificar tags/banner/"here vs any card" contra el scan, siempre.**
 
 **Bloque 34 (2026-09-07): 10 de 10 cargadas**, hecho con **orquestación multi-agente** (10
 subagentes Sonnet en paralelo, uno por carta, analizando/diseñando sin tocar el repo;
@@ -378,7 +396,7 @@ Colonies), la única exclusión permanente por diseño (robo obligatorio sin sen
 single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-35`, consultar
+checkout -b feat/review-block-36`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans
