@@ -525,7 +525,11 @@ def play_card(
     if not played_from_reserve and card_id not in player["hand"]:
         raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano ni reservada")
     requirements = card.get("requirements") or {}
-    turmoil = _load_turmoil() if "ruling_or_delegates" in requirements else None
+    turmoil = (
+        _load_turmoil()
+        if "ruling_or_delegates" in requirements or "party_leader_and_neutral_chairman" in requirements
+        else None
+    )
     engine.check_card_requirements(
         requirements, globals_, player, wild_tag_choice=wild_tag_choice, turmoil=turmoil, player_id=player_id,
     )
@@ -675,6 +679,15 @@ def play_card(
             )
         new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
 
+    if effects.get("mc_per_empty_hex_adjacent_to_own_tiles"):
+        # Red Tourism Wave (T12, Turmoil, bloque 31): "Gain 1 M€ for each
+        # EMPTY AREA ADJACENT TO YOUR TILES." Ver
+        # board.count_empty_hexes_adjacent_to_owner.
+        if board is None:
+            board = _load_board()
+        empty_adjacent = boardlib.count_empty_hexes_adjacent_to_owner(board, player_id)
+        new_player = {**new_player, "mc": new_player["mc"] + empty_adjacent}
+
     build_colony_spec = effects.get("build_colony")
     if build_colony_spec:
         if build_colony_id is None:
@@ -749,6 +762,46 @@ def play_card(
         turmoil = turmoillib.remove_delegate(turmoil, removal_party, player_id)
         new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] + 1}
         _save_turmoil(turmoil)
+
+    if effects.get("become_chairman_from_neutral"):
+        # Vote of No Confidence (T16, bloque 31): requisito
+        # "party_leader_and_neutral_chairman" ya garantizo chairman neutral.
+        # Mueve 1 delegado propio de la Reserva a la silla de Chairman y
+        # gana 1 TR (regla real de la carta) -- turmoil.py no modela
+        # delegados neutrales en partidos, pero el Chairman SI tiene un
+        # estado neutral explicito (`chairman is None`), asi que esta carta
+        # no necesita esa pieza mas grande (ver "Pendientes" para
+        # Recruitment, que si la necesita).
+        if new_player["reserve_delegates"] < 1:
+            raise engine.InsufficientResourcesError(
+                f"El jugador tiene {new_player['reserve_delegates']} delegados en la Reserva, se necesita 1"
+            )
+        turmoil = turmoil if turmoil is not None else _load_turmoil()
+        turmoil = dict(turmoil)
+        turmoil["chairman"] = player_id
+        new_player = {
+            **new_player,
+            "reserve_delegates": new_player["reserve_delegates"] - 1,
+            "tr": new_player["tr"] + 1,
+        }
+        _save_turmoil(turmoil)  # type: ignore[arg-type]
+
+    if effects.get("reset_card_action_used"):
+        # Project Inspection (X02, bloque 31): "use a card action that has
+        # already been used this generation". En vez de re-ejecutar la
+        # accion adentro de play_card (duplicaria toda la logica de
+        # use_card_action), esta carta solo REHABILITA la accion elegida
+        # (`target_card_id`, obligatorio) -- el jugador la usa despues con
+        # una llamada normal a use_card_action.
+        if target_card_id is None:
+            raise ValueError(f"La carta '{card_id}' requiere target_card_id")
+        if target_card_id not in new_player["active_cards"]:
+            raise ValueError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+        new_active_cards = dict(new_player["active_cards"])
+        new_active_cards[target_card_id] = {
+            **new_active_cards[target_card_id], "action_used": False,
+        }
+        new_player = {**new_player, "active_cards": new_active_cards}
 
     draw_tag_spec = effects.get("draw_cards_matching_tag")
     if draw_tag_spec is not None:
@@ -1479,6 +1532,20 @@ def get_turmoil_state(player_id: str) -> dict:
     return {"turmoil": dict(turmoil), "influence": influence}
 
 
+@tool
+def get_active_cards_state(player_id: str) -> dict:
+    """
+    Devuelve `player.active_cards` tal cual (card_id -> {resources,
+    action_used, resource_type}) para que el LLM le muestre al usuario
+    cuales ya usaron su accion esta generacion (`action_used: true`) --
+    necesario para elegir `target_card_id` con sentido al jugar Project
+    Inspection (X02, bloque 31: "use a card action that has already been
+    used this generation", effect `reset_card_action_used`).
+    """
+    player = _load_player(player_id)
+    return {"active_cards": dict(player["active_cards"])}
+
+
 def _draw_cards_matching_tag(player: dict, tag, n: int) -> dict:
     """
     Roba las primeras `n` cartas del mazo que tengan `tag` (un tag suelto o
@@ -1787,4 +1854,5 @@ ALL_TOOLS = [
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
+    get_active_cards_state,
 ]

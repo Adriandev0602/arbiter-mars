@@ -138,11 +138,28 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-04, bloques 12→30 + Venus Next + Lava Flows + Colonies + pago con recurso de carta + tag wild + Turmoil núcleo + Global Events + floaters por carta activa)
+### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 31)
 
-**Progreso:** catálogo en **340 cartas de proyecto**, **36 Global Events** y **48 cartas
-Prelude**. Colas: 71 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
+**Progreso:** catálogo en **349 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. Colas: 61 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
 revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Bloque 31 (2026-09-07): 9 de 10 cargadas** (T12-T16 Turmoil, X01-X04 Promo; T11 Recruitment
+pendiente por mecánica). Piezas de motor nuevas: requirement
+`party_leader_and_neutral_chairman` (Vote of No Confidence, reusa `turmoil["chairman"] is
+None` sin tocar delegados) + effect `become_chairman_from_neutral`; `board.
+count_empty_hexes_adjacent_to_owner` + effect `mc_per_empty_hex_adjacent_to_own_tiles` (Red
+Tourism Wave); sentinel `"effect_amount"` como valor de `cost`/`gains.start_research.n` en
+`use_card_action`, para costos/robos de cantidad VARIABLE elegida por el jugador sin tope fijo
+(Hi-Tech Lab); `ratio` fraccionario en `convert_resource_amount` con validación de resultado
+entero (Energy Market); effect `reset_card_action_used` + tool nueva `get_active_cards_state`
+(Project Inspection, X02 -- repone el `action_used` de una carta activa elegida para poder
+reusarla en la misma generación). Recruitment (T11) quedó pendiente: necesita delegados
+NEUTRALES por partido, que `turmoil.py` no trackea hoy (ver "Pendientes" en `CARDS_LOG.md`).
+**Bug encontrado en la prueba de humo, no en tests unitarios:** la clave real de
+`use_card_action` para acciones con elección es `"choice"`, no `"options"` -- el primer intento
+de Energy Market usó la clave equivocada y quedaba en un no-op silencioso (ver nota en
+`CARDS_LOG.md`).
 
 **Nota operativa:** el host de Supabase resuelve **solo por IPv6**. Si la máquina pierde
 conectividad IPv6, la base queda inalcanzable aunque IPv4 ande bien (pasó una vez, 2026-09-04) --
@@ -317,7 +334,7 @@ Colonies), la única exclusión permanente por diseño (robo obligatorio sin sen
 single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-31`, consultar
+checkout -b feat/review-block-32`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans

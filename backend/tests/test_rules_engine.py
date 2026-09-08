@@ -5175,6 +5175,68 @@ def test_is_chairman_requirement():
         check_card_requirements({"is_chairman": True}, new_global_parameters())
 
 
+def test_party_leader_and_neutral_chairman_requirement():
+    turmoil = {
+        "parties": {"unity": {"delegates": {}, "leader": "p1"}, "greens": {"delegates": {}, "leader": None}},
+        "dominant_party": None, "ruling_party": "greens", "chairman": None,
+    }
+    check_card_requirements(
+        {"party_leader_and_neutral_chairman": True}, new_global_parameters(), turmoil=turmoil, player_id="p1",
+    )
+    # falla si el chairman ya no es neutral
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"party_leader_and_neutral_chairman": True}, new_global_parameters(),
+            turmoil={**turmoil, "chairman": "p2"}, player_id="p1",
+        )
+    # falla si el jugador no lidera ningun partido
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"party_leader_and_neutral_chairman": True}, new_global_parameters(), turmoil=turmoil, player_id="p2",
+        )
+
+
+def test_convert_resource_amount_accepts_fractional_ratio():
+    # Energy Market (X03, bloque 31): "spend 2X MC to gain X energy".
+    player = register_active_card({**new_player_state(), "mc": 6, "energy": 0}, "energy_market")
+    action_spec = {"convert_resource_amount": {"from": "mc", "to": "energy", "ratio": 0.5}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "energy_market", action_spec, effect_amount=6)
+    assert new_player["mc"] == 0
+    assert new_player["energy"] == 3
+
+
+def test_convert_resource_amount_rejects_non_integer_result():
+    player = register_active_card({**new_player_state(), "mc": 5, "energy": 0}, "energy_market")
+    action_spec = {"convert_resource_amount": {"from": "mc", "to": "energy", "ratio": 0.5}}
+    with pytest.raises(CardEffectError):
+        use_card_action(player, new_global_parameters(), "energy_market", action_spec, effect_amount=5)
+
+
+def test_use_card_action_effect_amount_sentinel_variable_cost():
+    player = {
+        **new_player_state(), "energy": 5,
+        "active_cards": {"hi_tech_lab": {"resources": 0, "action_used": False}},
+        "deck": ["a", "b", "c"],
+    }
+    new_player, _ = use_card_action(
+        player, new_global_parameters(), "hi_tech_lab",
+        {"cost": {"energy": "effect_amount"}, "gains": {"start_research": {"n": "effect_amount"}}},
+        effect_amount=3,
+    )
+    assert new_player["energy"] == 2
+    assert len(new_player["pending_research"]) == 3
+    assert new_player["active_cards"]["hi_tech_lab"]["action_used"] is True
+
+
+def test_use_card_action_effect_amount_sentinel_requires_effect_amount():
+    player = {**new_player_state(), "energy": 5, "active_cards": {"hi_tech_lab": {"resources": 0, "action_used": False}}}
+    with pytest.raises(CardEffectError):
+        use_card_action(
+            player, new_global_parameters(), "hi_tech_lab",
+            {"cost": {"energy": "effect_amount"}, "gains": {"start_research": {"n": "effect_amount"}}},
+        )
+
+
 def test_unexpected_application_discards_without_drawing():
     player = {**new_player_state(), "hand": ["a", "b"], "deck": ["c"]}
     effects = {"discard_card_then_draw": {"draw": 0}, "raise_venus_steps": 1}

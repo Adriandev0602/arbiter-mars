@@ -360,6 +360,28 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `floating_refinery` | Floating Refinery | P73 | 7 MC | Tag venus, **Venus Next**. Arranca con 1 floater por cada tag venus, incluido el propio (pieza nueva `active_card_starting_resources_per_tag`). Acción con elección: +1 floater a sí misma, O gastar 2 floaters de CUALQUIER carta → +1 titanio y +2 MC (pieza nueva de costo `any_card_resource`) |
 | `venus_shuttles` | Venus Shuttles | P89 | 9 MC | Tag venus, **Venus Next**. +2 floaters a una carta que coleccione floaters. Acción: subir Venus 1 paso pagando 12 MC menos 1 por cada tag venus (pieza nueva de costo `mc_reduced_by_tag`) |
 | `red_appeasement` | Red Appeasement | P80 | 0 MC | Sin tags, **Prelude 2**. Acción con requisito propio (Reds gobernando o 2 delegados ahí, pieza nueva `effects.action.requirements`): gasta 2 delegados propios → +2 producción MC (pieza nueva de costo `remove_own_delegates`). Las cláusulas "no other player has passed" y "this counts as passing" se omiten: en un solo jugador no son observables |
+| `sponsored_mohole` | Sponsored Mohole | T13 | 5 MC | Tag building, **Turmoil**. Requiere Kelvinists gobernando o 2 delegados ahí. +2 producción calor |
+| `supported_research` | Supported Research | T14 | 3 MC | Tag science, **Turmoil**. Requiere Scientists gobernando o 2 delegados ahí. Roba 2 cartas |
+| `wildlife_dome` | Wildlife Dome | T15 | 15 MC | Tags animal+plant+building, **Turmoil**. Requiere Greens gobernando o 2 delegados ahí. Coloca 1 greenery y sube oxígeno 1 paso |
+| `red_tourism_wave` | Red Tourism Wave | T12 | 3 MC | Tag earth, evento, **Turmoil**. Requiere Reds gobernando o 2 delegados ahí. +1 MC por cada hexágono VACÍO adyacente a tiles propios (pieza nueva `board.count_empty_hexes_adjacent_to_owner` + effect `mc_per_empty_hex_adjacent_to_own_tiles`) |
+| `vote_of_no_confidence` | Vote of No Confidence | T16 | 5 MC | Sin tags, evento, **Turmoil**. Requiere ser Party Leader de algún partido Y que el Chairman sea neutral (pieza nueva requirement `party_leader_and_neutral_chairman` — `turmoil["chairman"] is None`, el valor inicial de `new_turmoil()`). Gasta 1 delegado de la Reserva, se vuelve Chairman, +1 TR (pieza nueva effect `become_chairman_from_neutral`, resuelta en `tools.play_card` por tocar `turmoil`) |
+| `dusk_laser_mining` | Dusk Laser Mining | X01 | 8 MC | Tag power, **Promo**. Requiere 2 tags science. -1 producción energía, +1 producción titanio, +4 titanio |
+| `energy_market` | Energy Market | X03 | 3 MC | Tag power, **Promo**. Acción con elección (`effects.action.choice`, no `options` — ver nota abajo): convertir X MC en X/2 energía (pieza nueva: `ratio` fraccionario en `convert_resource_amount`, valida que el resultado sea entero), O -1 producción energía → +8 MC |
+| `hi_tech_lab` | Hi-Tech Lab | X04 | 17 MC | Tags science+building, **Promo**. Acción: gastar X energía (sin tope) para robar X cartas a `pending_research`, resolver después con `resolve_research_phase(cost_per_card=0, max_take=1)` para quedarse con 1 y descartar el resto (pieza nueva: sentinel `"effect_amount"` como valor de `cost`/`gains.start_research.n`, en vez de un N fijo) |
+| `project_inspection` | Project Inspection | X02 | 0 MC | Sin tags, evento, **Promo**. "Use a card action that has already been used this generation": repone `action_used` a false en UNA carta activa elegida (`target_card_id`, pieza nueva effect `reset_card_action_used`, resuelta en `tools.play_card`) -- el jugador la usa después con una llamada normal a `use_card_action`. Requirió una tool nueva, `get_active_cards_state`, para que el LLM sepa qué cartas ya tienen `action_used: true` y elija con sentido |
+
+**Nota del bloque 31 (2026-09-07):** la clave real de `use_card_action` para
+acciones con elección es `"choice"` (`action_spec["choice"]`), NO
+`"options"` -- ese último nombre solo existe en otro vocabulario distinto
+(`resource_delta_per_influence_choice`). El primer intento de cargar
+Energy Market usó `"options"` por error: la carta se jugaba sin tirar
+excepción pero la elección quedaba en un no-op silencioso (ni cobraba
+costo ni daba ganancia) porque `action_spec.get("cost", {})` caía vacío.
+Se detectó en la prueba de humo contra Supabase real, no en los tests
+unitarios (los tests unitarios llaman a `use_card_action` con la keyword
+correcta a mano, no pasan por el JSON del seed) -- para cartas con
+`effects.action.choice`, conviene probar el JSON real cargado, no solo la
+función de motor con un dict armado a mano.
 
 ## Pendientes (requieren una pieza de mecánica que todavía no se agregó)
 
@@ -368,6 +390,7 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
+| T11 | Recruitment | Delegados NEUTRALES por partido (`turmoil.py` hoy solo trackea `delegates: {player_id: N}`, sin entrada para "neutral" -- ver comentario en `turmoil.py` "neutrales/de otros jugadores... no se simulan"). El texto es "exchange one NEUTRAL non-leader delegate with one of your own from reserve", en el partido que el jugador elija -- necesita saber cuántos delegados neutrales hay en cada partido, algo que el setup actual nunca inicializa. Distinto de Vote of No Confidence (T16, bloque 31, sí cargada): esa solo necesitaba el Chairman neutral, que YA es representable (`chairman is None`) sin tocar `delegates` |
 
 ### Turmoil: núcleo político (Colonial Envoys, Colonial Representation)
 
