@@ -396,6 +396,42 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `bactoviral_research` | Bactoviral Research | X35 | 10 MC | Tags microbe+science, **Promo**. Roba 1 carta y agrega 1 microbio a una carta elegida por cada tag science, incluido el propio (`target_card_resource_delta_per_tag` con `include_this`, mismo patrón que Hydrogen to Venus) |
 | `bio_printing_facility` | Bio Printing Facility | X36 | 7 MC | Tag building, **Promo**. Acción con elección: gastar 2 energía → +2 plantas, O gastar 2 energía → +1 animal a OTRA carta |
 | `harvest` | Harvest | X37 | 4 MC | Tag plant, evento, **Promo**. Requiere 3 greeneries PROPIOS en el mapa (pieza nueva `min_greenery_tiles_owned`, resuelta en `tools.play_card` con `board.count_tiles_of_type(board, "greenery", owner=player_id)` porque el motor puro no conoce el tablero — mismo criterio que `free_trade`). +12 MC |
+| `outdoor_sports` | Outdoor Sports | X38 | 8 MC | **Sin tags**, **Promo**. Requiere CUALQUIER ciudad del mapa adyacente a un océano (pieza nueva `any_city_adjacent_to_ocean`, ver `board.has_city_adjacent_to_ocean`). +2 producción MC |
+| `sixteen_psyche` | 16 Psyche | X44 | 31 MC | Tag power, **Promo**. +2 producción titanio, +3 titanio. Vocabulario existente |
+| `robot_pollinators` | Robot Pollinators | X45 | 9 MC | **Sin tags**, **Promo**. Requiere 4% oxígeno. +1 producción plantas y +1 planta por cada tag plant jugado — **sin `include_this`**, porque la carta NO tiene tag plant propio (el ícono de hoja está en el cuerpo del efecto, no en los tags) |
+| `supercapacitors` | Supercapacitors | X46 | 4 MC | Tags power+building, **Promo**. +1 producción MC. Pasivo `optional_energy_to_heat` (pieza nueva): hace opcional, unidad por unidad, la conversión de energía a calor de la fase de producción — ver sección dedicada abajo |
+| `icy_impactors` | Icy Impactors | X47 | 15 MC | Tag power, **Promo**. Acción con elección: 10 MC (titanio permitido, `mc_or_titanium`) → +2 asteroides **a sí misma** (`card_resource_delta`, no a "any card"); O gastar 1 asteroide propio → coloca 1 océano. La cláusula "FIRST PLAYER CHOOSES WHERE YOU MUST PLACE IT" se omite (multi-jugador) |
+| `directed_heat_usage` | Directed Heat Usage | X48 | 1 MC | **Sin tags**, **Promo**. Acción con elección: gastar 3 calor → +4 MC, O gastar 3 calor → +2 plantas |
+| `aqueduct_systems` | Aqueduct Systems | X50 | 9 MC | Tag building, **Promo**. Requiere una ciudad PROPIA adyacente a océano (pieza nueva `own_city_adjacent_to_ocean`, misma función de tablero que Outdoor Sports pero filtrando por dueño). Roba 3 cartas con tag building (`draw_cards_matching_tag`, que YA existía desde Ishtar Expedition) |
+| `astra_mechanica` | Astra Mechanica | X51 | 7 MC | Tag science, **Promo**. Recupera a la mano 2 cartas de la "pila de eventos" que no coloquen special tiles (pieza nueva `retrieve_played_events_to_hand`). La pila de eventos no es un campo aparte: es `played_cards` filtrado por `cards.is_event` del catálogo, por eso se resuelve en `tools.play_card` |
+| `carbon_nanosystems` | Carbon Nanosystems | X52 | 14 MC | Tags science+building, **Promo**. Guarda "graphenes" (`active_card_resource_type` nuevo). Pasivo doble en un solo dict: +1 graphene al jugar un tag science (incluido el propio, se autodispara) y los graphenes pagan cartas con tag space **O** city a 4 M€ (extensión: `card_resource_payment.required_tag` ahora acepta LISTA, ver `tools._matches_required_tag`) |
+| `cyberia_systems` | Cyberia Systems | X53 | 16 MC | **Sin tags**, **Promo**. +1 producción acero y copia la caja de producción de 2 cartas building ya jugadas (extensión: `duplicate_production` acepta `count`, y `tools.play_card` suma `duplicate_production_target_card_ids` — deben ser cartas distintas y tener caja de producción) |
+
+## Conversión opcional de energía a calor (`optional_energy_to_heat`, bloque 35)
+
+Supercapacitors (X46) dice: *"converting energy to heat during production is optional for each
+energy resource"*. La regla base es lo contrario: `run_production_phase` convertía **toda** la
+energía en calor, sin preguntar y sin punto de extensión.
+
+Pieza nueva: pasivo `optional_energy_to_heat: true` + parámetro `energy_to_convert` en
+`run_production_phase` (motor y tool). Sin el pasivo, declarar una cantidad lanza
+`CardEffectError` — la regla base sigue siendo obligatoria y total; con el pasivo, la energía no
+convertida **queda en stock** para la generación siguiente, sumada a la producción nueva. El
+rango válido es 0..energía disponible. Ver `player_has_optional_energy_to_heat`.
+
+**Tanda multi-agente del bloque 35 (10 subagentes Sonnet, uno por carta):** de nuevo los efectos
+y el vocabulario propuesto salieron bien casi siempre, y **3 de los 10 informes fallaron leyendo
+la imagen** — todos en tags, el mismo punto ciego de la tanda anterior:
+- **X38 Outdoor Sports:** el agente reportó tags `city` + `water` (¡un tag que no existe en el
+  juego!). Esos íconos son el RECUADRO DE REQUISITO (ciudad + océano). La carta no tiene tags.
+- **X45 Robot Pollinators:** reportó tag `plant`; la esquina de tags está vacía (la hoja que vio
+  es parte del cuadro de efecto). Esto además cambiaba el resultado: propuso `include_this: true`,
+  que habría dado 1 planta de más.
+- **X47 Icy Impactors:** leyó "add 2 asteroids HERE" como `target_card_resource_delta_allow_self`
+  (a cualquier carta) en vez de `card_resource_delta` (a sí misma).
+
+Confirma la conclusión del bloque 34: **el mapeo del efecto al vocabulario se puede delegar; los
+tags, el banner y los "here" vs "any card" hay que verificarlos siempre contra el scan.**
 
 ## Recursos ganados en cualquier carta (`on_card_resource_gained`, bloque 34)
 

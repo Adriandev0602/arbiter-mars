@@ -315,6 +315,30 @@ def test_production_phase_converts_leftover_energy_to_heat():
     assert result["energy"] == 1  # solo la produccion nueva, el stock viejo se vacio
 
 
+def test_production_phase_optional_energy_to_heat_conserva_el_resto():
+    # Supercapacitors (X46, bloque 35): la conversion es opcional, unidad por unidad
+    player = register_passive_effect(
+        {**new_player_state(), "energy": 5, "heat": 2}, "supercapacitors", {"optional_energy_to_heat": True},
+    )
+    result = run_production_phase(player, energy_to_convert=2)
+    assert result["heat"] == 2 + 2 + 1        # solo se convirtieron 2
+    assert result["energy"] == 3 + 1          # los otros 3 quedan, mas la produccion
+
+
+def test_production_phase_optional_energy_requiere_el_pasivo():
+    player = {**new_player_state(), "energy": 5}
+    with pytest.raises(CardEffectError):
+        run_production_phase(player, energy_to_convert=2)
+
+
+def test_production_phase_optional_energy_valida_el_rango():
+    player = register_passive_effect(
+        {**new_player_state(), "energy": 5}, "supercapacitors", {"optional_energy_to_heat": True},
+    )
+    with pytest.raises(CardEffectError):
+        run_production_phase(player, energy_to_convert=6)
+
+
 def test_production_phase_with_higher_tr_and_production():
     player = {
         **new_player_state(),

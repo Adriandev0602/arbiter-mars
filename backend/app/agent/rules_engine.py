@@ -484,7 +484,17 @@ def convert_heat_to_temperature(player: PlayerState, globals_: GlobalParameters)
 # Fase de produccion
 # ---------------------------------------------------------------------------
 
-def run_production_phase(player: PlayerState) -> PlayerState:
+def player_has_optional_energy_to_heat(player: PlayerState) -> bool:
+    """
+    True si el jugador tiene el pasivo "optional_energy_to_heat" (ej.
+    Supercapacitors, bloque 35: "converting energy to heat during production
+    is optional for each energy resource"). Sin ese pasivo, la conversion es
+    obligatoria y total, como manda la regla base.
+    """
+    return any(effect.get("optional_energy_to_heat") for effect in player["passive_effects"])
+
+
+def run_production_phase(player: PlayerState, energy_to_convert: int | None = None) -> PlayerState:
     """
     Aplica la fase de produccion de una generacion:
       1. Toda la energia en stock se convierte en calor.
@@ -496,8 +506,29 @@ def run_production_phase(player: PlayerState) -> PlayerState:
          disponibles -- una accion por carta por generacion.
       5. Un descuento pendiente sin usar (ej. Indentured Workers, si el
          jugador no jugo ninguna carta mas esa generacion) se pierde.
+
+    `energy_to_convert`: solo tiene sentido si el jugador tiene el pasivo
+    "optional_energy_to_heat" (ver player_has_optional_energy_to_heat, ej.
+    Supercapacitors) -- cuanta energia convertir a calor, unidad por unidad;
+    la que no se convierte QUEDA en stock de energia para la generacion que
+    viene. None (default) convierte todo, que es la regla base y lo unico
+    legal sin ese pasivo. Lanza CardEffectError si se declara una cantidad
+    sin tener el pasivo, o si no esta entre 0 y la energia disponible.
     """
-    heat_after_energy_conversion = player["heat"] + player["energy"]
+    if energy_to_convert is None:
+        energy_to_convert = player["energy"]
+    else:
+        if not player_has_optional_energy_to_heat(player):
+            raise CardEffectError(
+                "Convertir solo parte de la energia requiere un pasivo que lo habilite "
+                "(ej. Supercapacitors); la regla base convierte toda la energia"
+            )
+        if not 0 <= energy_to_convert <= player["energy"]:
+            raise CardEffectError(
+                f"energy_to_convert debe estar entre 0 y {player['energy']}, se recibio {energy_to_convert}"
+            )
+    energy_kept = player["energy"] - energy_to_convert
+    heat_after_energy_conversion = player["heat"] + energy_to_convert
 
     mc_income = player["tr"] + player["mc_production"]
     new_mc = max(0, player["mc"] + mc_income)
@@ -512,7 +543,9 @@ def run_production_phase(player: PlayerState) -> PlayerState:
         "steel": player["steel"] + player["steel_production"],
         "titanium": player["titanium"] + player["titanium_production"],
         "plants": player["plants"] + player["plant_production"],
-        "energy": player["energy_production"],  # arranca de 0 tras la conversion, mas la produccion nueva
+        # Sin pasivo: arranca de 0 tras la conversion, mas la produccion nueva.
+        # Con Supercapacitors: la energia NO convertida tambien se conserva.
+        "energy": energy_kept + player["energy_production"],
         "heat": heat_after_energy_conversion + player["heat_production"],
         "active_cards": reset_active_cards,
         "pending_mc_discount": 0,
@@ -2370,6 +2403,15 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
         es quien tiene el costo impreso de la carta -- no hay funcion en
         rules_engine.py para este pasivo especifico.
+      - "optional_energy_to_heat": true -- hace OPCIONAL (unidad por unidad)
+        la conversion de energia a calor de la fase de produccion, que la
+        regla base aplica entera y sin preguntar (ej. Supercapacitors,
+        bloque 35). Lo consume `run_production_phase` via su parametro
+        `energy_to_convert`; ver player_has_optional_energy_to_heat.
+      - "card_resource_payment": ademas de un tag suelto, `required_tag`
+        acepta una LISTA de tags, y alcanza con que la carta pagada tenga
+        alguno (ej. Carbon Nanosystems, bloque 35: los graphenes pagan
+        cartas con tag space O city). Ver tools._matches_required_tag.
       - "on_card_resource_gained": {"resource_type": "<tipo>", "mc_delta": N
         (default 1)} -- suma N MC por cada unidad de ese tipo de recurso
         que el jugador gane en CUALQUIER carta activa, venga de donde

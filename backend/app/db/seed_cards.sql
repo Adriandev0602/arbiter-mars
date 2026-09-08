@@ -2117,3 +2117,69 @@ on conflict (id) do update set
     requirements = excluded.requirements, effects = excluded.effects;
 
 update cards set is_event = true where id in ('harvest');
+
+-- Bloque 35 (2026-09-07): X38, X44-X48, X50-X53 (Promo). Segunda tanda con
+-- 10 subagentes en paralelo. Tags/banner de X38, X45 y X47 estaban mal en los
+-- informes y se corrigieron verificando los scans a mano -- ver CARDS_LOG.md.
+-- Ninguna de estas cartas tiene tags "water": ese ícono que un agente
+-- reportó como tag es parte del RECUADRO DE REQUISITO (ciudad + océano).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'outdoor_sports', 'Outdoor Sports', 8, '{}',
+        '{"any_city_adjacent_to_ocean": true}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'sixteen_psyche', '16 Psyche', 31, '{power}', null,
+        '{"production_deltas": {"titanium_production": 2}, "resource_deltas": {"titanium": 3}}'::jsonb
+    ),
+    (
+        'robot_pollinators', 'Robot Pollinators', 9, '{}',
+        '{"min_oxygen": 4}'::jsonb,
+        '{"production_deltas": {"plant_production": 1},
+          "resource_delta_per_tag": {"tag": "plant", "resource": "plants", "per_tag": 1}}'::jsonb
+    ),
+    (
+        'supercapacitors', 'Supercapacitors', 4, '{power,building}', null,
+        '{"production_deltas": {"mc_production": 1},
+          "passive": {"optional_energy_to_heat": true}}'::jsonb
+    ),
+    (
+        'icy_impactors', 'Icy Impactors', 15, '{power}', null,
+        '{"becomes_active": true, "active_card_resource_type": "asteroid",
+          "action": {"choice": [
+              {"cost": {"mc_or_titanium": 10}, "gains": {"card_resource_delta": 2}},
+              {"cost": {"card_resource": 1}, "gains": {"place_oceans": 1}}
+          ]}}'::jsonb
+    ),
+    (
+        'directed_heat_usage', 'Directed Heat Usage', 1, '{}', null,
+        '{"becomes_active": true,
+          "action": {"choice": [
+              {"cost": {"heat": 3}, "gains": {"resource_deltas": {"mc": 4}}},
+              {"cost": {"heat": 3}, "gains": {"resource_deltas": {"plants": 2}}}
+          ]}}'::jsonb
+    ),
+    (
+        'aqueduct_systems', 'Aqueduct Systems', 9, '{building}',
+        '{"own_city_adjacent_to_ocean": true}'::jsonb,
+        '{"draw_cards_matching_tag": {"tag": "building", "n": 3}}'::jsonb
+    ),
+    (
+        'astra_mechanica', 'Astra Mechanica', 7, '{science}', null,
+        '{"retrieve_played_events_to_hand": {"count": 2, "exclude_special_tile_cards": true}}'::jsonb
+    ),
+    (
+        'carbon_nanosystems', 'Carbon Nanosystems', 14, '{science,building}', null,
+        '{"becomes_active": true, "active_card_resource_type": "graphene",
+          "passive": {"on_tag_played_add_resource": {"matching_tags": ["science"], "resource_delta": 1},
+                      "card_resource_payment": {"required_tag": ["space", "city"], "value_mc": 4}}}'::jsonb
+    ),
+    (
+        'cyberia_systems', 'Cyberia Systems', 16, '{}', null,
+        '{"production_deltas": {"steel_production": 1},
+          "duplicate_production": {"requires_tag": "building", "count": 2}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
