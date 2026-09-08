@@ -138,11 +138,32 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-08, bloque 36)
+### 📍 Punto de retoma (última sesión: 2026-09-08, bloque 37: mecánicas pendientes)
 
-**Progreso:** catálogo en **392 cartas de proyecto**, **36 Global Events** y **48 cartas
+**Progreso:** catálogo en **397 cartas de proyecto**, **36 Global Events** y **48 cartas
 Prelude**. Colas: 11 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
 revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Bloque 37 (2026-09-08): NO fue revisión de cola, sino resolver mecánicas pendientes.** Se
+cargaron las 5 cartas que estaban trabadas: las 4 del bloque 36 (Kaguya Tech, Mars Nomads,
+Neptunian Power Consultants, St. Joseph of Cupertino Mission) más Diversity Support, pendiente
+desde el bloque 33. **La tabla "Pendientes" de `CARDS_LOG.md` quedó con una sola fila: T11
+Recruitment** (delegados neutrales por partido en Turmoil).
+
+Las tres piezas de tablero nuevas se diseñaron juntas, no carta por carta (ver "Marcadores en el
+tablero" en `CARDS_LOG.md`): `remove_greenery_tile`; el `TileType` nuevo `"nomad"` para un
+marcador móvil que ocupa un hexágono pero que ningún conteo encuentra (`place_nomads` /
+`move_nomads`); y `cathedral`, un campo opcional del `HexState` para un marcador SUPERPUESTO a
+una ciudad que sigue existiendo debajo. Piezas nuevas fuera del tablero:
+`min_distinct_resource_types` (Diversity Support), `cost.mc_or_steel` (análoga a
+`mc_or_titanium`) y el par `on_ocean_placed_offer` + tool `resolve_ocean_offer`.
+
+**Decisión de diseño que conviene recordar:** un pasivo OPCIONAL y PAGADO no se puede resolver
+dentro de `place_ocean`, que corre sin interacción y desde muchísimos caminos. En vez de
+propagar la decisión por todos ellos, `place_ocean` solo **anota** la oferta en el campo nuevo
+`player.pending_ocean_offers` y una tool aparte la cobra después; las no usadas se pierden al
+cerrar la generación. **`schema.sql` tiene una columna nueva (`pending_ocean_offers`), así que
+hay que correrlo de nuevo contra Supabase** (la migración es idempotente).
 
 **Bloque 36 (2026-09-08): 6 de 10 cargadas, 4 pendientes por mecánica grande.** Las 10 son del
 set "CEO" de promos (ojo: el "CEO: APELLIDO" del encabezado es el crédito del diseñador, NO un

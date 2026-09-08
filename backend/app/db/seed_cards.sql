@@ -2227,3 +2227,43 @@ insert into cards (id, name, cost, tags, requirements, effects) values
 on conflict (id) do update set
     name = excluded.name, cost = excluded.cost, tags = excluded.tags,
     requirements = excluded.requirements, effects = excluded.effects;
+
+-- Bloque 37 (2026-09-08): mecanicas pendientes resueltas, no revision de cola.
+-- Desbloquea las 4 cartas que el bloque 36 dejo pendientes (X58, X59, X61, X64)
+-- mas Diversity Support (X20), pendiente desde el bloque 33. Piezas nuevas del
+-- tablero: remove_greenery_tile, place_nomads/move_nomads (marcador movil que
+-- NO es tile) y place_cathedral (marcador SUPERPUESTO a una ciudad). Ver
+-- CARDS_LOG.md, seccion "Marcadores en el tablero".
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'diversity_support', 'Diversity Support', 1, '{}',
+        '{"min_distinct_resource_types": 9}'::jsonb,
+        '{"tr_delta": 1}'::jsonb
+    ),
+    (
+        'kaguya_tech', 'Kaguya Tech', 2, '{}', null,
+        '{"production_deltas": {"mc_production": 2}, "draw_cards": 1,
+          "convert_own_greenery_to_city": true}'::jsonb
+    ),
+    (
+        'mars_nomads', 'Mars Nomads', 13, '{}', null,
+        '{"place_nomads": true, "becomes_active": true,
+          "action": {"gains": {"move_nomads": true}}}'::jsonb
+    ),
+    (
+        'neptunian_power_consultants', 'Neptunian Power Consultants', 14, '{power}', null,
+        '{"becomes_active": true, "active_card_resource_type": "hydroelectric",
+          "passive": {"on_ocean_placed_offer": {"cost_mc": 5, "allow_steel": true,
+                                                "production_deltas": {"energy_production": 1},
+                                                "card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'st_joseph_of_cupertino_mission', 'St. Joseph of Cupertino Mission', 7, '{}', null,
+        '{"becomes_active": true,
+          "action": {"cost": {"mc_or_steel": 5}, "gains": {"place_cathedral": true}}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in ('diversity_support');

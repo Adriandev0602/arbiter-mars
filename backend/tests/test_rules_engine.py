@@ -70,6 +70,7 @@ from app.agent.rules_engine import (
     spend_active_card_resource,
     sum_card_resources_by_type,
     snapshot_card_resource_totals,
+    count_distinct_resource_types,
     apply_card_resource_gained_bonuses,
     is_blue_card,
     resolve_active_card_starting_resources,
@@ -4864,6 +4865,27 @@ def test_sum_card_resources_by_type_across_multiple_cards():
     assert sum_card_resources_by_type(player, "floater") == 5
     assert sum_card_resources_by_type(player, "microbe") == 5
     assert sum_card_resources_by_type(player, "animal") == 0
+
+
+def test_min_distinct_resource_types_cuenta_stock_y_recursos_de_carta():
+    # Diversity Support (X20): 9 tipos distintos = los 6 de stock + 3 tipos en cartas
+    player = {**new_player_state(), "mc": 1, "steel": 1, "titanium": 1,
+              "plants": 1, "energy": 1, "heat": 1}
+    assert count_distinct_resource_types(player) == 6
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_distinct_resource_types": 9}, new_global_parameters(), player)
+
+    player = register_active_card(player, "pets", initial_resources=1, resource_type="animal")
+    player = register_active_card(player, "ants", initial_resources=2, resource_type="microbe")
+    player = register_active_card(player, "dirigibles", initial_resources=1, resource_type="floater")
+    assert count_distinct_resource_types(player) == 9
+    check_card_requirements({"min_distinct_resource_types": 9}, new_global_parameters(), player)
+
+
+def test_min_distinct_resource_types_ignora_recursos_en_cero():
+    player = {**new_player_state(), "mc": 5}          # solo MC > 0
+    player = register_active_card(player, "pets", initial_resources=0, resource_type="animal")
+    assert count_distinct_resource_types(player) == 1
 
 
 def test_snapshot_card_resource_totals_agrupa_por_tipo():

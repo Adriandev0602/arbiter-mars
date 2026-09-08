@@ -31,6 +31,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         pending_research=row.get("pending_research") or [],
         played_cards=row.get("played_cards") or [],
         pending_mc_discount=row.get("pending_mc_discount") or 0,
+        pending_ocean_offers=row.get("pending_ocean_offers") or 0,
         pending_requirement_tolerance_steps=row.get("pending_requirement_tolerance_steps") or 0,
         reserved_cards=row.get("reserved_cards") or {},
         zero_tag_cards_played=row.get("zero_tag_cards_played") or 0,
@@ -378,6 +379,7 @@ def play_card(
     colony_id_decrease: str | None = None,
     card_resource_to_pay: int = 0,
     stock_resource_to_pay: int = 0,
+    nomad_hex_id: str | None = None,
     wild_tag_choice: str | None = None,
     delegate_party_choices: list[str] | None = None,
     removal_party: str | None = None,
@@ -793,6 +795,28 @@ def play_card(
             new_player[key] = new_player[key] + delta
         _save_colonies(new_colonies)
 
+    if effects.get("convert_own_greenery_to_city"):
+        # Kaguya Tech (X58): saca un greenery PROPIO y pone una ciudad en ese
+        # mismo hexagono, ignorando la restriccion de adyacencia entre
+        # ciudades y SIN tocar el oxigeno (lo aclara el texto de la carta).
+        # Los bonus de colocacion se cobran normal.
+        if greenery_hex_id is None:
+            raise ValueError(f"La carta '{card_id}' requiere greenery_hex_id (el greenery a convertir)")
+        if board is None:
+            board = _load_board()
+        board = boardlib.remove_greenery_tile(board, greenery_hex_id, player_id)
+        board, new_player = _place_city_and_apply_bonus(board, new_player, greenery_hex_id, player_id)
+        new_globals = dict(engine.place_city_tile(engine.GlobalParameters(**new_globals)))
+
+    if effects.get("place_nomads"):
+        # Mars Nomads (X59): coloca el marcador en un hexagono vacio. No
+        # otorga bonus al colocarse, solo al moverlo (ver use_card_action).
+        if nomad_hex_id is None:
+            raise ValueError(f"La carta '{card_id}' requiere nomad_hex_id")
+        if board is None:
+            board = _load_board()
+        board = boardlib.place_nomads(board, nomad_hex_id)
+
     if effects.get("adjust_colony_tracks"):
         if colony_id_increase is None or colony_id_decrease is None:
             raise ValueError(f"La carta '{card_id}' requiere colony_id_increase y colony_id_decrease")
@@ -1060,6 +1084,9 @@ def use_card_action(
     trade_colony_id: str | None = None,
     removal_parties: list[str] | None = None,
     delegate_party_choices: list[str] | None = None,
+    steel_to_pay: int = 0,
+    nomad_hex_id: str | None = None,
+    city_hex_id: str | None = None,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -1167,6 +1194,30 @@ def use_card_action(
         new_gains["resource_deltas"] = resource_deltas
         spec_for_engine = {**resolved_spec, "gains": new_gains}
 
+    # Acciones que mueven/colocan marcadores en el tablero (bloque 37). Se
+    # resuelven aca porque necesitan el `board`, igual que free_trade; el
+    # bonus del hexagono se traduce a un resource_deltas concreto y el resto
+    # de la accion (incluido su costo) lo cobra el motor como siempre.
+    marker_board = None
+    nomad_bonus: list[tuple[str, int]] = []
+    if resolved_spec.get("gains", {}).get("move_nomads"):
+        if nomad_hex_id is None:
+            raise ValueError(f"La accion de '{card_id}' requiere nomad_hex_id (destino)")
+        marker_board, nomad_bonus = boardlib.move_nomads(_load_board(), nomad_hex_id)
+        new_gains = {k: v for k, v in resolved_spec.get("gains", {}).items() if k != "move_nomads"}
+        resource_deltas = {**new_gains.get("resource_deltas", {})}
+        for resource, amount in nomad_bonus:
+            resource_deltas[resource] = resource_deltas.get(resource, 0) + amount
+        new_gains["resource_deltas"] = resource_deltas
+        spec_for_engine = {**resolved_spec, "gains": new_gains}
+
+    if resolved_spec.get("gains", {}).get("place_cathedral"):
+        if city_hex_id is None:
+            raise ValueError(f"La accion de '{card_id}' requiere city_hex_id")
+        marker_board = boardlib.place_cathedral(_load_board(), city_hex_id)
+        new_gains = {k: v for k, v in resolved_spec.get("gains", {}).items() if k != "place_cathedral"}
+        spec_for_engine = {**resolved_spec, "gains": new_gains}
+
     # Algunas acciones tienen su PROPIO requisito, distinto del de jugar la
     # carta (ej. Red Appeasement: la accion exige que Reds gobierne o tener 2
     # delegados ahi). Se valida con la misma funcion del motor.
@@ -1223,6 +1274,7 @@ def use_card_action(
         player, globals_, card_id, spec_for_engine,
         None if remove_delegates_count else effect_choice, target_card_id=target_card_id,
         effect_amount=effect_amount, reserved_card_id=reserved_card_id, titanium_to_pay=titanium_to_pay,
+        steel_to_pay=steel_to_pay,
     )
     if remove_delegates_count:
         new_player = {
@@ -1290,6 +1342,10 @@ def use_card_action(
         _save_global_parameters(new_globals)
     if board is not None:
         _save_board(board)
+    elif marker_board is not None:
+        # Movimiento de Nomads / colocacion de catedral: tocaron el tablero
+        # antes de que el motor resolviera la accion (ver arriba).
+        _save_board(marker_board)
     _log_transaction(
         player_id, "use_card_action",
         {"card_id": card_id, "effect_choice": effect_choice, "ocean_hex_ids": ocean_hex_ids,
@@ -1722,6 +1778,79 @@ def get_turmoil_state(player_id: str) -> dict:
 
 
 @tool
+def resolve_ocean_offer(player_id: str, card_id: str, steel_to_pay: int = 0) -> dict:
+    """
+    Resuelve una de las ofertas opcionales que dispara colocar un oceano
+    (`player.pending_ocean_offers`), pagando su costo (ej. Neptunian Power
+    Consultants: "when any ocean is placed, you MAY spend 5 M€ -- steel may
+    be used -- to raise your energy production 1 step and add 1 hydroelectric
+    resource here").
+
+    Existe como tool aparte porque la oferta es una DECISION del jugador: el
+    motor no puede resolverla dentro de place_ocean, que corre sin
+    interaccion y desde muchisimos caminos distintos. Cada oceano colocado
+    suma una oferta; las que no se usen se pierden al cerrar la generacion
+    (run_production_phase las limpia).
+
+    Args:
+        player_id: id del jugador.
+        card_id: la carta activa que ofrece el trato (debe tener el pasivo
+            `on_ocean_placed_offer` registrado y estar activa).
+        steel_to_pay: cuanto acero declara pagar hacia el costo, si la oferta
+            lo permite (`allow_steel`). 0 paga todo en MC.
+
+    Lanza ValueError si no hay ofertas pendientes o la carta no ofrece nada,
+    InsufficientResourcesError si no alcanza el pago.
+    """
+    player = _load_player(player_id)
+    if player["pending_ocean_offers"] < 1:
+        raise ValueError("No hay ofertas pendientes por colocacion de oceano")
+
+    offer = next(
+        (
+            e["on_ocean_placed_offer"] for e in player["passive_effects"]
+            if "on_ocean_placed_offer" in e and e["card_id"] == card_id
+        ),
+        None,
+    )
+    if offer is None:
+        raise ValueError(f"La carta '{card_id}' no tiene una oferta por colocacion de oceano")
+
+    cost_mc = offer.get("cost_mc", 0)
+    if steel_to_pay and not offer.get("allow_steel"):
+        raise ValueError(f"La oferta de '{card_id}' no permite pagar con acero")
+    if player["steel"] < steel_to_pay:
+        raise engine.InsufficientResourcesError(
+            f"El jugador tiene {player['steel']} de acero, declaro pagar {steel_to_pay}"
+        )
+    steel_value_mc, _ = engine.compute_conversion_rates(player)
+    mc_needed = max(0, cost_mc - steel_to_pay * steel_value_mc)
+    if player["mc"] < mc_needed:
+        raise engine.InsufficientResourcesError(f"Se necesitan {mc_needed} MC, hay {player['mc']}")
+
+    new_player: dict = {
+        **player,
+        "mc": player["mc"] - mc_needed,
+        "steel": player["steel"] - steel_to_pay,
+        "pending_ocean_offers": player["pending_ocean_offers"] - 1,
+    }
+    for key, delta in offer.get("production_deltas", {}).items():
+        new_player[key] = engine._apply_production_floor(key, new_player[key] + delta)
+    if offer.get("card_resource_delta"):
+        active = new_player["active_cards"]
+        if card_id not in active:
+            raise ValueError(f"La carta '{card_id}' no esta activa para este jugador")
+        new_player["active_cards"] = {
+            **active,
+            card_id: {**active[card_id], "resources": active[card_id]["resources"] + offer["card_resource_delta"]},
+        }
+
+    _save_player(player_id, new_player)  # type: ignore[arg-type]
+    _log_transaction(player_id, "resolve_ocean_offer", {"card_id": card_id, "steel_to_pay": steel_to_pay})
+    return {"player": new_player}
+
+
+@tool
 def get_active_cards_state(player_id: str) -> dict:
     """
     Devuelve `player.active_cards` tal cual (card_id -> {resources,
@@ -2046,5 +2175,5 @@ ALL_TOOLS = [
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
-    get_active_cards_state,
+    get_active_cards_state, resolve_ocean_offer,
 ]
