@@ -2379,3 +2379,17 @@ update cards set tags = '{earth,space}'          where id = 'solar_logistics';
 update cards
 set effects = jsonb_set(effects, '{production_delta_per_distinct_tag,extra_tags}', '["space"]'::jsonb)
 where id = 'interplanetary_trade';
+
+-- Ampliacion del fix (mismo bloque 38): tres cartas mas del bloque 33 que se
+-- cargaron con `power` sin haber mirado el scan (los informes de los agentes
+-- decian "sol dorado = power", el dato equivocado del prompt). Verificadas
+-- una por una: las tres tienen el SOL DORADO = space.
+update cards set tags = '{space}' where id in ('asteroid_hollowing', 'comet_aiming', 'directed_impactors');
+
+-- Cierre del fix: dos cartas mas de los bloques Promo verificadas contra su scan.
+-- Stanford Torus: city+space (no city+power).
+-- Mercurian Alloys: UN solo tag, space. Los dos atomos de arriba a la izquierda
+-- son el REQUISITO ("Requires 2 science tags"), no tags propios -- estaban
+-- cargados como si fueran tags science duplicados.
+update cards set tags = '{city,space}' where id = 'stanford_torus';
+update cards set tags = '{space}'      where id = 'mercurian_alloys';
