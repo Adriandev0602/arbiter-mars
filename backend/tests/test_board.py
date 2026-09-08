@@ -23,6 +23,12 @@ from app.agent.board import (
     count_empty_hexes_adjacent_to_owner,
     has_city_adjacent_to_ocean,
     count_cities_and_special_tiles_adjacent_to_ocean,
+    remove_greenery_tile,
+    place_nomads,
+    move_nomads,
+    find_nomads,
+    place_cathedral,
+    count_cathedrals,
     remove_ocean_tile,
     can_place_city_on_volcanic,
     can_place_greenery,
@@ -550,6 +556,55 @@ def test_has_city_adjacent_to_ocean_ignora_ciudad_lejos_del_agua():
     board = new_board()
     board, _, _ = place_city_tile(board, "35", "p1")
     assert has_city_adjacent_to_ocean(board, owner="p1") is False
+
+
+def test_remove_greenery_tile_solo_saca_greeneries_propios():
+    # Kaguya Tech (X58, bloque 37)
+    board = new_board()
+    board, _, _ = place_greenery_tile(board, "05", "p1", ignore_restrictions=True)
+    with pytest.raises(InvalidPlacementError):
+        remove_greenery_tile(board, "05", "p2")          # no es suyo
+    city_hex = next(h for h in HEX_DEFS if h not in board and can_place_city(board, h))
+    board2, _, _ = place_city_tile(board, city_hex, "p1")
+    with pytest.raises(InvalidPlacementError):
+        remove_greenery_tile(board2, city_hex, "p1")      # no es un greenery
+    freed = remove_greenery_tile(board, "05", "p1")
+    assert is_hex_empty(freed, "05")
+
+
+def test_nomads_se_mueven_a_hex_adyacente_y_cobran_el_bonus():
+    # Mars Nomads (X59, bloque 37): marcador movil que NO es un tile
+    board = new_board()
+    board = place_nomads(board, "10")
+    assert find_nomads(board) == "10"
+    assert is_hex_empty(board, "10") is False              # ocupa el hex
+    # no cuenta como tile de ningun tipo real
+    assert count_tiles_of_type(board, "city") == 0
+    assert count_tiles_of_type(board, "greenery") == 0
+
+    destino = next(h for h in get_neighbors("10") if h not in board and HEX_DEFS[h]["hex_type"] != "ocean")
+    board, bonus = move_nomads(board, destino)
+    assert find_nomads(board) == destino
+    assert is_hex_empty(board, "10") is True               # libera el anterior
+    assert bonus == HEX_DEFS[destino]["bonus"]
+
+    # no se puede mover a un hex no adyacente
+    lejano = next(h for h in HEX_DEFS if h not in board and h not in get_neighbors(destino))
+    with pytest.raises(InvalidPlacementError):
+        move_nomads(board, lejano)
+
+
+def test_place_cathedral_se_superpone_a_una_ciudad_y_es_unica():
+    # St. Joseph of Cupertino Mission (X64, bloque 37)
+    board = new_board()
+    board, _, _ = place_city_tile(board, "05", "p1")
+    board = place_cathedral(board, "05")
+    assert count_cathedrals(board) == 1
+    assert board["05"]["tile_type"] == "city"             # sigue siendo la ciudad
+    with pytest.raises(InvalidPlacementError):
+        place_cathedral(board, "05")                      # maximo 1 por ciudad
+    with pytest.raises(InvalidPlacementError):
+        place_cathedral(board, "06")                      # no hay ciudad ahi
 
 
 def test_remove_ocean_tile_frees_the_hex():

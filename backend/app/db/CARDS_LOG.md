@@ -412,6 +412,41 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `red_ships` | Red Ships | X62 | 2 MC | **Sin tags**, **Promo (set CEO)**. Requiere 4% oxígeno. Acción: +1 M€ por cada CIUDAD y SPECIAL TILE del mapa adyacente a un océano, **de cualquier dueño** (pieza nueva `board.count_cities_and_special_tiles_adjacent_to_ocean` + `gains.mc_per_city_or_special_tile_adjacent_to_ocean`, resuelta en `tools.use_card_action` porque necesita el tablero). Los greeneries y los océanos entre sí NO cuentan |
 | `solar_logistics` | Solar Logistics | X63 | 20 MC | Tags earth+power, **Promo (set CEO)**. +2 titanio. Dos pasivos en el mismo dict: -2 M€ al jugar cartas earth, y robar 1 carta al jugar un evento con tag space (extensión: `on_event_played` acepta `draw_cards`, y admite un `tag_filter` PROPIO dentro del bonus — hacía falta porque los dos pasivos de esta carta filtran por tags distintos y un `tag_filter` compartido no alcanzaba) |
 | `teslaract` | Teslaract | X66 | 14 MC | Tags power+building, **Promo (set CEO)**. +1 TR. Acción: -1 producción de energía → +1 producción de plantas. **Sin piezas nuevas**: el `cost` de `use_card_action` ya acepta claves de producción por su rama genérica (mismo patrón que Energy Market, bloque 31) |
+| `diversity_support` | Diversity Support | X20 | 1 MC | **Sin tags**, evento, **Promo**. Requiere tener 9 TIPOS de recurso distintos (pieza nueva `min_distinct_resource_types`: los 6 de stock con cantidad > 0 más cada tipo guardado en cartas activas — ver `count_distinct_resource_types`). +1 TR. Estuvo pendiente desde el bloque 33 hasta que el retrofit de microbios/animales del bloque 34 hizo confiable el conteo |
+| `kaguya_tech` | Kaguya Tech | X58 | 2 MC | **Sin tags**, **Promo (set CEO)**. +2 producción MC, roba 1 carta, y **remueve un greenery PROPIO para poner una ciudad en ese mismo hexágono** (pieza nueva `convert_own_greenery_to_city` + `board.remove_greenery_tile`), ignorando la restricción de adyacencia entre ciudades y cobrando los bonus de colocación normales. **NO toca el oxígeno** (lo aclara el texto impreso), a diferencia de colocar un greenery |
+| `mars_nomads` | Mars Nomads | X59 | 13 MC | **Sin tags**, **Promo (set CEO)**. Coloca los "Nomads" (marcador móvil, `place_nomads`) en un hexágono vacío. Acción: moverlos a un hexágono adyacente vacío cobrando el bonus impreso de ese hex (`move_nomads`) — ver sección "Marcadores en el tablero" |
+| `neptunian_power_consultants` | Neptunian Power Consultants | X61 | 14 MC | Tag power, **Promo (set CEO)**. Guarda "hydroelectric". Pasivo `on_ocean_placed_offer` (pieza nueva): cada océano colocado deja una OFERTA opcional y pagada (5 M€, acero permitido → +1 producción energía y +1 hydroelectric acá). Como es una decisión del jugador, no se resuelve dentro de `place_ocean`: se anota en `player.pending_ocean_offers` y se cobra con la tool nueva `resolve_ocean_offer`. Las ofertas no usadas se pierden al cerrar la generación |
+| `st_joseph_of_cupertino_mission` | St. Joseph of Cupertino Mission | X64 | 7 MC | **Sin tags**, **Promo (set CEO)**. Acción: pagar 5 M€ (acero permitido, pieza nueva `cost.mc_or_steel`, análoga a `mc_or_titanium`) para poner una catedral SOBRE un tile de ciudad de cualquier dueño, máximo 1 por ciudad (`board.place_cathedral`). El "1 VP por catedral" no se modela. La cláusula "the city owner may pay 2 M€ to draw 1 card" en single-player se resolvería sobre el mismo jugador; se omite por ser opcional y sin efecto obligatorio |
+
+## Marcadores en el tablero (bloque 37)
+
+Hasta el bloque 36, `board.py` solo sabía de **tiles permanentes que ocupan un hexágono vacío**.
+Eso dejó cuatro cartas pendientes que pedían otra cosa, y se resolvieron todas juntas con tres
+piezas, en vez de carta por carta:
+
+- **Remover un tile** (`remove_greenery_tile`, Kaguya Tech). Ya existía `remove_ocean_tile` para
+  un Global Event; esta es su hermana para greeneries, y exige que el greenery sea del jugador.
+  Igual que aquella, solo toca el tablero: **no toca el oxígeno** (el texto de la carta lo aclara).
+- **Marcador móvil que NO es un tile** (`place_nomads` / `move_nomads` / `find_nomads`, Mars
+  Nomads). Se modeló como un `TileType` nuevo, `"nomad"`: ocupa el hexágono (bloquea colocar
+  tiles ahí) pero **ningún conteo lo encuentra**, porque todas las funciones de conteo buscan
+  tipos concretos (`city`/`greenery`/`ocean`/`special`). Al moverlo cobra el bonus impreso del
+  hexágono de destino y lo marca consumido, igual que cualquier colocación: un hexágono ya
+  visitado no vuelve a pagar.
+- **Marcador SUPERPUESTO a un tile existente** (`place_cathedral` / `count_cathedrals`, St.
+  Joseph of Cupertino Mission). No podía ser un tile ni un `TileType` nuevo, porque la ciudad
+  sigue existiendo debajo: es un campo opcional (`cathedral`) del `HexState` de esa ciudad, con
+  tope de 1 por ciudad.
+
+**Decisión de diseño transversal (Neptunian Power Consultants):** los pasivos que disparan al
+colocar un océano se aplican dentro de `place_ocean`, que corre sin interacción y desde muchos
+caminos distintos (proyecto estándar, cartas, acciones, preludes). Un pasivo **opcional y
+pagado** no se puede resolver ahí, porque necesita que el jugador decida. En vez de propagar una
+decisión por todos esos caminos, `place_ocean` solo **anota** la oferta en
+`player.pending_ocean_offers`, y la tool nueva `resolve_ocean_offer` la cobra después. Las
+ofertas que el jugador no use se pierden al cerrar la generación (`run_production_phase` las
+limpia), igual que `pending_mc_discount`.
+
 
 ## Pago con un recurso de stock (`stock_resource_payment`, bloque 36)
 
@@ -536,10 +571,6 @@ motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la cart
 
 | # scan | Nombre | Qué falta |
 |---|---|---|
-| X58 | Kaguya Tech (Promo) | **Remover un greenery PROPIO ya colocado y poner una ciudad en ese mismo hexágono** (ignorando restricciones de adyacencia, cobrando bonus de colocación normales, y SIN tocar el oxígeno). `board.py` solo sabe agregar tiles: no existe nada para quitar un greenery (sí `remove_ocean_tile`, del Global Event correspondiente). Haría falta `board.remove_greenery_tile` + un effect que encadene quitar y colocar en el mismo hex. El resto de la carta (+2 producción MC, robar 1 carta) ya es vocabulario existente |
-| X59 | Mars Nomads (Promo) | **Marcador móvil que NO es un tile**: los "Nomads" (cubo dorado) ocupan un hexágono vacío, bloquean colocar tiles ahí, y su acción los mueve a un hexágono adyacente cobrando el bonus impreso de ese hex como si se colocara un special tile. Hoy `Board` es un dict hex→tile y todo lo que ocupa un hex es un tile permanente con dueño; un marcador movible que cobra bonus repetidamente es un concepto nuevo del tablero (habría que decidir además si el bonus del hex se "consume", ya que hoy `bonus_consumed` es definitivo) |
-| X61 | Neptunian Power Consultants (Promo) | **`on_ocean_placed` OPCIONAL y PAGADO**: "when any ocean is placed, you MAY spend 5 M€ (steel may be used) to raise your energy production 1 step and add 1 hydroelectric resource here". El pasivo `on_ocean_placed` de hoy es automático, gratis y solo suma `plants_delta` (Arctic Algae), y se aplica DENTRO de `place_ocean` — un pago opcional necesita una decisión del jugador en un punto donde el motor puro no puede pedirla, y los océanos se colocan desde muchísimos caminos distintos. Requiere sacar el disparo a `tools.py` con un parámetro de decisión, o un mecanismo de "ofertas pendientes" |
-| X64 | St. Joseph of Cupertino Mission (Promo) | **Marcador (catedral) SOBRE un tile de ciudad ya existente**, máximo 1 por ciudad. `place_special_tile` exige hexágono vacío por diseño (`is_hex_empty`), así que no sirve: haría falta una capa de marcadores encima de tiles ocupados. Además pide `cost.mc_or_steel` (existe el análogo `mc_or_titanium`, sería una extensión chica) y una oferta opcional post-colocación de "pagar 2 M€ para robar 1 carta" |
 | T11 | Recruitment | Delegados NEUTRALES por partido (`turmoil.py` hoy solo trackea `delegates: {player_id: N}`, sin entrada para "neutral" -- ver comentario en `turmoil.py` "neutrales/de otros jugadores... no se simulan"). El texto es "exchange one NEUTRAL non-leader delegate with one of your own from reserve", en el partido que el jugador elija -- necesita saber cuántos delegados neutrales hay en cada partido, algo que el setup actual nunca inicializa. Distinto de Vote of No Confidence (T16, bloque 31, sí cargada): esa solo necesitaba el Chairman neutral, que YA es representable (`chairman is None`) sin tocar `delegates` |
 
 ### Turmoil: núcleo político (Colonial Envoys, Colonial Representation)

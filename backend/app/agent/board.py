@@ -22,9 +22,13 @@ Alcance de esta primera pasada (decision explicita, ver CLAUDE.md seccion 6):
   la necesita (su unico efecto -- "reservar un hexagono para uso exclusivo
   propio" -- no tiene consecuencia mecanica en single-player, ver CARDS_LOG.md).
 """
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
-TileType = Literal["city", "greenery", "ocean", "special"]
+# "nomad" NO es un tile de terraformacion: es un marcador movil que ocupa un
+# hexagono (bloquea colocar tiles ahi) pero no cuenta como ciudad/greenery/
+# oceano/special en ningun conteo -- ninguna funcion de conteo lo busca. Ver
+# place_nomads/move_nomads (Mars Nomads, bloque 37).
+TileType = Literal["city", "greenery", "ocean", "special", "nomad"]
 HexType = Literal["land", "ocean"]
 
 
@@ -46,6 +50,10 @@ class HexState(TypedDict):
     owner: str | None       # None = neutral (oceano)
     bonus_consumed: bool
     card: str | None        # id de la carta duena, solo para tile_type "special"
+    # Marcador SUPERPUESTO a un tile ya colocado (no lo reemplaza ni ocupa un
+    # hexagono propio): hoy solo la catedral de St. Joseph of Cupertino
+    # Mission, maximo 1 por ciudad. Ver place_cathedral.
+    cathedral: NotRequired[bool]
 
 
 Board = dict[str, HexState]
@@ -322,6 +330,95 @@ def remove_ocean_tile(board: Board, hex_id: str) -> Board:
     if tile["tile_type"] != "ocean":
         raise InvalidPlacementError(f"Hexagono '{hex_id}' tiene '{tile['tile_type']}', no un oceano")
     return {hid: t for hid, t in board.items() if hid != hex_id}
+
+
+def remove_greenery_tile(board: Board, hex_id: str, owner: str) -> Board:
+    """
+    Saca un tile de greenery PROPIO del mapa y libera el hexagono (Kaguya
+    Tech: "remove 1 of your greenery tiles, does not affect oxygen"). Igual
+    que remove_ocean_tile, esta funcion solo toca el tablero: el oxigeno NO
+    se toca (lo dice el texto de la carta) y el caller decide que poner
+    despues en el hexagono liberado.
+
+    Lanza UnknownHexError si el hexagono no tiene tile, o
+    InvalidPlacementError si no es un greenery o no es del jugador.
+    """
+    tile = board.get(hex_id)
+    if tile is None:
+        raise UnknownHexError(f"Hexagono '{hex_id}' no tiene ningun tile para remover")
+    if tile["tile_type"] != "greenery":
+        raise InvalidPlacementError(f"Hexagono '{hex_id}' tiene '{tile['tile_type']}', no un greenery")
+    if tile["owner"] != owner:
+        raise InvalidPlacementError(f"El greenery de '{hex_id}' no es del jugador '{owner}'")
+    return {hid: t for hid, t in board.items() if hid != hex_id}
+
+
+def find_nomads(board: Board) -> str | None:
+    """Hexagono donde estan los Nomads, o None si no estan en juego."""
+    return next((hid for hid, tile in board.items() if tile["tile_type"] == "nomad"), None)
+
+
+def place_nomads(board: Board, hex_id: str) -> Board:
+    """
+    Coloca el marcador de los Nomads (Mars Nomads) en un hexagono VACIO y no
+    reservado. No es un tile: no tiene dueno, no cuenta para ningun conteo de
+    tiles y no otorga bonus al colocarse (el texto solo da bonus al MOVERLO,
+    ver move_nomads). Si ocupa el hexagono, asi que no se pueden poner tiles
+    ahi mientras los Nomads esten parados.
+    """
+    if not is_hex_empty(board, hex_id):
+        raise HexOccupiedError(f"El hexagono '{hex_id}' ya esta ocupado")
+    if HEX_DEFS[hex_id]["hex_type"] == "ocean":
+        raise InvalidPlacementError(f"'{hex_id}' es un hexagono reservado para oceano")
+    return {
+        **board,
+        hex_id: HexState(tile_type="nomad", owner=None, bonus_consumed=False, card=None),
+    }
+
+
+def move_nomads(board: Board, to_hex_id: str) -> tuple[Board, list[tuple[str, int]]]:
+    """
+    Mueve los Nomads a un hexagono ADYACENTE, vacio y no reservado, y
+    devuelve el bonus impreso de ese hexagono para que el caller lo aplique
+    ("GAIN PLACEMENT BONUSES as if placing a special tile there").
+
+    El bonus se consume como el de cualquier colocacion: un hexagono ya
+    visitado no vuelve a pagar. Lanza InvalidPlacementError si los Nomads no
+    estan en juego o el destino no es adyacente/valido.
+    """
+    from_hex_id = find_nomads(board)
+    if from_hex_id is None:
+        raise InvalidPlacementError("Los Nomads no estan en el tablero")
+    if to_hex_id not in get_neighbors(from_hex_id):
+        raise InvalidPlacementError(f"'{to_hex_id}' no es adyacente a los Nomads (estan en '{from_hex_id}')")
+    if not is_hex_empty(board, to_hex_id):
+        raise HexOccupiedError(f"El hexagono '{to_hex_id}' ya esta ocupado")
+    if HEX_DEFS[to_hex_id]["hex_type"] == "ocean":
+        raise InvalidPlacementError(f"'{to_hex_id}' es un hexagono reservado para oceano")
+
+    hex_bonus = resolve_hex_bonus(board, to_hex_id)
+    new_board = {hid: t for hid, t in board.items() if hid != from_hex_id}
+    new_board[to_hex_id] = HexState(tile_type="nomad", owner=None, bonus_consumed=True, card=None)
+    return new_board, hex_bonus
+
+
+def place_cathedral(board: Board, hex_id: str) -> Board:
+    """
+    Pone una catedral (marcador) SOBRE un tile de ciudad ya colocado, de
+    cualquier dueno, maximo 1 por ciudad (St. Joseph of Cupertino Mission).
+    A diferencia de todos los demas marcadores del tablero, este NO ocupa un
+    hexagono propio: se superpone al tile que ya estaba.
+    """
+    tile = board.get(hex_id)
+    if tile is None or tile["tile_type"] != "city":
+        raise InvalidPlacementError(f"'{hex_id}' no tiene un tile de ciudad donde poner la catedral")
+    if tile.get("cathedral"):
+        raise InvalidPlacementError(f"La ciudad de '{hex_id}' ya tiene una catedral (maximo 1 por ciudad)")
+    return {**board, hex_id: {**tile, "cathedral": True}}
+
+
+def count_cathedrals(board: Board) -> int:
+    return sum(1 for tile in board.values() if tile.get("cathedral"))
 
 
 def count_tiles_of_type(board: Board, tile_type: TileType, owner: str | None = None) -> int:

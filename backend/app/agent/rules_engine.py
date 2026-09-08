@@ -150,6 +150,12 @@ class PlayerState(TypedDict):
     # ("next_card_discount_mc") y tools.play_card.
     pending_mc_discount: int
 
+    # Ofertas opcionales y PAGADAS que quedaron disparadas al colocar un
+    # oceano y que el jugador todavia no resolvio (ej. Neptunian Power
+    # Consultants). Se acumulan en place_ocean, se consumen con la tool
+    # resolve_ocean_offer y se pierden al cerrar la generacion.
+    pending_ocean_offers: int
+
     # Igual que pending_mc_discount pero para relajar/endurecer (puede ser
     # negativo) los requisitos de temperatura/oxigeno/oceanos de la
     # PROXIMA carta jugada esta generacion, en pasos (ej. Special Design:
@@ -233,7 +239,7 @@ def new_player_state() -> PlayerState:
         plant_production=1, energy_production=1, heat_production=1,
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
-        pending_mc_discount=0, pending_requirement_tolerance_steps=0,
+        pending_mc_discount=0, pending_requirement_tolerance_steps=0, pending_ocean_offers=0,
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
         lobby_delegates=1, reserve_delegates=6,
@@ -360,6 +366,14 @@ def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[Player
         if bonus is None:
             continue
         new_player["plants"] = new_player["plants"] + bonus.get("plants_delta", 0)
+        # Ofertas OPCIONALES y PAGADAS (ej. Neptunian Power Consultants: "you
+        # MAY spend 5 M€ to raise energy production and add 1 hydroelectric
+        # here"). No se pueden resolver aca -- necesitan que el jugador
+        # decida y pague -- asi que se anotan como pendientes y se cobran
+        # despues con la tool resolve_ocean_offer. Las que no se usen se
+        # pierden al cerrar la generacion (run_production_phase las limpia).
+    if any("on_ocean_placed_offer" in effect for effect in player["passive_effects"]):
+        new_player["pending_ocean_offers"] = new_player["pending_ocean_offers"] + 1
     return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
 
 
@@ -564,6 +578,7 @@ def run_production_phase(player: PlayerState, energy_to_convert: int | None = No
         "active_cards": reset_active_cards,
         "pending_mc_discount": 0,
         "pending_requirement_tolerance_steps": 0,
+        "pending_ocean_offers": 0,
     }
 
 
@@ -774,6 +789,13 @@ def check_card_requirements(
         "New Government" -- ver turmoil.py). Requiere pasar `turmoil` y
         `player_id` (ej. Vote of No Confidence, bloque 31: reemplaza al
         Chairman neutral, efecto `become_chairman_from_neutral`).
+      - "min_distinct_resource_types": N -- requiere tener al menos N TIPOS
+        de recurso distintos ahora mismo, contando los 6 de stock (mc,
+        steel, titanium, plants, energy, heat) con cantidad > 0 mas cada
+        tipo guardado en cartas activas (microbe, animal, floater, ...) con
+        total > 0 (ej. Diversity Support: 9). Ver
+        count_distinct_resource_types; depende de que las cartas declaren
+        `active_card_resource_type`.
       - "min_total_card_resources": {"resource_type": "<tipo>", "count": N}
         -- requiere al menos N recursos de ese TIPO sumados entre TODAS
         las cartas activas del jugador (ej. Aerosport Tournament: 5
@@ -880,6 +902,18 @@ def check_card_requirements(
         )
         if not is_leader_somewhere:
             raise CardRequirementNotMetError("Requiere ser Party Leader de algun partido")
+
+    if "min_distinct_resource_types" in requirements:
+        if player is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado del jugador"
+            )
+        distinct = count_distinct_resource_types(player)
+        if distinct < requirements["min_distinct_resource_types"]:
+            raise CardRequirementNotMetError(
+                f"Requiere {requirements['min_distinct_resource_types']} tipos de recurso "
+                f"distintos, hay {distinct}"
+            )
 
     if "min_total_card_resources" in requirements:
         spec = requirements["min_total_card_resources"]
@@ -1803,6 +1837,28 @@ def sum_card_resources_by_type(player: PlayerState, resource_type: str) -> int:
     )
 
 
+#: Los 6 recursos de stock del tablero de jugador. Junto con los tipos de
+#: recurso que se guardan EN cartas (microbios, animales, floaters, ...)
+#: forman los "tipos de recurso" que cuenta count_distinct_resource_types.
+STOCK_RESOURCE_KEYS = ("mc", "steel", "titanium", "plants", "energy", "heat")
+
+
+def count_distinct_resource_types(player: PlayerState) -> int:
+    """
+    Cuantos TIPOS de recurso distintos tiene el jugador ahora mismo: los 6 de
+    stock con cantidad > 0, mas cada tipo distinto guardado en sus cartas
+    activas (microbe, animal, floater, asteroid, graphene, ...) con total > 0.
+
+    Usado por el requisito "min_distinct_resource_types" (Diversity Support:
+    9 tipos distintos). Depende de que las cartas que guardan recursos
+    declaren `active_card_resource_type` -- por eso esta carta estuvo
+    pendiente hasta el retrofit de microbios/animales del bloque 34.
+    """
+    from_stock = sum(1 for key in STOCK_RESOURCE_KEYS if player[key] > 0)
+    from_cards = sum(1 for total in snapshot_card_resource_totals(player).values() if total > 0)
+    return from_stock + from_cards
+
+
 def snapshot_card_resource_totals(player: PlayerState) -> dict[str, int]:
     """
     Total de recursos guardados por TIPO ("microbe", "animal", "floater",
@@ -1905,6 +1961,7 @@ def use_card_action(
     effect_amount: int | None = None,
     reserved_card_id: str | None = None,
     titanium_to_pay: int = 0,
+    steel_to_pay: int = 0,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
@@ -2134,6 +2191,21 @@ def use_card_action(
             if new_player["mc"] < mc_needed:
                 raise InsufficientResourcesError(f"Se necesita {mc_needed} de MC, hay {new_player['mc']}")
             new_player["titanium"] -= titanium_to_pay
+            new_player["mc"] -= mc_needed
+        elif key == "mc_or_steel":
+            # Igual que mc_or_titanium pero con acero (ej. St. Joseph of
+            # Cupertino Mission: "spend 5 M€, steel may be used").
+            if steel_to_pay < 0:
+                raise CardEffectError("steel_to_pay no puede ser negativo")
+            if new_player["steel"] < steel_to_pay:
+                raise InsufficientResourcesError(
+                    f"Se necesita {steel_to_pay} de acero, hay {new_player['steel']}"
+                )
+            steel_value_mc, _ = compute_conversion_rates(PlayerState(**new_player))  # type: ignore[typeddict-item]
+            mc_needed = max(0, amount - steel_to_pay * steel_value_mc)
+            if new_player["mc"] < mc_needed:
+                raise InsufficientResourcesError(f"Se necesita {mc_needed} de MC, hay {new_player['mc']}")
+            new_player["steel"] -= steel_to_pay
             new_player["mc"] -= mc_needed
         else:
             # amount == "effect_amount": costo VARIABLE, el jugador elige
