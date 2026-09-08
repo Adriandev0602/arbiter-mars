@@ -2026,3 +2026,94 @@ on conflict (id) do update set
     requirements = excluded.requirements, effects = excluded.effects;
 
 update cards set is_event = true where id in ('imported_nutrients');
+
+-- Retrofit (bloque 34): las cartas que guardan MICROBIOS o ANIMALES en su
+-- propia caja tampoco declaraban `active_card_resource_type` (mismo hueco
+-- que tenian las de floaters antes de su retrofit). Sin esto,
+-- sum_card_resources_by_type no las encuentra y el pasivo nuevo
+-- "on_card_resource_gained" (Meat Industry, Topsoil Contract) nunca
+-- dispararia. Lista verificada UNA POR UNA contra la fila ya registrada de
+-- cada carta en CARDS_LOG.md, cruzando ademas su tag propio en `cards`.
+-- Excluida a proposito: security_fleet ("+1 recurso en la carta", tag
+-- power) -- en el juego real guarda "fighters", no animales.
+update cards set effects = effects || '{"active_card_resource_type": "microbe"}'::jsonb
+where id in (
+    'ants', 'decomposers', 'extremophiles', 'ghg_producing_bacteria',
+    'nitrite_reducing_bacteria', 'psychrophiles', 'regolith_eaters',
+    'sulphur_eating_bacteria', 'tardigrades', 'thermophiles', 'venusian_insects'
+);
+
+update cards set effects = effects || '{"active_card_resource_type": "animal"}'::jsonb
+where id in (
+    'birds', 'ecological_zone', 'fish', 'herbivores', 'livestock', 'martian_zoo',
+    'penguins', 'pets', 'predators', 'small_animals', 'stratospheric_birds',
+    'sub_zero_salt_fish', 'venusian_animals'
+);
+
+-- Bloque 34 (2026-09-07): X25-X30 y X34-X37 (Promo). Tanda analizada con
+-- 10 subagentes en paralelo (uno por carta); los tags/banner de X27, X29,
+-- X30 y X35 estaban mal en los informes y se corrigieron verificando los
+-- scans a mano -- ver CARDS_LOG.md.
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'meat_industry', 'Meat Industry', 5, '{building}', null,
+        '{"passive": {"on_card_resource_gained": {"resource_type": "animal", "mc_delta": 2}}}'::jsonb
+    ),
+    (
+        'meltworks', 'Meltworks', 4, '{building}', null,
+        '{"becomes_active": true,
+          "action": {"cost": {"heat": 5}, "gains": {"resource_deltas": {"steel": 3}}}}'::jsonb
+    ),
+    (
+        'mohole_lake', 'Mohole Lake', 31, '{building}', null,
+        '{"place_oceans": 1, "raise_temperature_steps": 1, "resource_deltas": {"plants": 3},
+          "becomes_active": true,
+          "action": {"gains": {"target_card_resource_delta": 1}}}'::jsonb
+    ),
+    (
+        'potatoes', 'Potatoes', 2, '{plant}', null,
+        '{"resource_deltas": {"plants": -2}, "production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'sub_crust_measurements', 'Sub-Crust Measurements', 20, '{earth,science,building}',
+        '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"becomes_active": true, "action": {"gains": {"draw_cards": 1}}}'::jsonb
+    ),
+    (
+        'topsoil_contract', 'Topsoil Contract', 8, '{earth,microbe}', null,
+        '{"resource_deltas": {"plants": 3},
+          "passive": {"on_card_resource_gained": {"resource_type": "microbe", "mc_delta": 1}}}'::jsonb
+    ),
+    (
+        'asteroid_rights', 'Asteroid Rights', 10, '{earth,power}', null,
+        '{"becomes_active": true, "active_card_resource_type": "asteroid",
+          "active_card_starting_resources": 2,
+          "action": {"choice": [
+              {"cost": {"mc": 1}, "gains": {"target_card_resource_delta_allow_self": 1}},
+              {"cost": {"card_resource": 1}, "gains": {"production_deltas": {"mc_production": 1}}},
+              {"cost": {"card_resource": 1}, "gains": {"resource_deltas": {"titanium": 2}}}
+          ]}}'::jsonb
+    ),
+    (
+        'bactoviral_research', 'Bactoviral Research', 10, '{microbe,science}', null,
+        '{"draw_cards": 1,
+          "target_card_resource_delta_per_tag": {"tag": "science", "per_tag": 1, "include_this": true}}'::jsonb
+    ),
+    (
+        'bio_printing_facility', 'Bio Printing Facility', 7, '{building}', null,
+        '{"becomes_active": true,
+          "action": {"choice": [
+              {"cost": {"energy": 2}, "gains": {"resource_deltas": {"plants": 2}}},
+              {"cost": {"energy": 2}, "gains": {"target_card_resource_delta": 1}}
+          ]}}'::jsonb
+    ),
+    (
+        'harvest', 'Harvest', 4, '{plant}',
+        '{"min_greenery_tiles_owned": 3}'::jsonb,
+        '{"resource_deltas": {"mc": 12}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in ('harvest');

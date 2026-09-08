@@ -1756,6 +1756,58 @@ def sum_card_resources_by_type(player: PlayerState, resource_type: str) -> int:
     )
 
 
+def snapshot_card_resource_totals(player: PlayerState) -> dict[str, int]:
+    """
+    Total de recursos guardados por TIPO ("microbe", "animal", "floater",
+    "asteroid", ...) sumando todas las cartas activas. Se usa junto con
+    apply_card_resource_gained_bonuses para detectar cuantos recursos de
+    cada tipo GANO el jugador durante una jugada, comparando un snapshot
+    de antes contra el estado de despues -- mismo patron de "diff de
+    contadores" que tools.play_card ya usa para oceanos/ciudades, y la
+    unica forma razonable de cubrir los muchos caminos que agregan
+    recursos a cartas (accion propia, target_card_resource_delta, pasivos
+    on_tag_played/on_greenery_placed, recursos iniciales, etc.) sin
+    enganchar cada uno por separado.
+    """
+    totals: dict[str, int] = {}
+    for card in player["active_cards"].values():
+        resource_type = card.get("resource_type")
+        if resource_type is None:
+            continue
+        totals[resource_type] = totals.get(resource_type, 0) + card["resources"]
+    return totals
+
+
+def apply_card_resource_gained_bonuses(
+    player: PlayerState, totals_before: dict[str, int],
+) -> PlayerState:
+    """
+    Aplica el pasivo "on_card_resource_gained": {"resource_type": "<tipo>",
+    "mc_delta": N} -- suma N MC al jugador por CADA unidad de ese tipo de
+    recurso que haya ganado en CUALQUIER carta activa desde `totals_before`
+    (ej. Meat Industry: "when you gain an animal to ANY CARD, gain 2 M€";
+    Topsoil Contract: 1 M€ por microbio).
+
+    Solo cuenta ganancias netas positivas: gastar recursos (ej. Regolith
+    Eaters removiendo 2 microbios) nunca resta MC. Mover un recurso entre
+    dos cartas del mismo tipo tampoco paga, porque el total no cambia --
+    coherente con el texto oficial, que premia GANAR el recurso, no
+    reubicarlo.
+    """
+    gained_mc = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_card_resource_gained")
+        if spec is None:
+            continue
+        resource_type = spec["resource_type"]
+        delta = sum_card_resources_by_type(player, resource_type) - totals_before.get(resource_type, 0)
+        if delta > 0:
+            gained_mc += delta * spec.get("mc_delta", 1)
+    if gained_mc == 0:
+        return player
+    return {**player, "mc": player["mc"] + gained_mc}  # type: ignore[return-value]
+
+
 def resolve_active_card_starting_resources(player: PlayerState, effects: dict) -> int:
     """
     Cuantos recursos arranca una carta activa recien jugada: el entero fijo de
@@ -2318,6 +2370,17 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
         es quien tiene el costo impreso de la carta -- no hay funcion en
         rules_engine.py para este pasivo especifico.
+      - "on_card_resource_gained": {"resource_type": "<tipo>", "mc_delta": N
+        (default 1)} -- suma N MC por cada unidad de ese tipo de recurso
+        que el jugador gane en CUALQUIER carta activa, venga de donde
+        venga (ej. Meat Industry, bloque 34: 2 MC por animal; Topsoil
+        Contract: 1 MC por microbio). No se resuelve con un enganche por
+        cada camino que agrega recursos: tools.play_card/use_card_action
+        toman un snapshot con snapshot_card_resource_totals antes de la
+        jugada y llaman apply_card_resource_gained_bonuses al final (ver
+        esas funciones). Requiere que las cartas que guardan ese recurso
+        declaren `active_card_resource_type` -- ver el retrofit de
+        microbe/animal en seed_cards.sql.
       - "on_card_played_cost_threshold_production_delta": {"min_cost": N,
         "production": "<recurso>_production", "delta": M (default 1)} --
         analogo a on_card_played_cost_threshold_draw pero suma produccion
