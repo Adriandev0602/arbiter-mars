@@ -21,30 +21,26 @@ primaria. Los numeros verificados de ahi:
 
 CATALOGO DE COLONIAS: el juego real tiene 11 Colony Tiles con nombre
 (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto,
-Ceres, Io), cada una con su propio track de valores de "trade income" y su
-"colony bonus"/"placement bonus" especificos. Mismo criterio que el catalogo
-de cartas (CLAUDE.md seccion 4): NO se generan datos al voleo. Por ahora
-solo esta cargada **Callisto**, verificada con DOS fuentes independientes:
-  1. El ejemplo trabajado del rulebook oficial (pagina 2): "the trade income
-     is 10 energy resources, as indicated by the white marker... green
-     player gets 3 energy" con el marcador en la 6ta casilla visible del
-     track impreso en la imagen (0/2/3/5/7/10/13), y el placement bonus
-     "+1 energia produccion" citado explicitamente en el texto.
-  2. Busqueda independiente (resumen de terceros) que reporta el mismo
-     track para Callisto: "Colony Bonus: 0 [MC], Trade Income track: 2, 3,
-     5, 7, 10, 13" -- coincide exactamente con el track leido del rulebook
-     (agregando el 0 inicial de la primera casilla, no citado en el resumen
-     de terceros pero visible en la imagen del rulebook).
-El resto de las 10 colonias reales quedan sin cargar hasta verificarlas de
-la misma forma -- el MECANISMO ya es generico y funciona con cualquier
-colonia que se agregue a COLONY_DEFS despues. Ver CARDS_LOG.md, seccion
-"Colonies: mecanica de colonias/comercio".
+Ceres, Io). Hoy hay **9 cargadas**; faltan Pluto y Europa (ver la nota al
+final de COLONY_DEFS).
 
-Alcance de esta primera pasada: solo lo que hace falta para las cartas que
-NO dependen de una colonia especifica por nombre (ej. Ecology Research:
-"por cada colonia que tengas", sin importar cual; Cryo-Sleep: descuento
-generico al comerciar). Cartas que targeteen una colonia puntual por nombre
-distinta de Callisto quedan pendientes hasta cargar esa colonia.
+Callisto se habia cargado antes verificandola con dos fuentes independientes
+(el ejemplo trabajado del rulebook oficial, pagina 2, y un resumen de
+terceros que reporta el mismo track). Las otras 8 se transcribieron del SCAN
+de cada Colony Tile -- la fuente primaria, el tile impreso mismo. Callisto
+sirvio de CONTROL del metodo: leida del scan da exactamente los valores que
+ya estaban verificados por esas dos fuentes (colony bonus 3 energia, track
+0/2/3/5/7/10/13, placement +1 produccion de energia), asi que la lectura de
+los otros scans se apoya en un metodo ya validado.
+
+Como leer un Colony Tile, por si hay que agregar mas:
+  - "COLONY BONUS": iconos sueltos = recursos de stock para TODOS los duenos.
+  - "TRADE INCOME": "X <recurso>", donde X sale de la casilla actual del track.
+  - Fila de 7 casillas con sus numeros abajo = el track.
+  - Los 3 PRIMEROS espacios de esa fila son los colony spots, y su icono es
+    el placement bonus. Un icono DENTRO de un marco marron/dorado es
+    PRODUCCION; el mismo icono sin marco es recurso de stock (comparar
+    Callisto, que da produccion, con Triton, que da 3 titanios de stock).
 """
 from typing import TypedDict
 
@@ -69,6 +65,65 @@ COLONY_DEFS: dict[str, ColonyDef] = {
         id="callisto", income_type="energy", track=[0, 2, 3, 5, 7, 10, 13],
         colony_bonus={"energy": 3}, placement_bonus={"energy_production": 1},
     ),
+    # Las 5 de abajo se transcribieron del SCAN de cada Colony Tile (fuente
+    # primaria: el tile mismo). Callisto sirvio de control: leida del scan da
+    # exactamente los valores que ya estaban verificados con dos fuentes
+    # independientes, asi que el metodo de lectura es confiable. Anatomia del
+    # tile: "COLONY BONUS" (iconos sueltos = stock del jugador), "TRADE
+    # INCOME" (X + recurso), la fila de 7 casillas del track con sus numeros
+    # abajo, y los 3 primeros espacios -- los colony spots -- cuyo icono es el
+    # placement bonus. Un icono DENTRO de un marco marron/dorado es
+    # PRODUCCION; sin marco es recurso de stock.
+    "ceres": ColonyDef(
+        id="ceres", income_type="steel", track=[1, 2, 3, 4, 6, 8, 10],
+        colony_bonus={"steel": 2}, placement_bonus={"steel_production": 1},
+    ),
+    "ganymede": ColonyDef(
+        id="ganymede", income_type="plants", track=[0, 1, 2, 3, 4, 5, 6],
+        colony_bonus={"plants": 1}, placement_bonus={"plant_production": 1},
+    ),
+    "io": ColonyDef(
+        id="io", income_type="heat", track=[2, 3, 4, 6, 8, 10, 13],
+        colony_bonus={"heat": 2}, placement_bonus={"heat_production": 1},
+    ),
+    "luna": ColonyDef(
+        id="luna", income_type="mc", track=[1, 2, 4, 7, 10, 13, 17],
+        colony_bonus={"mc": 2}, placement_bonus={"mc_production": 2},
+    ),
+    # Triton es la unica de estas cinco cuyo placement bonus es STOCK y no
+    # produccion: sus 3 colony spots muestran el titanio SIN el marco de
+    # produccion. El dict de placement_bonus es generico (se suma clave por
+    # clave al jugador), asi que no hizo falta tocar codigo para soportarlo.
+    "triton": ColonyDef(
+        id="triton", income_type="titanium", track=[0, 1, 1, 2, 3, 4, 5],
+        colony_bonus={"titanium": 1}, placement_bonus={"titanium": 3},
+    ),
+    # Estas tres reparten recursos que NO viven en el stock del jugador sino
+    # EN UNA CARTA (microbios, floaters, animales). Se expresan con el prefijo
+    # "card_resource:<tipo>", que tools._apply_colony_gain resuelve pidiendo
+    # `target_card_id` y validando que esa carta guarde ese tipo de recurso.
+    # Miranda ademas da una CARTA como colony bonus ("cards": roba del mazo).
+    "enceladus": ColonyDef(
+        id="enceladus", income_type="card_resource:microbe", track=[0, 1, 2, 3, 4, 4, 5],
+        colony_bonus={"card_resource:microbe": 1}, placement_bonus={"card_resource:microbe": 3},
+    ),
+    "titan": ColonyDef(
+        id="titan", income_type="card_resource:floater", track=[0, 1, 1, 2, 3, 3, 4],
+        colony_bonus={"card_resource:floater": 1}, placement_bonus={"card_resource:floater": 3},
+    ),
+    "miranda": ColonyDef(
+        id="miranda", income_type="card_resource:animal", track=[0, 1, 1, 2, 2, 3, 3],
+        colony_bonus={"cards": 1}, placement_bonus={"card_resource:animal": 1},
+    ),
+    # PENDIENTES, las dos que no entran con este modelo (ver CARDS_LOG.md):
+    #   * Pluto: su colony bonus es "roba 1 carta y descarta 1", que necesita
+    #     que el jugador ELIJA cual descartar -- el income ("cards": robar X)
+    #     si entra, pero cargarla a medias seria peor que no cargarla.
+    #   * Europa: su trade income no es "X de un recurso" sino "gana la
+    #     PRODUCCION indicada", y cada casilla del track indica una produccion
+    #     distinta (MC, MC, energia, energia, plantas, plantas, plantas). Eso
+    #     rompe el tipo `track: list[int]` + `income_type: str`. Ademas su
+    #     placement bonus es COLOCAR UN OCEANO, no un recurso.
 }
 
 
@@ -98,10 +153,10 @@ def new_colonies(colony_ids: list[str]) -> Colonies:
     """
     Arranca las colonias elegidas para esta partida (setup -- ver "Solo with
     Colonies" en el rulebook: en single-player se sortean 4 y se eligen 3).
-    El marcador blanco arranca en la 2da casilla resaltada del track (index
-    1) para las colonias "normales" -- Titan/Enceladus/Miranda arrancan
-    distinto (marcador sobre la imagen de la luna, fuera del track) pero
-    esas 3 todavia no estan cargadas en COLONY_DEFS, asi que no aplica hoy.
+    El marcador blanco arranca en la 2da casilla del track (index 1): en los
+    scans de las 9 colonias cargadas es la casilla resaltada con borde
+    blanco, y vale para todas ellas por igual (incluidas Titan, Enceladus y
+    Miranda, cuyo scan muestra el mismo resaltado en la segunda casilla).
     """
     for cid in colony_ids:
         if cid not in COLONY_DEFS:

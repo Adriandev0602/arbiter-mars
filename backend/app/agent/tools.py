@@ -160,6 +160,43 @@ def _place_city_and_apply_bonus(
     return new_board, new_player  # type: ignore[return-value]
 
 
+def _apply_colony_gain(player: dict, key: str, amount: int, target_card_id: str | None) -> dict:
+    """
+    Aplica una ganancia de colonia (income, colony bonus o placement bonus).
+
+    Las cinco colonias "simples" dan recursos de stock y les alcanza con sumar
+    la clave al jugador, pero otras dan cosas que no viven en el stock:
+      - "cards": ROBA N cartas del mazo (ej. Pluto: su trade income son
+        cartas, no un recurso).
+      - "card_resource:<tipo>": suma N recursos a UNA carta activa elegida
+        (`target_card_id`), porque microbios/floaters/animales viven en cartas
+        (ej. Enceladus microbios, Titan floaters, Miranda animales). Valida
+        que la carta destino guarde ese tipo de recurso.
+      - cualquier otra clave: recurso o produccion del jugador, suma directa.
+    """
+    if key == "cards":
+        return dict(engine.draw_cards_to_hand(engine.PlayerState(**player), amount))
+    if key.startswith("card_resource:"):
+        resource_type = key.split(":", 1)[1]
+        if target_card_id is None:
+            raise ValueError(
+                f"Esta colonia entrega {amount} {resource_type}(s) a una carta: falta target_card_id"
+            )
+        active = player["active_cards"]
+        if target_card_id not in active:
+            raise ValueError(f"La carta '{target_card_id}' no esta activa para este jugador")
+        if active[target_card_id].get("resource_type") != resource_type:
+            raise ValueError(f"'{target_card_id}' no guarda recursos de tipo '{resource_type}'")
+        return {
+            **player,
+            "active_cards": {
+                **active,
+                target_card_id: {**active[target_card_id], "resources": active[target_card_id]["resources"] + amount},
+            },
+        }
+    return {**player, key: player[key] + amount}
+
+
 def _matches_required_tag(required_tag, card_tags: tuple[str, ...]) -> bool:
     """
     `required_tag` de un pasivo acepta un tag suelto o una LISTA de tags, en
@@ -1353,10 +1390,10 @@ def use_card_action(
         colonies = _load_colonies()
         new_colonies, income_type, income_amount, colony_bonus = colonieslib.trade_with_colony(colonies, trade_colony_id)
         new_player = dict(new_player)
-        new_player[income_type] = new_player[income_type] + income_amount
+        new_player = _apply_colony_gain(new_player, income_type, income_amount, target_card_id)
         if player_id in new_colonies[trade_colony_id]["owners"]:
             for key, delta in colony_bonus.items():
-                new_player[key] = new_player[key] + delta
+                new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
         _save_colonies(new_colonies)
         trade_result = {"income_type": income_type, "income_amount": income_amount, "colony_bonus": colony_bonus}
 
@@ -1566,7 +1603,7 @@ def setup_colonies(colony_ids: list[str]) -> dict:
 
 
 @tool
-def build_colony(player_id: str, colony_id: str) -> dict:
+def build_colony(player_id: str, colony_id: str, target_card_id: str | None = None) -> dict:
     """
     Proyecto estandar de la expansion Colonies: paga 17 MC, coloca el
     marcador del jugador en el slot mas bajo libre de `colony_id` (maximo 3
@@ -1599,7 +1636,7 @@ def build_colony(player_id: str, colony_id: str) -> dict:
         "colonies_owned": [*player["colonies_owned"], colony_id],
     }
     for key, delta in placement_bonus.items():
-        new_player[key] = new_player[key] + delta
+        new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
 
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_colonies(new_colonies)
@@ -1609,7 +1646,10 @@ def build_colony(player_id: str, colony_id: str) -> dict:
 
 
 @tool
-def use_trade_fleet(player_id: str, colony_id: str, payment: str, bump_track_first: bool = False) -> dict:
+def use_trade_fleet(
+    player_id: str, colony_id: str, payment: str, bump_track_first: bool = False,
+    target_card_id: str | None = None,
+) -> dict:
     """
     Accion de comerciar de la expansion Colonies (no es un proyecto
     estandar -- una accion mas del turno). Paga el costo elegido (9 MC, 3
@@ -1674,13 +1714,13 @@ def use_trade_fleet(player_id: str, colony_id: str, payment: str, bump_track_fir
     new_colonies, income_type, income_amount, colony_bonus = colonieslib.trade_with_colony(colonies, colony_id)
 
     new_player: dict = {**player, payment: player[payment] - cost, "trade_fleets_used": player["trade_fleets_used"] + 1}
-    new_player[income_type] = new_player[income_type] + income_amount
+    new_player = _apply_colony_gain(new_player, income_type, income_amount, target_card_id)
     # Pasivos que premian el acto de comerciar (ej. Venus Trade Hub: +3 MC)
     for effect in player["passive_effects"]:
         new_player["mc"] = new_player["mc"] + effect.get("mc_delta_on_trade", 0)
     if player_id in new_colonies[colony_id]["owners"]:
         for key, delta in colony_bonus.items():
-            new_player[key] = new_player[key] + delta
+            new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
 
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_colonies(new_colonies)

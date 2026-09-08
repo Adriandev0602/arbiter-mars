@@ -472,12 +472,14 @@ single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
-2. **Corporaciones (48 cartas):** el hueco grande que sigue sin modelarse en ningún lado
+2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
+   Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
+3. **Corporaciones (48 cartas):** el hueco grande que sigue sin modelarse en ningún lado
    (`enqueue_card_review_queue.py` filtraba `cat != "Project"`, así que nunca entraron al
    pipeline). Necesitan tabla, cola y mecánica propias, como se hizo con Prelude.
-3. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
+4. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
    neutrales por partido en Turmoil).
-4. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
+5. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
 
 El flujo de trabajo, si vuelve a haber cartas para revisar: consultar la cola en Supabase
 (conexión directa con `psycopg2` y parámetros individuales de host/user/password — el

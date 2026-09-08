@@ -1,9 +1,9 @@
 """
 Tests del modulo de colonias/comercio (expansion Colonies). El mecanismo
 (costos, orden de pasos) esta verificado contra el rulebook oficial
-(TM_COLONIES_ENG_RULES); los numeros de Callisto (unica colonia cargada
-hasta ahora) estan verificados con dos fuentes independientes -- ver
-colonies.py y CARDS_LOG.md.
+(TM_COLONIES_ENG_RULES); los numeros de cada Colony Tile se transcribieron
+de su scan, con Callisto (verificada antes con dos fuentes independientes)
+como control del metodo -- ver colonies.py y CARDS_LOG.md.
 """
 import pytest
 
@@ -49,8 +49,11 @@ def test_new_colonies_starts_at_index_1_no_owners():
 
 
 def test_new_colonies_unknown_id_raises():
+    # id inventado a proposito: usar una colonia real haria que el test se
+    # rompa el dia que esa colonia se cargue en COLONY_DEFS (paso con
+    # "ganymede" al cargar las 5 del bloque de colonias).
     with pytest.raises(UnknownColonyError):
-        new_colonies(["ganymede"])
+        new_colonies(["colonia_inexistente"])
 
 
 def test_build_colony_adds_owner_and_returns_placement_bonus():
@@ -169,3 +172,48 @@ def test_build_colony_allow_duplicate_still_respects_max_3():
     colonies, _ = build_colony(colonies, "callisto", "player-1", allow_duplicate=True)
     with pytest.raises(ColonyFullError):
         build_colony(colonies, "callisto", "player-1", allow_duplicate=True)
+
+
+# --- Catalogo de colonias (transcrito de los scans, bloque de colonias) -----
+
+def test_las_nueve_colonias_cargadas_tienen_track_de_7_casillas():
+    # El track impreso de una Colony Tile siempre tiene 7 casillas; si alguna
+    # quedo con 6 u 8 es que se transcribio mal del scan.
+    assert len(COLONY_DEFS) == 9
+    for cid, cdef in COLONY_DEFS.items():
+        assert len(cdef["track"]) == 7, f"{cid} tiene {len(cdef['track'])} casillas"
+        assert cdef["id"] == cid
+
+
+def test_track_de_cada_colonia_es_no_decreciente():
+    # Ningun Colony Tile del juego baja de valor al avanzar el marcador.
+    for cid, cdef in COLONY_DEFS.items():
+        track = cdef["track"]
+        assert track == sorted(track), f"{cid} tiene un track que baja: {track}"
+
+
+def test_valores_puntuales_leidos_del_scan():
+    # Un valor "ancla" por colonia, para que un error de transcripcion no pase
+    # silencioso. Callisto es ademas el control del metodo de lectura.
+    assert COLONY_DEFS["callisto"]["track"] == [0, 2, 3, 5, 7, 10, 13]
+    assert COLONY_DEFS["luna"]["track"][-1] == 17          # la de mayor tope
+    assert COLONY_DEFS["luna"]["placement_bonus"] == {"mc_production": 2}
+    assert COLONY_DEFS["io"]["colony_bonus"] == {"heat": 2}
+    assert COLONY_DEFS["ceres"]["income_type"] == "steel"
+    assert COLONY_DEFS["ganymede"]["track"] == [0, 1, 2, 3, 4, 5, 6]
+    # Triton reparte titanio de STOCK, no produccion (sus spots no tienen marco)
+    assert COLONY_DEFS["triton"]["placement_bonus"] == {"titanium": 3}
+
+
+def test_colonias_de_recurso_de_carta_usan_el_prefijo():
+    # Enceladus/Titan/Miranda dan recursos que viven EN UNA CARTA
+    for cid, tipo in [("enceladus", "microbe"), ("titan", "floater"), ("miranda", "animal")]:
+        assert COLONY_DEFS[cid]["income_type"] == f"card_resource:{tipo}"
+    # Miranda ademas da una carta del mazo como colony bonus
+    assert COLONY_DEFS["miranda"]["colony_bonus"] == {"cards": 1}
+
+
+def test_pluto_y_europa_siguen_sin_cargar():
+    # Las dos que no entran en el modelo actual (ver la nota en COLONY_DEFS).
+    assert "pluto" not in COLONY_DEFS
+    assert "europa" not in COLONY_DEFS
