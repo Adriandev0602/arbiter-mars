@@ -5513,3 +5513,13 @@ def test_card_cost_discount_accepts_tag_filter_list():
     assert compute_card_cost_discount(player, ("venus",)) == 2
     assert compute_card_cost_discount(player, ("jovian", "space")) == 2
     assert compute_card_cost_discount(player, ("building",)) == 0
+
+
+def test_card_cost_discount_requires_requirement():
+    # Cutting Edge Technology (X18, bloque 33): "-2 MC en cartas con requisito"
+    player = register_passive_effect(
+        new_player_state(), "cutting_edge_technology",
+        {"card_cost_discount_mc": 2, "requires_requirement": True},
+    )
+    assert compute_card_cost_discount(player, (), has_requirement=True) == 2
+    assert compute_card_cost_discount(player, (), has_requirement=False) == 0

@@ -138,11 +138,19 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 32)
+### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 33)
 
-**Progreso:** catálogo en **358 cartas de proyecto**, **36 Global Events** y **48 cartas
-Prelude**. Colas: 51 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
+**Progreso:** catálogo en **366 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. Colas: 41 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
 revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Bloque 33 (2026-09-07): 8 de 10 cargadas** (X15, X16, X18, X19, X21-X24 Promo; X17 Crash
+Site Cleanup fuera de alcance -- mismo motivo que Law Suit; X20 Diversity Support pendiente
+por mecánica -- necesita un retrofit de `active_card_resource_type` en las cartas de
+microbio/animal ya cargadas, análogo al retrofit de floaters, para contar "9 tipos de recurso
+distintos" con precisión; no se hizo a la ligera para no arriesgar un conteo incorrecto). Pieza
+de motor nueva: `requires_requirement` en `card_cost_discount_mc` (Cutting Edge Technology,
+filtra el descuento por si la carta jugada TIENE requisito propio, no por tag).
 
 **Bloque 32 (2026-09-07): 9 de 10 cargadas** (X05, X07-X14 Promo; X06 Law Suit fuera de
 alcance -- su requisito de juego depende de un oponente, nunca se cumple en single-player).
@@ -348,7 +356,7 @@ Colonies), la única exclusión permanente por diseño (robo obligatorio sin sen
 single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-33`, consultar
+checkout -b feat/review-block-34`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans
