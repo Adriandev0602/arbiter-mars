@@ -715,6 +715,11 @@ def check_card_requirements(
         sea el Chairman (`turmoil["chairman"] == player_id`, ver
         turmoil.py). Requiere pasar `turmoil` y `player_id` (ej. Banned
         Delegate).
+      - "min_party_leader_count": N -- expansion Turmoil, requiere ser Party
+        Leader de al menos N partidos distintos simultaneamente (cuenta
+        `turmoil["parties"][p]["leader"] == player_id` para cada partido).
+        Requiere pasar `turmoil` y `player_id` (ej. Political Alliance,
+        bloque 32: N=2).
       - "party_leader_and_neutral_chairman": true -- expansion Turmoil,
         requiere que el jugador sea Party Leader de AL MENOS un partido y
         que la silla de Chairman este vacante/neutral (`turmoil["chairman"]
@@ -805,6 +810,16 @@ def check_card_requirements(
             )
         if turmoil["chairman"] != player_id:
             raise CardRequirementNotMetError("Requiere ser el Chairman")
+
+    if "min_party_leader_count" in requirements:
+        if turmoil is None or player_id is None:
+            raise CardRequirementNotMetError(
+                "Este requisito necesita el estado de Turmoil y el player_id"
+            )
+        min_count = requirements["min_party_leader_count"]
+        led = sum(1 for party in turmoil["parties"].values() if party["leader"] == player_id)
+        if led < min_count:
+            raise CardRequirementNotMetError(f"Requiere ser Party Leader de {min_count} partidos, es de {led}")
 
     if requirements.get("party_leader_and_neutral_chairman"):
         if turmoil is None or player_id is None:
@@ -1027,6 +1042,13 @@ def apply_card_effect(
         min_tag_count en check_card_requirements) para sumar por mas de un
         tag a la vez (ej. Gyropolis: +1 produccion de MC por cada tag venus
         Y +1 por cada tag earth, en la misma carta).
+      - "production_delta_per_distinct_tag": {"production": "<recurso>_production",
+        "per_tag": N (default 1), "extra_tags": [<tags de esta carta>]} --
+        suma N por cada tag DISTINTO que el jugador tenga en juego (no
+        repeticiones de un tag como production_delta_per_tag) (ej.
+        Interplanetary Trade: +1 MC de produccion por cada tag distinto,
+        incluido el propio -- `extra_tags` declara los tags de la carta
+        misma, igual criterio que include_this en production_delta_per_tag).
       - "production_delta_per_colony": {"production": "<recurso>_production",
         "per_colony": N (default 1), "cap": N (opcional, sin tope por
         defecto -- ej. Jovian Tax Rights, cuya ERRATA oficial agrega
@@ -1281,6 +1303,21 @@ def apply_card_effect(
             per_step = spec.get("per_step", spec.get("per_tag", 1))
             delta = (count // tags_per_step) * per_step
             new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+
+    if "production_delta_per_distinct_tag" in effects:
+        # Interplanetary Trade (X05, bloque 32): "+1 M€ production per
+        # DIFFERENT tag you have in play, including this" -- a diferencia
+        # de production_delta_per_tag (cuenta repeticiones de UN tag), esto
+        # cuenta cuantos tags DISTINTOS tiene el jugador. `extra_tags`
+        # declara los tags de la propia carta (increment_tags_played corre
+        # DESPUES de apply_card_effect, asi que "including this" hay que
+        # sumarlo a mano, igual que include_this en production_delta_per_tag).
+        spec = effects["production_delta_per_distinct_tag"]
+        key = spec["production"]
+        distinct = {tag for tag, count in player["tags_played"].items() if count > 0}
+        distinct |= set(spec.get("extra_tags", []))
+        delta = len(distinct) * spec.get("per_tag", 1)
+        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
 
     if "tr_delta_per_tag" in effects:
         spec = effects["tr_delta_per_tag"]
@@ -1839,6 +1876,18 @@ def use_card_action(
         carta, SIN gastarlos (a diferencia de convert_card_resource_amount,
         que si los gasta), limitado a `cap` si esta presente (ej. Jupiter
         Floating Station: 1 MC por floater guardado, maximo 4).
+        "mc_per_card_resource_including_spent": {"per_resource": N (default
+        1), "cap": M (opcional)} -- igual que mc_per_card_resource, pero
+        pensado para acciones que TAMBIEN gastan 1+ del mismo recurso como
+        parte de su "cost" (ej. Saturn Surfing, bloque 32: "spend 1 floater
+        to gain 1 M€ per floater here, including the paid one, max 5") --
+        suma de vuelta lo gastado (`action_spec["cost"]["card_resource"]`)
+        antes de contar, para que el floater pagado SI cuente.
+        "mc_per_tag": {"tag": "<tag>", "per_tag": N (default 1)} -- da tanto
+        MC como tags de ese tipo tenga el jugador (version de STOCK
+        inmediato de production_delta_per_tag, para una accion repetible en
+        vez de un efecto de produccion) (ej. Orbital Cleanup, bloque 32: 1
+        MC por tag science).
         "mc_per_discarded_card": {"per_card": N (default 1)} -- da N MC por
         cada carta que el jugador declara descartar (`effect_amount` = X,
         elegido por el jugador). Igual que standard_project_sell_patents,
@@ -1852,6 +1901,15 @@ def use_card_action(
         1 floater guardado) (ej. Titan Floating Launch-Pad: "spend 1
         floater here to trade for free"). Ver tools.use_card_action,
         parametro `trade_colony_id`.
+        "reveal_top_deck_card_add_resource_if_tag": {"tag": "<tag>"} -- NO
+        se procesa aca (necesita el catalogo para leer los tags de la
+        carta revelada, mismo criterio que free_trade): `tools.
+        use_card_action` la detecta ANTES de llamar a esta funcion, saca la
+        primera carta de `player.deck` (la descarta, no vuelve a la mano
+        ni al mazo), y si tiene ese tag inyecta un `card_resource_delta: 1`
+        equivalente antes de resolver el resto de la accion (ej. Asteroid
+        Deflection System, bloque 32: "reveal and discard the top card of
+        the deck, if it has a space tag add an asteroid here").
         "reserve_card_from_hand": {"initial_resources": N (default 2)} --
         reserva `reserved_card_id` (obligatorio, debe estar en la mano)
         sobre la propia carta, ver reserve_card_in_slot (ej. Self-
@@ -2059,6 +2117,27 @@ def use_card_action(
         spec = gains["mc_per_card_resource"]
         counted = min(card_resources, spec["cap"]) if "cap" in spec else card_resources
         new_player["mc"] = new_player["mc"] + counted * spec.get("per_resource", 1)
+    if "mc_per_card_resource_including_spent" in gains:
+        # Saturn Surfing (X11, bloque 32): "spend 1 floater from here to
+        # gain 1 M€ for each floater here, INCLUDING THE PAID FLOATER (max
+        # 5)". A diferencia de mc_per_card_resource (que NO gasta nada), el
+        # cost.card_resource de esta misma accion ya restó el floater
+        # pagado de `card_resources` -- se sabe cuanto se gasto mirando
+        # action_spec.get("cost", {}).get("card_resource", 0) y se suma de
+        # vuelta antes de contar.
+        spec = gains["mc_per_card_resource_including_spent"]
+        spent = action_spec.get("cost", {}).get("card_resource", 0)
+        counted = card_resources + spent
+        if "cap" in spec:
+            counted = min(counted, spec["cap"])
+        new_player["mc"] = new_player["mc"] + counted * spec.get("per_resource", 1)
+    if "mc_per_tag" in gains:
+        # Orbital Cleanup (X08, bloque 32): "gain 1 M€ per science tag you
+        # have" -- version de use_card_action de production_delta_per_tag,
+        # pero como STOCK inmediato de una accion repetible, no produccion.
+        spec = gains["mc_per_tag"]
+        count = new_player["tags_played"].get(spec["tag"], 0)
+        new_player["mc"] = new_player["mc"] + count * spec.get("per_tag", 1)
     if "mc_per_discarded_card" in gains:
         if effect_amount is None or effect_amount < 0:
             raise CardEffectError("Esta accion requiere effect_amount (X) >= 0")
@@ -2239,6 +2318,11 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         (ej. Spin-Off Department: N=20). Chequeado en tools.play_card, que
         es quien tiene el costo impreso de la carta -- no hay funcion en
         rules_engine.py para este pasivo especifico.
+      - "on_card_played_cost_threshold_production_delta": {"min_cost": N,
+        "production": "<recurso>_production", "delta": M (default 1)} --
+        analogo a on_card_played_cost_threshold_draw pero suma produccion
+        en vez de robar cartas (ej. Advertising, bloque 32: N=20,
+        mc_production +1). Tambien chequeado en tools.play_card.
       - "on_tag_played_resource_delta": {"matching_tags": ["<tag>", ...],
         "resource": "<recurso>", "resource_delta": N} -- suma N de ese
         recurso al STOCK del jugador por cada tag coincidente de la carta

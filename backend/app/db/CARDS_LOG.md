@@ -369,6 +369,26 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `energy_market` | Energy Market | X03 | 3 MC | Tag power, **Promo**. Acción con elección (`effects.action.choice`, no `options` — ver nota abajo): convertir X MC en X/2 energía (pieza nueva: `ratio` fraccionario en `convert_resource_amount`, valida que el resultado sea entero), O -1 producción energía → +8 MC |
 | `hi_tech_lab` | Hi-Tech Lab | X04 | 17 MC | Tags science+building, **Promo**. Acción: gastar X energía (sin tope) para robar X cartas a `pending_research`, resolver después con `resolve_research_phase(cost_per_card=0, max_take=1)` para quedarse con 1 y descartar el resto (pieza nueva: sentinel `"effect_amount"` como valor de `cost`/`gains.start_research.n`, en vez de un N fijo) |
 | `project_inspection` | Project Inspection | X02 | 0 MC | Sin tags, evento, **Promo**. "Use a card action that has already been used this generation": repone `action_used` a false en UNA carta activa elegida (`target_card_id`, pieza nueva effect `reset_card_action_used`, resuelta en `tools.play_card`) -- el jugador la usa después con una llamada normal a `use_card_action`. Requirió una tool nueva, `get_active_cards_state`, para que el LLM sepa qué cartas ya tienen `action_used: true` y elija con sentido |
+| `interplanetary_trade` | Interplanetary Trade | X05 | 27 MC | Tag power, **Promo**. +1 producción MC por cada tag DISTINTO en juego, incluido el propio (pieza nueva `production_delta_per_distinct_tag`, diferente de `production_delta_per_tag` que cuenta repeticiones de UN tag) |
+| `mercurian_alloys` | Mercurian Alloys | X07 | 3 MC | Tags science+science+power, **Promo**. Requiere 2 tags science. Pasivo `titanium_value_bonus: 1` (mismo vocabulario que Advanced Alloys) |
+| `orbital_cleanup` | Orbital Cleanup | X08 | 14 MC | Tags earth+power, **Promo**. -2 producción MC. Acción: +1 MC por cada tag science (pieza nueva `gains.mc_per_tag` en `use_card_action` -- version de stock inmediato de `production_delta_per_tag`) |
+| `political_alliance` | Political Alliance | X09 | 4 MC | Sin tags, evento, **Promo**, **Turmoil**. Requiere ser Party Leader de 2 partidos simultáneos (pieza nueva requirement `min_party_leader_count`). +1 TR |
+| `rego_plastics` | Rego Plastics | X10 | 10 MC | Tag building, **Promo**. Pasivo `steel_value_bonus: 1` (mismo vocabulario que Advanced Alloys) |
+| `saturn_surfing` | Saturn Surfing | X11 | 13 MC | Tags jovian+earth, **Promo**. Arranca con 1 floater por cada tag earth, incluido el propio. Acción: gasta 1 floater propio → gana 1 MC por cada floater ahí, INCLUIDO el gastado, máx 5 (pieza nueva `gains.mc_per_card_resource_including_spent`, distinta de `mc_per_card_resource` porque esta SÍ gasta 1 del mismo recurso que cuenta) |
+| `stanford_torus` | Stanford Torus | X12 | 12 MC | Tags city+power, **Promo**. "Place a city tile IN SPACE, outside and separate from the planet" -- reusa `place_city_tiles` (contador global sin mapa, mismo patrón que Phobos Space Haven/Research Outpost/Capital). Destapó un bug latente (ver nota abajo) |
+| `advertising` | Advertising | X13 | 4 MC | Tag earth, **Promo**. Pasivo `on_card_played_cost_threshold_production_delta` (pieza nueva, análoga a `on_card_played_cost_threshold_draw` del bloque 29 pero sumando producción en vez de robar cartas): al jugar cualquier carta de costo IMPRESO ≥20, +1 producción MC |
+| `asteroid_deflection_system` | Asteroid Deflection System | X14 | 13 MC | Tags earth+power+building, **Promo**. -1 producción energía (el VP por asteroide guardado no se modela). Acción: revela y descarta la carta de arriba del mazo; si tiene tag space, agrega 1 asteroide a la propia carta (pieza nueva `gains.reveal_top_deck_card_add_resource_if_tag`, resuelta en `tools.use_card_action` por necesitar el catálogo, mismo criterio que `free_trade`). La cláusula "opponents may not remove your plants" se omite (multi-jugador, sin sentido en single-player) |
+
+**Bug encontrado y corregido en la prueba de humo del bloque 32 (2026-09-07):**
+`tools.play_card`/`tools.play_prelude` calculaban `cities_delta` comparando
+`city_tiles_placed` antes/después SIN restar lo que aportó un
+`place_city_tiles` propio de la carta (contador global SIN mapa) -- el
+resultado exigía `city_hex_ids` para cartas que nunca debieron pedirlo
+(Capital, Research Outpost, Phobos Space Haven, y ahora Stanford Torus),
+rompiendo `play_card` para cualquiera de ellas. No lo agarraron los tests
+unitarios porque testean `apply_card_effect` directo, sin pasar por esta
+capa de `tools.py`. Corregido restando `effects.get("place_city_tiles", 0)`
+al `cities_delta` calculado en ambas funciones.
 
 **Nota del bloque 31 (2026-09-07):** la clave real de `use_card_action` para
 acciones con elección es `"choice"` (`action_spec["choice"]`), NO
@@ -1027,6 +1047,7 @@ ambos excluidos explícitamente del MVP. Se reevalúan si el alcance del proyect
 | 038 | Rover Construction | Bonus disparado por colocación de tile de ciudad de **cualquier jugador** — depende de multi-jugador + tiles. |
 | 147 | Herbivores | Puede decrementar la producción de otro jugador — depende de multi-jugador. |
 | C02 | Air Raid (Colonies) | Evento cuyo ÚNICO efecto es "steal 5 M€ from any player" (robo obligatorio, no "hasta N" opcional como la regla de diseño de abajo) — a diferencia de Comet/Asteroid (donde el robo es una cláusula secundaria opcional sobre un efecto garantizado), acá TODO el efecto depende de un oponente. En single-player, jugarla costaría el recurso (perder 1 floater) sin ningún beneficio — no tiene sentido cargarla como una carta "vacía" a propósito. |
+| X06 | Law Suit (Promo) | Su REQUISITO de juego (no una cláusula opcional) es "un jugador que te removió recursos o bajó tu producción ESTA generación" -- en single-player nunca hay un jugador así, la carta jamás sería legal de jugar. Distinto de Toll Station (cargada con `effects: {}`): ahí el efecto es siempre 0 pero la carta SÍ es jugable; acá cargarla con `effects: {}` dejaría jugar algo que el reglamento real nunca permitiría en esta situación. |
 
 ## Regla de diseño: "remove up to N &lt;recurso&gt; from any player"
 

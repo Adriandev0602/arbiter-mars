@@ -5196,6 +5196,69 @@ def test_party_leader_and_neutral_chairman_requirement():
         )
 
 
+def test_min_party_leader_count_requirement():
+    turmoil = {
+        "parties": {
+            "unity": {"delegates": {}, "leader": "p1"},
+            "greens": {"delegates": {}, "leader": "p1"},
+            "reds": {"delegates": {}, "leader": "p2"},
+        },
+        "dominant_party": None, "ruling_party": "greens", "chairman": None,
+    }
+    check_card_requirements({"min_party_leader_count": 2}, new_global_parameters(), turmoil=turmoil, player_id="p1")
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(
+            {"min_party_leader_count": 2}, new_global_parameters(), turmoil=turmoil, player_id="p2",
+        )
+
+
+def test_production_delta_per_distinct_tag_counts_extra_tags_once():
+    player = {**new_player_state(), "tags_played": {"power": 2, "earth": 1}}
+    effects = {"production_delta_per_distinct_tag": {"production": "mc_production", "extra_tags": ["power"]}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    # distintos: power, earth (extra_tags["power"] ya estaba, no suma un tercero)
+    assert new_player["mc_production"] == 1 + 2
+
+
+def test_production_delta_per_distinct_tag_adds_own_new_tag():
+    player = {**new_player_state(), "tags_played": {}}
+    effects = {"production_delta_per_distinct_tag": {"production": "mc_production", "extra_tags": ["power"]}}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), effects)
+    assert new_player["mc_production"] == 1 + 1  # solo el tag propio
+
+
+def test_use_card_action_mc_per_tag():
+    player = {**new_player_state(), "tags_played": {"science": 3},
+              "active_cards": {"orbital_cleanup": {"resources": 0, "action_used": False}}}
+    action_spec = {"gains": {"mc_per_tag": {"tag": "science"}}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "orbital_cleanup", action_spec)
+    assert new_player["mc"] == 3
+
+
+def test_use_card_action_mc_per_card_resource_including_spent():
+    player = register_active_card(
+        {**new_player_state(), "mc": 0}, "saturn_surfing", resource_type="floater",
+    )
+    player = {**player, "active_cards": {
+        "saturn_surfing": {**player["active_cards"]["saturn_surfing"], "resources": 4},
+    }}
+    action_spec = {"cost": {"card_resource": 1}, "gains": {"mc_per_card_resource_including_spent": {"cap": 5}}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "saturn_surfing", action_spec)
+    # tenia 4, gasta 1 (queda en 3), pero cuenta 3+1=4 incluido el pagado
+    assert new_player["mc"] == 4
+    assert new_player["active_cards"]["saturn_surfing"]["resources"] == 3
+
+
+def test_use_card_action_mc_per_card_resource_including_spent_respects_cap():
+    player = register_active_card({**new_player_state(), "mc": 0}, "saturn_surfing", resource_type="floater")
+    player = {**player, "active_cards": {
+        "saturn_surfing": {**player["active_cards"]["saturn_surfing"], "resources": 7},
+    }}
+    action_spec = {"cost": {"card_resource": 1}, "gains": {"mc_per_card_resource_including_spent": {"cap": 5}}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "saturn_surfing", action_spec)
+    assert new_player["mc"] == 5
+
+
 def test_convert_resource_amount_accepts_fractional_ratio():
     # Energy Market (X03, bloque 31): "spend 2X MC to gain X energy".
     player = register_active_card({**new_player_state(), "mc": 6, "energy": 0}, "energy_market")

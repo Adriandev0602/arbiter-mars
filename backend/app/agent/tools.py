@@ -527,7 +527,9 @@ def play_card(
     requirements = card.get("requirements") or {}
     turmoil = (
         _load_turmoil()
-        if "ruling_or_delegates" in requirements or "party_leader_and_neutral_chairman" in requirements
+        if "ruling_or_delegates" in requirements
+        or "party_leader_and_neutral_chairman" in requirements
+        or "min_party_leader_count" in requirements
         else None
     )
     engine.check_card_requirements(
@@ -614,9 +616,16 @@ def play_card(
 
     # El efecto resuelto (incluso detras de choice/tag_count_choice) puede
     # haber colocado oceano(s)/ciudad(es) -- se detecta comparando el
-    # contador global antes/despues, sin tener que re-inspeccionar `effects`.
+    # contador global antes/despues, sin tener que re-inspeccionar `effects`
+    # (salvo "place_city_tiles": ese es un contador SIN mapa -- ver seccion
+    # 3 de AGENTS.md, "areas de ciudad fuera de tablero" -- y no debe pedir
+    # hex_id; se resta su cantidad para no confundirlo con una ciudad real
+    # en el tablero, bug encontrado en la prueba de humo del bloque 32 al
+    # cargar Stanford Torus).
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
-    cities_delta = new_globals["city_tiles_placed"] - globals_["city_tiles_placed"]
+    cities_delta = (
+        new_globals["city_tiles_placed"] - globals_["city_tiles_placed"] - effects.get("place_city_tiles", 0)
+    )
     board = None
     if oceans_delta > 0 or cities_delta > 0:
         board = _load_board()
@@ -853,6 +862,18 @@ def play_card(
         threshold_spec = effect.get("on_card_played_cost_threshold_draw")
         if threshold_spec is not None and card["cost"] >= threshold_spec["min_cost"]:
             new_player = engine.draw_cards_to_hand(new_player, threshold_spec.get("draw", 1))
+        production_threshold_spec = effect.get("on_card_played_cost_threshold_production_delta")
+        if production_threshold_spec is not None and card["cost"] >= production_threshold_spec["min_cost"]:
+            # Advertising (X13, bloque 32): "when you play a card with a
+            # basic cost of 20+, +1 MC production" -- mismo patron que
+            # on_card_played_cost_threshold_draw (bloque 29), pero suma
+            # produccion en vez de robar cartas. `card["cost"]` es el costo
+            # IMPRESO del catalogo, no el efectivo pagado con descuentos.
+            key = production_threshold_spec["production"]
+            new_player = {
+                **new_player,
+                key: engine._apply_production_floor(key, new_player[key] + production_threshold_spec.get("delta", 1)),
+            }
     if card.get("is_event"):
         new_player = engine.apply_event_played_bonuses(new_player, card_tags)
         new_globals = engine.increment_events_played(new_globals)
@@ -1031,6 +1052,28 @@ def use_card_action(
             **resolved_spec,
             "cost": {k: v for k, v in resolved_spec.get("cost", {}).items() if k != "remove_own_delegates"},
         }
+
+    # Revela y descarta la carta de arriba del mazo, y si tiene el tag
+    # pedido agrega 1 recurso a la propia carta -- se resuelve ACA porque
+    # necesita el catalogo (tags de la carta revelada), igual criterio que
+    # free_trade / duplicate_production (bloque 32: Asteroid Deflection
+    # System, "reveal and discard the top card of the deck, if it has a
+    # space tag add an asteroid here").
+    reveal_spec = resolved_spec.get("gains", {}).get("reveal_top_deck_card_add_resource_if_tag")
+    if reveal_spec is not None:
+        deck = list(player["deck"])
+        matched = False
+        if deck:
+            top_card_id, deck = deck[0], deck[1:]
+            top_res = supabase.table("cards").select("tags").eq("id", top_card_id).single().execute()
+            top_tags = (top_res.data or {}).get("tags") or []
+            matched = reveal_spec["tag"] in top_tags
+            player = {**player, "deck": deck}
+        new_gains = {k: v for k, v in spec_for_engine.get("gains", {}).items()
+                     if k != "reveal_top_deck_card_add_resource_if_tag"}
+        if matched:
+            new_gains["card_resource_delta"] = new_gains.get("card_resource_delta", 0) + 1
+        spec_for_engine = {**spec_for_engine, "gains": new_gains}
 
     new_player, new_globals = engine.use_card_action(
         player, globals_, card_id, spec_for_engine,
@@ -1755,10 +1798,13 @@ def play_prelude(
         player, globals_, effects, discard_card_ids=discard_card_ids,
     )
 
-    # Colocacion de tiles: mismo patron de diff de contadores que play_card.
+    # Colocacion de tiles: mismo patron de diff de contadores que play_card
+    # (misma resta de "place_city_tiles" -- contador sin mapa, ver ahi).
     board = None
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
-    cities_delta = new_globals["city_tiles_placed"] - globals_["city_tiles_placed"]
+    cities_delta = (
+        new_globals["city_tiles_placed"] - globals_["city_tiles_placed"] - effects.get("place_city_tiles", 0)
+    )
     if oceans_delta > 0 or cities_delta > 0 or effects.get("place_greenery") is not None:
         board = _load_board()
     if oceans_delta > 0:
