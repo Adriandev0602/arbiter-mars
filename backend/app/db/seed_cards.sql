@@ -2267,3 +2267,200 @@ on conflict (id) do update set
     requirements = excluded.requirements, effects = excluded.effects;
 
 update cards set is_event = true where id in ('diversity_support');
+
+-- Bloque 38 (2026-09-08): X67-X76 y X79 (Promo). CIERRA la cola de cartas de
+-- proyecto. Piezas nuevas: spend_any_card_resource (efecto inmediato que gasta
+-- un recurso de CUALQUIER carta), min_own_city_tiles (ciudades PROPIAS, ojo:
+-- distinto de min_city_tiles que es el contador global) y gains.
+-- mc_per_city_on_mars (cuenta del tablero, no del contador, que incluye las
+-- ciudades fuera del mapa).
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'soil_enrichment', 'Soil Enrichment', 6, '{microbe,plant}', null,
+        '{"spend_any_card_resource": {"amount": 1, "resource_type": "microbe"},
+          "resource_deltas": {"plants": 5}}'::jsonb
+    ),
+    (
+        'supermarkets', 'Supermarkets', 9, '{}',
+        '{"min_city_tiles": 2}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}}'::jsonb
+    ),
+    (
+        'hospitals', 'Hospitals', 8, '{building}', null,
+        '{"production_deltas": {"energy_production": -1},
+          "becomes_active": true, "active_card_resource_type": "disease",
+          "passive": {"on_city_tile_placed_add_resource": {"resource_delta": 1}},
+          "action": {"cost": {"any_card_resource": {"amount": 1, "resource_type": "disease"}},
+                     "gains": {"mc_per_counter": "city_tiles_placed"}}}'::jsonb
+    ),
+    (
+        'public_baths', 'Public Baths', 6, '{building}',
+        '{"min_oceans": 6}'::jsonb,
+        '{"resource_deltas": {"mc": 6}}'::jsonb
+    ),
+    (
+        'city_parks', 'City Parks', 7, '{plant}',
+        '{"min_own_city_tiles": 3}'::jsonb,
+        '{"resource_deltas": {"plants": 2}}'::jsonb
+    ),
+    (
+        'casinos', 'Casinos', 5, '{building}',
+        '{"min_own_city_tiles": 1}'::jsonb,
+        '{"production_deltas": {"energy_production": -1, "mc_production": 4}}'::jsonb
+    ),
+    (
+        'protected_growth', 'Protected Growth', 2, '{plant}',
+        '{"max_oxygen": 7}'::jsonb,
+        '{"resource_delta_per_tag": {"tag": "power", "resource": "plants", "per_tag": 1}}'::jsonb
+    ),
+    (
+        'static_harvesting', 'Static Harvesting', 5, '{power}',
+        '{"max_oceans": 3}'::jsonb,
+        '{"production_deltas": {"energy_production": 1},
+          "resource_delta_per_tag": {"tag": "building", "resource": "mc", "per_tag": 1}}'::jsonb
+    ),
+    (
+        'vermin', 'Vermin', 8, '{microbe,animal}', null,
+        '{"becomes_active": true, "active_card_resource_type": "animal",
+          "passive": {"on_city_tile_placed_add_resource": {"resource_delta": 1}},
+          "action": {"choice": [
+              {"gains": {"card_resource_delta": 1}},
+              {"gains": {"target_card_resource_delta": 1}}
+          ]}}'::jsonb
+    ),
+    (
+        'weather_balloons', 'Weather Balloons', 11, '{science}', null,
+        '{"draw_cards": 1, "becomes_active": true, "active_card_resource_type": "floater",
+          "action": {"choice": [
+              {"gains": {"card_resource_delta": 1}},
+              {"cost": {"card_resource": 1}, "gains": {"mc_per_city_on_mars": true}}
+          ]}}'::jsonb
+    ),
+    (
+        'sterling_vents', 'Sterling Vents', 5, '{power,building}', null,
+        '{"production_deltas": {"heat_production": -2, "energy_production": 2}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id in ('soil_enrichment', 'protected_growth');
+
+-- ---------------------------------------------------------------------------
+-- FIX de iconografia (2026-09-08, bloque 38): tag "space" leido como "power"
+-- ---------------------------------------------------------------------------
+-- El tag POWER es un RAYO blanco sobre circulo MORADO. El SOL DORADO de 8
+-- puntas sobre circulo NEGRO es el tag SPACE. En los prompts de las tandas
+-- multi-agente de los bloques 31-36 se describio mal el icono de power ("sol
+-- dorado"), y varias cartas quedaron cargadas con `power` donde va `space`.
+--
+-- Prueba directa de ambos iconos, en cartas de este mismo set:
+--   * Magnetic Shield (X24): su REQUISITO dice "Requires 3 power tags" y
+--     muestra tres circulos MORADOS CON RAYO -> rayo morado = power.
+--   * Asteroid Deflection System (X14): su accion dice "if it has a SPACE
+--     tag" y el icono que la acompana es el SOL DORADO -> sol dorado = space.
+--
+-- Se corrigen solo las cartas verificadas una por una contra su scan. El
+-- requisito `min_tag_count power` de Magnetic Shield NO cambia: ese si son
+-- rayos morados en la carta.
+update cards set tags = '{space}'                where id = 'dusk_laser_mining';
+update cards set tags = '{space}'                where id = 'interplanetary_trade';
+update cards set tags = '{earth,space}'          where id = 'orbital_cleanup';
+update cards set tags = '{earth,space,building}' where id = 'asteroid_deflection_system';
+update cards set tags = '{earth,space}'          where id = 'imported_nutrients';
+update cards set tags = '{space}'                where id = 'magnetic_shield';
+update cards set tags = '{earth,space}'          where id = 'asteroid_rights';
+update cards set tags = '{space}'                where id = 'sixteen_psyche';
+update cards set tags = '{space}'                where id = 'icy_impactors';
+update cards set tags = '{earth,space}'          where id = 'solar_logistics';
+
+-- Interplanetary Trade cuenta "1 M€ de produccion por cada tag DISTINTO,
+-- incluido el propio": su `extra_tags` tambien tenia el tag equivocado.
+update cards
+set effects = jsonb_set(effects, '{production_delta_per_distinct_tag,extra_tags}', '["space"]'::jsonb)
+where id = 'interplanetary_trade';
+
+-- Ampliacion del fix (mismo bloque 38): tres cartas mas del bloque 33 que se
+-- cargaron con `power` sin haber mirado el scan (los informes de los agentes
+-- decian "sol dorado = power", el dato equivocado del prompt). Verificadas
+-- una por una: las tres tienen el SOL DORADO = space.
+update cards set tags = '{space}' where id in ('asteroid_hollowing', 'comet_aiming', 'directed_impactors');
+
+-- Cierre del fix: dos cartas mas de los bloques Promo verificadas contra su scan.
+-- Stanford Torus: city+space (no city+power).
+-- Mercurian Alloys: UN solo tag, space. Los dos atomos de arriba a la izquierda
+-- son el REQUISITO ("Requires 2 science tags"), no tags propios -- estaban
+-- cargados como si fueran tags science duplicados.
+update cards set tags = '{city,space}' where id = 'stanford_torus';
+update cards set tags = '{space}'      where id = 'mercurian_alloys';
+
+-- ---------------------------------------------------------------------------
+-- AUDITORIA power/space de los bloques 1-30 (2026-09-08)
+-- ---------------------------------------------------------------------------
+-- Se revisaron una por una las 62 cartas del catalogo que tenian el tag
+-- `power` y no venian de los bloques Promo (esos ya se habian auditado al
+-- cerrar la cola). Metodo: recortar la banda superior de cada scan y armar
+-- hojas de contacto de 8 cartas -- ver scripts/tag_contact_sheet.py.
+--
+-- Recordatorio de los dos iconos que se confunden:
+--   power = RAYO blanco sobre circulo MORADO
+--   space = SOL DORADO de 8 puntas sobre circulo NEGRO
+--
+-- Resultado: 20 cartas estaban bien, 42 mal. Ademas del cambio power->space
+-- aparecieron tres errores de otro tipo, todos por leer el RECUADRO DE
+-- REQUISITO (arriba a la izquierda) como si fueran tags propios.
+
+-- 1. power -> space (el error principal)
+update cards set tags = '{space}'            where id = 'comet_for_venus';
+update cards set tags = '{space}'            where id = 'galilean_waystation';
+update cards set tags = '{space}'            where id = 'hydrogen_to_venus';
+update cards set tags = '{space}'            where id = 'ice_moon_colony';
+update cards set tags = '{space}'            where id = 'mining_colony';
+update cards set tags = '{space}'            where id = 'minority_refuge';
+update cards set tags = '{space}'            where id = 'pioneer_settlement';
+update cards set tags = '{space}'            where id = 'rim_freighters';
+update cards set tags = '{space}'            where id = 'rotator_impacts';
+update cards set tags = '{space}'            where id = 'security_fleet';
+update cards set tags = '{space}'            where id = 'solar_reflectors';
+update cards set tags = '{space}'            where id = 'soletta';
+update cards set tags = '{space}'            where id = 'space_port_colony';
+update cards set tags = '{space}'            where id = 'space_station';
+update cards set tags = '{space}'            where id = 'spin_inducing_asteroid';
+update cards set tags = '{space}'            where id = 'trading_colony';
+update cards set tags = '{space}'            where id = 'water_to_venus';
+update cards set tags = '{jovian,space}'     where id = 'atmoscoop';
+update cards set tags = '{jovian,space}'     where id = 'methane_from_titan';
+update cards set tags = '{jovian,space}'     where id = 'nitrogen_from_titan';
+update cards set tags = '{jovian,space}'     where id = 'titan_shuttles';
+update cards set tags = '{science,space}'    where id = 'ceres_tech_market';
+update cards set tags = '{science,space}'    where id = 'research_colony';
+update cards set tags = '{earth,space}'      where id = 'earth_elevator';
+update cards set tags = '{earth,space}'      where id = 'interplanetary_colony_ship';
+update cards set tags = '{earth,space}'      where id = 'sky_docks';
+update cards set tags = '{space,earth}'      where id = 'lunar_exports';
+update cards set tags = '{venus,space}'      where id = 'ghg_import_from_venus';
+update cards set tags = '{venus,space}'      where id = 'giant_solar_shade';
+update cards set tags = '{venus,space}'      where id = 'orbital_reflectors';
+update cards set tags = '{venus,space}'      where id = 'venus_waystation';
+update cards set tags = '{space,city}'       where id = 'dawn_city';
+update cards set tags = '{space,earth,city}' where id = 'luna_metropolis';
+update cards set tags = '{venus,power,space}' where id = 'deuterium_export';
+
+-- 2. Tags que faltaban (la carta tiene power, pero ademas otro tag sin cargar)
+update cards set tags = '{power,building}'      where id = 'biomass_combustors';
+update cards set tags = '{power,space}'         where id = 'giant_space_mirror';
+update cards set tags = '{science,space,power}' where id = 'solar_wind_power';
+update cards set tags = '{science,space}'       where id = 'solar_probe';
+
+-- 3. Requisito leido como tags propios (mismo error que Mercurian Alloys en
+--    el bloque 38): los iconos del recuadro junto al costo NO son tags.
+--    power_supply_consortium: los 2 rayos de la izquierda son su requisito
+--    (2 tags power), su unico tag propio es power.
+--    tectonic_stress_power: los 2 atomos son el requisito (2 tags science).
+update cards set tags = '{power}'          where id = 'power_supply_consortium';
+update cards set tags = '{power,building}' where id = 'tectonic_stress_power';
+
+-- 4. Cartas SIN tags propios que tenian uno inventado (la esquina superior
+--    derecha del scan esta vacia en ambas).
+update cards set tags = '{}' where id = 'aerial_lenses';
+update cards set tags = '{}' where id = 'trade_envoys';

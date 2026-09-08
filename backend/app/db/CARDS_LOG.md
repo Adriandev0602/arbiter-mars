@@ -412,6 +412,66 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `red_ships` | Red Ships | X62 | 2 MC | **Sin tags**, **Promo (set CEO)**. Requiere 4% oxígeno. Acción: +1 M€ por cada CIUDAD y SPECIAL TILE del mapa adyacente a un océano, **de cualquier dueño** (pieza nueva `board.count_cities_and_special_tiles_adjacent_to_ocean` + `gains.mc_per_city_or_special_tile_adjacent_to_ocean`, resuelta en `tools.use_card_action` porque necesita el tablero). Los greeneries y los océanos entre sí NO cuentan |
 | `solar_logistics` | Solar Logistics | X63 | 20 MC | Tags earth+power, **Promo (set CEO)**. +2 titanio. Dos pasivos en el mismo dict: -2 M€ al jugar cartas earth, y robar 1 carta al jugar un evento con tag space (extensión: `on_event_played` acepta `draw_cards`, y admite un `tag_filter` PROPIO dentro del bonus — hacía falta porque los dos pasivos de esta carta filtran por tags distintos y un `tag_filter` compartido no alcanzaba) |
 | `teslaract` | Teslaract | X66 | 14 MC | Tags power+building, **Promo (set CEO)**. +1 TR. Acción: -1 producción de energía → +1 producción de plantas. **Sin piezas nuevas**: el `cost` de `use_card_action` ya acepta claves de producción por su rama genérica (mismo patrón que Energy Market, bloque 31) |
+| `soil_enrichment` | Soil Enrichment | X67 | 6 MC | Tags microbe+plant, evento, **Promo**. Gasta 1 microbio de CUALQUIER carta activa (pieza nueva `spend_any_card_resource`, la versión de efecto inmediato del `cost.any_card_resource` que ya existía para acciones) → +5 plantas |
+| `supermarkets` | Supermarkets | X68 | 9 MC | **Sin tags**, **Promo**. Requiere 2 ciudades EN JUEGO (contador global). +2 producción MC |
+| `hospitals` | Hospitals | X69 | 8 MC | Tag building, **Promo**. -1 producción energía. Guarda "disease". Pasivo: +1 disease cada vez que se coloca una ciudad. Acción: gasta 1 disease de CUALQUIER carta (`cost.any_card_resource`) → +1 MC por ciudad en juego |
+| `public_baths` | Public Baths | X70 | 6 MC | Tag building, **Promo**. Requiere 6 océanos. +6 MC |
+| `city_parks` | City Parks | X71 | 7 MC | Tag plant, **Promo**. Requiere 3 ciudades **PROPIAS** (pieza nueva `min_own_city_tiles`). +2 plantas |
+| `casinos` | Casinos | X72 | 5 MC | Tag building, **Promo**. Requiere 1 ciudad **PROPIA**. -1 producción energía, +4 producción MC |
+| `protected_growth` | Protected Growth | X73 | 2 MC | Tag plant, evento, **Promo**. Requiere oxígeno ≤7%. +1 planta por cada tag power. El nombre es temático: NO tiene la cláusula de protección multi-jugador de Protected Habitats |
+| `static_harvesting` | Static Harvesting | X74 | 5 MC | Tag power, **Promo**. Requiere máximo 3 océanos. +1 producción energía y +1 MC por tag building |
+| `vermin` | Vermin | X75 | 8 MC | Tags microbe+animal, **Promo**. Guarda animales. Pasivo: +1 animal al colocarse cualquier ciudad. Acción con elección: +1 animal a sí misma, O +1 microbio a OTRA carta. El "-1 VP por ciudad si hay 10+ animales acá" no se modela (VP) |
+| `weather_balloons` | Weather Balloons | X76 | 11 MC | Tag science, **Promo**. Roba 1 carta. Guarda floaters. Acción con elección: +1 floater, O gastar 1 floater → +1 MC por ciudad **EN MARTE** (pieza nueva `gains.mc_per_city_on_mars`, que cuenta los tiles del TABLERO — el contador global `city_tiles_placed` incluye las ciudades fuera del mapa, que no están "on Mars") |
+| `sterling_vents` | Sterling Vents | X79 | 5 MC | Tags power+building, **Promo**. -2 producción calor, +2 producción energía |
+
+## ⚠️ Iconografía de tags: `power` vs `space` (error corregido en el bloque 38)
+
+**El tag `power` es un RAYO blanco sobre círculo MORADO. El SOL DORADO de 8 puntas sobre círculo
+NEGRO es el tag `space`.** Son dos íconos distintos y es fácil confundirlos si uno no los tiene
+al lado.
+
+En los prompts de las tandas multi-agente de los bloques 31-36 el ícono de `power` se describió
+mal ("sol dorado"), y ese error se propagó: varias cartas quedaron cargadas con `power` donde
+correspondía `space`. **Prueba directa de cada ícono, en cartas de este mismo set:**
+- **Magnetic Shield (X24):** su REQUISITO dice *"Requires 3 power tags"* y muestra tres círculos
+  MORADOS CON RAYO → rayo morado = `power`.
+- **Asteroid Deflection System (X14):** su acción dice *"if it has a SPACE tag"* y el ícono que
+  la acompaña es el SOL DORADO → sol dorado = `space`.
+
+**Corregidas en el bloque 38** (verificadas una por una contra su scan): `dusk_laser_mining`,
+`interplanetary_trade` (también su `extra_tags`), `orbital_cleanup`, `asteroid_deflection_system`,
+`imported_nutrients`, `magnetic_shield`, `asteroid_rights`, `sixteen_psyche`, `icy_impactors`,
+`solar_logistics`. El requisito `min_tag_count: power` de Magnetic Shield NO se tocó: ahí sí son
+rayos morados.
+
+**Confirmadas como `power` correcto** (rayo morado en el scan): `energy_market`,
+`field_capped_city`, `supercapacitors`, `neptunian_power_consultants`, `teslaract`,
+`static_harvesting`, `sterling_vents`.
+
+**AUDITORÍA COMPLETADA (2026-09-08).** Se revisaron una por una las **62 cartas** del catálogo
+que tenían `power` y no venían de los bloques Promo. Resultado: **20 estaban bien y 42 mal.**
+El catálogo pasó de 71 a 33 cartas con `power`, y de 46 a 84 con `space`.
+
+**Cómo se hizo, para repetirlo:** abrir 62 scans completos es caro e invita a equivocarse. En vez
+de eso, `scripts/tag_contact_sheet.py` recorta la banda superior de cada scan (costo + recuadro de
+requisito + tags) y arma hojas de contacto de 8 cartas etiquetadas con su `card_id`. Ocho hojas
+alcanzaron para las 62, y con las bandas una debajo de otra la diferencia entre el rayo morado y
+el sol dorado es obvia. Los scans se bajaron espaciados 3 s, como siempre.
+
+Además del `power` → `space`, la auditoría destapó **tres errores de otro tipo**:
+- **Tags que faltaban:** `biomass_combustors` (le faltaba `building`), `giant_space_mirror`
+  (`space`), `solar_wind_power` (`space`), `solar_probe` (`science`).
+- **Requisito leído como tags propios**, el mismo error que Mercurian Alloys:
+  `power_supply_consortium` estaba con `{power,power}` cuando los dos rayos de la izquierda son su
+  *requisito*, y `tectonic_stress_power` con dos `science` que también eran requisito.
+- **Tags inventados:** `aerial_lenses` y `trade_envoys` no tienen ningún tag; la esquina superior
+  derecha de ambas está vacía.
+
+**Efecto secundario esperado:** los tres requisitos que piden tags `power`
+(`fusion_power` y `power_supply_consortium` con 2, `magnetic_shield` con 3) ahora son
+genuinamente más difíciles de cumplir, porque antes se contaban como `power` 38 cartas que no lo
+eran. Es la corrección, no una regresión.
+
 | `diversity_support` | Diversity Support | X20 | 1 MC | **Sin tags**, evento, **Promo**. Requiere tener 9 TIPOS de recurso distintos (pieza nueva `min_distinct_resource_types`: los 6 de stock con cantidad > 0 más cada tipo guardado en cartas activas — ver `count_distinct_resource_types`). +1 TR. Estuvo pendiente desde el bloque 33 hasta que el retrofit de microbios/animales del bloque 34 hizo confiable el conteo |
 | `kaguya_tech` | Kaguya Tech | X58 | 2 MC | **Sin tags**, **Promo (set CEO)**. +2 producción MC, roba 1 carta, y **remueve un greenery PROPIO para poner una ciudad en ese mismo hexágono** (pieza nueva `convert_own_greenery_to_city` + `board.remove_greenery_tile`), ignorando la restricción de adyacencia entre ciudades y cobrando los bonus de colocación normales. **NO toca el oxígeno** (lo aclara el texto impreso), a diferencia de colocar un greenery |
 | `mars_nomads` | Mars Nomads | X59 | 13 MC | **Sin tags**, **Promo (set CEO)**. Coloca los "Nomads" (marcador móvil, `place_nomads`) en un hexágono vacío. Acción: moverlos a un hexágono adyacente vacío cobrando el bonus impreso de ese hex (`move_nomads`) — ver sección "Marcadores en el tablero" |

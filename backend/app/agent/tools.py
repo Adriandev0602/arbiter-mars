@@ -569,6 +569,19 @@ def play_card(
                 f"Requiere {min_greeneries} greenery(s) propios en el mapa, hay {own_greeneries}"
             )
 
+    # Ciudades PROPIAS en el mapa. Distinto de `min_city_tiles`, que cuenta
+    # el contador global de ciudades de CUALQUIER jugador (e incluye las de
+    # fuera del mapa): estas cartas dicen "requires that YOU have N city
+    # tiles" (ej. City Parks: 3; Casinos: 1), asi que se cuentan del tablero
+    # filtrando por dueno, igual que min_greenery_tiles_owned.
+    min_own_cities = requirements.get("min_own_city_tiles")
+    if min_own_cities is not None:
+        own_cities = boardlib.count_tiles_of_type(_load_board(), "city", owner=player_id)
+        if own_cities < min_own_cities:
+            raise engine.CardRequirementNotMetError(
+                f"Requiere {min_own_cities} ciudad(es) propias en el mapa, hay {own_cities}"
+            )
+
     # Ciudad adyacente a oceano: de cualquier jugador (Outdoor Sports) o
     # propia (Aqueduct Systems). Tambien necesita el tablero, igual que el
     # requisito de greeneries de arriba.
@@ -1184,7 +1197,19 @@ def use_card_action(
     # necesita el tablero, igual que los requisitos de adyacencia: se
     # convierte a un resource_deltas concreto antes de llamar al motor.
     board_mc_spec = resolved_spec.get("gains", {}).get("mc_per_city_or_special_tile_adjacent_to_ocean")
+    city_on_mars_spec = resolved_spec.get("gains", {}).get("mc_per_city_on_mars")
     spec_for_engine = action_spec
+    if city_on_mars_spec:
+        # Weather Balloons (X76, bloque 38): "gain 1 M€ per city ON MARS".
+        # Se cuenta del TABLERO, no del contador global `city_tiles_placed`,
+        # que tambien suma las ciudades fuera del mapa (Stanford Torus,
+        # Maxwell Base, ...) -- esas no estan "on Mars".
+        earned = boardlib.count_tiles_of_type(_load_board(), "city")
+        new_gains = {k: v for k, v in resolved_spec.get("gains", {}).items() if k != "mc_per_city_on_mars"}
+        resource_deltas = {**new_gains.get("resource_deltas", {})}
+        resource_deltas["mc"] = resource_deltas.get("mc", 0) + earned
+        new_gains["resource_deltas"] = resource_deltas
+        spec_for_engine = {**resolved_spec, "gains": new_gains}
     if board_mc_spec:
         earned = boardlib.count_cities_and_special_tiles_adjacent_to_ocean(_load_board())
         new_gains = {k: v for k, v in resolved_spec.get("gains", {}).items()

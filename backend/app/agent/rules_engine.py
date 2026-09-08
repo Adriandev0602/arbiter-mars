@@ -789,6 +789,12 @@ def check_card_requirements(
         "New Government" -- ver turmoil.py). Requiere pasar `turmoil` y
         `player_id` (ej. Vote of No Confidence, bloque 31: reemplaza al
         Chairman neutral, efecto `become_chairman_from_neutral`).
+      - "min_own_city_tiles": N -- ciudades PROPIAS del jugador en el mapa
+        (ej. City Parks: "requires that YOU have 3 city tiles"; Casinos: 1).
+        Distinto de "min_city_tiles", que mira el contador global de
+        ciudades de CUALQUIER jugador e incluye las de fuera del mapa. Se
+        resuelve en tools.play_card, que es quien tiene el tablero (mismo
+        criterio que min_greenery_tiles_owned).
       - "min_distinct_resource_types": N -- requiere tener al menos N TIPOS
         de recurso distintos ahora mismo, contando los 6 de stock (mc,
         steel, titanium, plants, energy, heat) con cantidad > 0 mas cada
@@ -1664,6 +1670,36 @@ def apply_card_effect(
             new_player["pending_requirement_tolerance_steps"]
             + abs(effects["next_card_requirement_tolerance_steps"])
         )
+
+    if "spend_any_card_resource" in effects:
+        # Soil Enrichment (X67, bloque 38): "spend 1 microbe from ANY of your
+        # cards to gain 5 plants", como efecto INMEDIATO de un evento. El
+        # analogo `cost.any_card_resource` ya existia, pero solo para acciones
+        # repetibles (use_card_action); esta es su version para
+        # apply_card_effect. El recurso se DESTRUYE (no se mueve a otra carta,
+        # a diferencia de move_from_target_card_resource_delta).
+        spec = effects["spend_any_card_resource"]
+        needed = spec.get("amount", 1)
+        if target_card_id is None:
+            raise CardEffectError("Esta carta requiere target_card_id (de que carta sacar el recurso)")
+        active_cards = new_player["active_cards"]
+        if target_card_id not in active_cards:
+            raise CardEffectError(f"La carta objetivo '{target_card_id}' no esta activa para este jugador")
+        resource_type = spec.get("resource_type")
+        if resource_type is not None and active_cards[target_card_id].get("resource_type") != resource_type:
+            raise CardEffectError(f"'{target_card_id}' no guarda recursos de tipo '{resource_type}'")
+        if active_cards[target_card_id]["resources"] < needed:
+            raise InsufficientResourcesError(
+                f"'{target_card_id}' tiene {active_cards[target_card_id]['resources']} recursos, "
+                f"se necesitan {needed}"
+            )
+        new_player["active_cards"] = {
+            **active_cards,
+            target_card_id: {
+                **active_cards[target_card_id],
+                "resources": active_cards[target_card_id]["resources"] - needed,
+            },
+        }
 
     if "target_card_resource_delta" in effects:
         amount = effects["target_card_resource_delta"]
