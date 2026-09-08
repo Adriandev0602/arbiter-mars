@@ -138,11 +138,25 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 31)
+### 📍 Punto de retoma (última sesión: 2026-09-07, bloque 32)
 
-**Progreso:** catálogo en **349 cartas de proyecto**, **36 Global Events** y **48 cartas
-Prelude**. Colas: 61 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
+**Progreso:** catálogo en **358 cartas de proyecto**, **36 Global Events** y **48 cartas
+Prelude**. Colas: 51 cartas de proyecto sin revisar; la cola de preludes quedó en **0 sin
 revisar** (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes por mecánica).
+
+**Bloque 32 (2026-09-07): 9 de 10 cargadas** (X05, X07-X14 Promo; X06 Law Suit fuera de
+alcance -- su requisito de juego depende de un oponente, nunca se cumple en single-player).
+Piezas de motor nuevas: `production_delta_per_distinct_tag` (Interplanetary Trade, cuenta
+tags DISTINTOS en vez de repeticiones de uno); `gains.mc_per_tag` en `use_card_action`
+(Orbital Cleanup); requirement `min_party_leader_count` (Political Alliance); `gains.
+mc_per_card_resource_including_spent` (Saturn Surfing, suma de vuelta lo gastado antes de
+contar); passive `on_card_played_cost_threshold_production_delta` (Advertising, análoga a la
+de robar cartas del bloque 29); `gains.reveal_top_deck_card_add_resource_if_tag`, resuelta en
+`tools.use_card_action` por necesitar el catálogo (Asteroid Deflection System, mismo criterio
+que `free_trade`). **Bug encontrado y corregido:** `cities_delta` en `tools.play_card`/
+`play_prelude` no restaba lo aportado por un `place_city_tiles` propio (contador sin mapa),
+rompiendo la jugabilidad real de Capital/Research Outpost/Phobos Space Haven (nunca agarrado
+por los tests unitarios, que no pasan por `tools.py`) -- ver detalle en `CARDS_LOG.md`.
 
 **Bloque 31 (2026-09-07): 9 de 10 cargadas** (T12-T16 Turmoil, X01-X04 Promo; T11 Recruitment
 pendiente por mecánica). Piezas de motor nuevas: requirement
@@ -334,7 +348,7 @@ Colonies), la única exclusión permanente por diseño (robo obligatorio sin sen
 single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 
 **Para retomar:** mismo flujo que bloques anteriores: `git checkout main && git pull && git
-checkout -b feat/review-block-32`, consultar
+checkout -b feat/review-block-33`, consultar
 la cola en Supabase (conexión directa con `psycopg2` y parámetros individuales de
 host/user/password — el `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que
 rompe el parseo de `psycopg2.connect(url)` con un solo string), descargar los 10 scans

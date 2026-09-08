@@ -1920,3 +1920,56 @@ on conflict (id) do update set
     requirements = excluded.requirements, effects = excluded.effects;
 
 update cards set is_event = true where id in ('red_tourism_wave', 'vote_of_no_confidence', 'project_inspection');
+
+-- Bloque 32 (2026-09-07): X05-X14 (Promo), salvo X06 Law Suit (fuera de
+-- alcance -- su unico target valido es "un jugador que te removio recursos
+-- este generacion", inexistente en single-player). Ver CARDS_LOG.md.
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'interplanetary_trade', 'Interplanetary Trade', 27, '{power}', null,
+        '{"production_delta_per_distinct_tag": {"production": "mc_production", "extra_tags": ["power"]}}'::jsonb
+    ),
+    (
+        'mercurian_alloys', 'Mercurian Alloys', 3, '{science,science,power}',
+        '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"passive": {"titanium_value_bonus": 1}}'::jsonb
+    ),
+    (
+        'orbital_cleanup', 'Orbital Cleanup', 14, '{earth,power}', null,
+        '{"production_deltas": {"mc_production": -2}, "becomes_active": true,
+          "action": {"gains": {"mc_per_tag": {"tag": "science"}}}}'::jsonb
+    ),
+    (
+        'political_alliance', 'Political Alliance', 4, '{}',
+        '{"min_party_leader_count": 2}'::jsonb,
+        '{"tr_delta": 1}'::jsonb
+    ),
+    (
+        'rego_plastics', 'Rego Plastics', 10, '{building}', null,
+        '{"passive": {"steel_value_bonus": 1}}'::jsonb
+    ),
+    (
+        'saturn_surfing', 'Saturn Surfing', 13, '{jovian,earth}', null,
+        '{"becomes_active": true,
+          "active_card_resource_type": "floater",
+          "active_card_starting_resources_per_tag": {"tag": "earth", "per_tag": 1, "include_this": true},
+          "action": {"cost": {"card_resource": 1},
+                     "gains": {"mc_per_card_resource_including_spent": {"cap": 5}}}}'::jsonb
+    ),
+    (
+        'stanford_torus', 'Stanford Torus', 12, '{city,power}', null,
+        '{"place_city_tiles": 1}'::jsonb
+    ),
+    (
+        'advertising', 'Advertising', 4, '{earth}', null,
+        '{"passive": {"on_card_played_cost_threshold_production_delta": {"min_cost": 20, "production": "mc_production", "delta": 1}}}'::jsonb
+    ),
+    (
+        'asteroid_deflection_system', 'Asteroid Deflection System', 13, '{earth,power,building}', null,
+        '{"production_deltas": {"energy_production": -1}, "becomes_active": true,
+          "active_card_resource_type": "asteroid",
+          "action": {"gains": {"reveal_top_deck_card_add_resource_if_tag": {"tag": "space"}}}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
