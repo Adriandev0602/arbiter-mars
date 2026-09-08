@@ -2393,3 +2393,74 @@ update cards set tags = '{space}' where id in ('asteroid_hollowing', 'comet_aimi
 -- cargados como si fueran tags science duplicados.
 update cards set tags = '{city,space}' where id = 'stanford_torus';
 update cards set tags = '{space}'      where id = 'mercurian_alloys';
+
+-- ---------------------------------------------------------------------------
+-- AUDITORIA power/space de los bloques 1-30 (2026-09-08)
+-- ---------------------------------------------------------------------------
+-- Se revisaron una por una las 62 cartas del catalogo que tenian el tag
+-- `power` y no venian de los bloques Promo (esos ya se habian auditado al
+-- cerrar la cola). Metodo: recortar la banda superior de cada scan y armar
+-- hojas de contacto de 8 cartas -- ver scripts/tag_contact_sheet.py.
+--
+-- Recordatorio de los dos iconos que se confunden:
+--   power = RAYO blanco sobre circulo MORADO
+--   space = SOL DORADO de 8 puntas sobre circulo NEGRO
+--
+-- Resultado: 20 cartas estaban bien, 42 mal. Ademas del cambio power->space
+-- aparecieron tres errores de otro tipo, todos por leer el RECUADRO DE
+-- REQUISITO (arriba a la izquierda) como si fueran tags propios.
+
+-- 1. power -> space (el error principal)
+update cards set tags = '{space}'            where id = 'comet_for_venus';
+update cards set tags = '{space}'            where id = 'galilean_waystation';
+update cards set tags = '{space}'            where id = 'hydrogen_to_venus';
+update cards set tags = '{space}'            where id = 'ice_moon_colony';
+update cards set tags = '{space}'            where id = 'mining_colony';
+update cards set tags = '{space}'            where id = 'minority_refuge';
+update cards set tags = '{space}'            where id = 'pioneer_settlement';
+update cards set tags = '{space}'            where id = 'rim_freighters';
+update cards set tags = '{space}'            where id = 'rotator_impacts';
+update cards set tags = '{space}'            where id = 'security_fleet';
+update cards set tags = '{space}'            where id = 'solar_reflectors';
+update cards set tags = '{space}'            where id = 'soletta';
+update cards set tags = '{space}'            where id = 'space_port_colony';
+update cards set tags = '{space}'            where id = 'space_station';
+update cards set tags = '{space}'            where id = 'spin_inducing_asteroid';
+update cards set tags = '{space}'            where id = 'trading_colony';
+update cards set tags = '{space}'            where id = 'water_to_venus';
+update cards set tags = '{jovian,space}'     where id = 'atmoscoop';
+update cards set tags = '{jovian,space}'     where id = 'methane_from_titan';
+update cards set tags = '{jovian,space}'     where id = 'nitrogen_from_titan';
+update cards set tags = '{jovian,space}'     where id = 'titan_shuttles';
+update cards set tags = '{science,space}'    where id = 'ceres_tech_market';
+update cards set tags = '{science,space}'    where id = 'research_colony';
+update cards set tags = '{earth,space}'      where id = 'earth_elevator';
+update cards set tags = '{earth,space}'      where id = 'interplanetary_colony_ship';
+update cards set tags = '{earth,space}'      where id = 'sky_docks';
+update cards set tags = '{space,earth}'      where id = 'lunar_exports';
+update cards set tags = '{venus,space}'      where id = 'ghg_import_from_venus';
+update cards set tags = '{venus,space}'      where id = 'giant_solar_shade';
+update cards set tags = '{venus,space}'      where id = 'orbital_reflectors';
+update cards set tags = '{venus,space}'      where id = 'venus_waystation';
+update cards set tags = '{space,city}'       where id = 'dawn_city';
+update cards set tags = '{space,earth,city}' where id = 'luna_metropolis';
+update cards set tags = '{venus,power,space}' where id = 'deuterium_export';
+
+-- 2. Tags que faltaban (la carta tiene power, pero ademas otro tag sin cargar)
+update cards set tags = '{power,building}'      where id = 'biomass_combustors';
+update cards set tags = '{power,space}'         where id = 'giant_space_mirror';
+update cards set tags = '{science,space,power}' where id = 'solar_wind_power';
+update cards set tags = '{science,space}'       where id = 'solar_probe';
+
+-- 3. Requisito leido como tags propios (mismo error que Mercurian Alloys en
+--    el bloque 38): los iconos del recuadro junto al costo NO son tags.
+--    power_supply_consortium: los 2 rayos de la izquierda son su requisito
+--    (2 tags power), su unico tag propio es power.
+--    tectonic_stress_power: los 2 atomos son el requisito (2 tags science).
+update cards set tags = '{power}'          where id = 'power_supply_consortium';
+update cards set tags = '{power,building}' where id = 'tectonic_stress_power';
+
+-- 4. Cartas SIN tags propios que tenian uno inventado (la esquina superior
+--    derecha del scan esta vacia en ambas).
+update cards set tags = '{}' where id = 'aerial_lenses';
+update cards set tags = '{}' where id = 'trade_envoys';

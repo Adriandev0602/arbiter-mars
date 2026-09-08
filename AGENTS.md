@@ -138,7 +138,7 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-08, bloque 38: COLA DE PROYECTOS CERRADA)
+### 📍 Punto de retoma (última sesión: 2026-09-08, auditoría de tags completada)
 
 **Progreso:** catálogo en **408 cartas de proyecto**, **36 Global Events** y **48 cartas
 Prelude**. **La cola `card_review_queue` quedó en 0: no hay más cartas de proyecto por revisar.**
@@ -161,13 +161,19 @@ Magnetic Shield dice "Requires 3 power tags" junto a rayos morados, y Asteroid D
 dice "if it has a SPACE tag" junto al sol dorado. Se corrigieron 10 cartas verificadas una por
 una (ver "Iconografía de tags" en `CARDS_LOG.md`).
 
-**AUDITORÍA PENDIENTE, el próximo trabajo natural:** las cartas de los bloques 1-30 nunca se
-revisaron con ese criterio y hay varias con `power` que parecen `space` (`space_station`,
-`mining_colony`, `soletta`, `lunar_beam`, `titan_shuttles`, `rim_freighters`,
-`giant_space_mirror`, `nitrogen_from_titan`, `interplanetary_colony_ship`, ...). Hay que volver a
-bajar cada scan (espaciado 3s) y mirarlo, sin adivinar. Importa porque el tag alimenta
-requisitos de otras cartas (`min_tag_count`), descuentos por tag y conteos como
-`production_delta_per_distinct_tag`.
+**AUDITORÍA COMPLETADA (2026-09-08).** Se revisaron las 62 cartas con `power` de los bloques
+1-30: **20 estaban bien, 42 mal.** El catálogo pasó de 71 a 33 cartas con `power` y de 46 a 84
+con `space`. Aparecieron además tres errores de otro tipo: tags que faltaban
+(`biomass_combustors`, `giant_space_mirror`, `solar_wind_power`, `solar_probe`), requisitos
+leídos como tags propios (`power_supply_consortium`, `tectonic_stress_power` — el mismo error que
+Mercurian Alloys) y dos cartas con un tag inventado que en el scan no tienen ninguno
+(`aerial_lenses`, `trade_envoys`). Detalle completo en `CARDS_LOG.md`.
+
+**Herramienta nueva, reusable:** `backend/scripts/tag_contact_sheet.py` recorta la banda superior
+de cada scan (costo + recuadro de requisito + tags) y arma hojas de contacto de 8 cartas
+etiquetadas. Verificar 62 cartas costó 8 hojas en vez de 62 scans completos, y con las bandas
+apiladas la diferencia entre el rayo morado y el sol dorado salta a la vista. **Usarla para
+cualquier auditoría visual futura del catálogo.**
 
 **Bloque 37 (2026-09-08): NO fue revisión de cola, sino resolver mecánicas pendientes.** Se
 cargaron las 5 cartas que estaban trabadas: las 4 del bloque 36 (Kaguya Tech, Mars Nomads,
@@ -465,8 +471,7 @@ single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 **Para retomar: la cola de cartas de proyecto está VACÍA**, así que el flujo de "revisar un
 bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 
-1. **Auditoría de tags `power`/`space` en los bloques 1-30** (ver el aviso de iconografía más
-   arriba). Es el trabajo más valioso: mecánico, acotado y corrige datos ya cargados.
+1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
 2. **Corporaciones (48 cartas):** el hueco grande que sigue sin modelarse en ningún lado
    (`enqueue_card_review_queue.py` filtraba `cat != "Project"`, así que nunca entraron al
    pipeline). Necesitan tabla, cola y mecánica propias, como se hizo con Prelude.

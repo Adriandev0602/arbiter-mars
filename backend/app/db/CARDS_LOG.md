@@ -448,14 +448,29 @@ rayos morados.
 `field_capped_city`, `supercapacitors`, `neptunian_power_consultants`, `teslaract`,
 `static_harvesting`, `sterling_vents`.
 
-**AUDITORÍA PENDIENTE:** las cartas cargadas en los bloques 1-30 (sesiones anteriores) nunca se
-revisaron con este criterio, y en el catálogo hay varias con `power` que temáticamente parecen
-`space` — por ejemplo `space_station`, `mining_colony`, `soletta`, `lunar_beam`, `titan_shuttles`,
-`rim_freighters`, `giant_space_mirror`, `nitrogen_from_titan`, `interplanetary_colony_ship`. **No
-se corrigieron porque no hay que adivinar:** hace falta volver a bajar cada scan (espaciado 3s) y
-mirarlo. Es un trabajo acotado y mecánico, y vale la pena hacerlo antes de dar el catálogo por
-cerrado: el tag afecta requisitos de otras cartas (`min_tag_count`), descuentos por tag y
-conteos como `production_delta_per_distinct_tag`.
+**AUDITORÍA COMPLETADA (2026-09-08).** Se revisaron una por una las **62 cartas** del catálogo
+que tenían `power` y no venían de los bloques Promo. Resultado: **20 estaban bien y 42 mal.**
+El catálogo pasó de 71 a 33 cartas con `power`, y de 46 a 84 con `space`.
+
+**Cómo se hizo, para repetirlo:** abrir 62 scans completos es caro e invita a equivocarse. En vez
+de eso, `scripts/tag_contact_sheet.py` recorta la banda superior de cada scan (costo + recuadro de
+requisito + tags) y arma hojas de contacto de 8 cartas etiquetadas con su `card_id`. Ocho hojas
+alcanzaron para las 62, y con las bandas una debajo de otra la diferencia entre el rayo morado y
+el sol dorado es obvia. Los scans se bajaron espaciados 3 s, como siempre.
+
+Además del `power` → `space`, la auditoría destapó **tres errores de otro tipo**:
+- **Tags que faltaban:** `biomass_combustors` (le faltaba `building`), `giant_space_mirror`
+  (`space`), `solar_wind_power` (`space`), `solar_probe` (`science`).
+- **Requisito leído como tags propios**, el mismo error que Mercurian Alloys:
+  `power_supply_consortium` estaba con `{power,power}` cuando los dos rayos de la izquierda son su
+  *requisito*, y `tectonic_stress_power` con dos `science` que también eran requisito.
+- **Tags inventados:** `aerial_lenses` y `trade_envoys` no tienen ningún tag; la esquina superior
+  derecha de ambas está vacía.
+
+**Efecto secundario esperado:** los tres requisitos que piden tags `power`
+(`fusion_power` y `power_supply_consortium` con 2, `magnetic_shield` con 3) ahora son
+genuinamente más difíciles de cumplir, porque antes se contaban como `power` 38 cartas que no lo
+eran. Es la corrección, no una regresión.
 
 | `diversity_support` | Diversity Support | X20 | 1 MC | **Sin tags**, evento, **Promo**. Requiere tener 9 TIPOS de recurso distintos (pieza nueva `min_distinct_resource_types`: los 6 de stock con cantidad > 0 más cada tipo guardado en cartas activas — ver `count_distinct_resource_types`). +1 TR. Estuvo pendiente desde el bloque 33 hasta que el retrofit de microbios/animales del bloque 34 hizo confiable el conteo |
 | `kaguya_tech` | Kaguya Tech | X58 | 2 MC | **Sin tags**, **Promo (set CEO)**. +2 producción MC, roba 1 carta, y **remueve un greenery PROPIO para poner una ciudad en ese mismo hexágono** (pieza nueva `convert_own_greenery_to_city` + `board.remove_greenery_tile`), ignorando la restricción de adyacencia entre ciudades y cobrando los bonus de colocación normales. **NO toca el oxígeno** (lo aclara el texto impreso), a diferencia de colocar un greenery |
