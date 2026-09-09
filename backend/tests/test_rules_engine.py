@@ -23,6 +23,9 @@ from app.agent.rules_engine import (
     apply_corporation_start,
     apply_new_distinct_tag_bonuses,
     apply_cost_threshold_mc_bonuses,
+    apply_hex_bonus_tile_bonuses,
+    ocean_adjacency_bonus_mc,
+    apply_any_tag_played_choice,
     place_ocean,
     place_city_tile,
     standard_project_sell_patents,
@@ -4898,6 +4901,76 @@ def test_snapshot_card_resource_totals_agrupa_por_tipo():
     player = register_active_card(player, "ants", initial_resources=2, resource_type="microbe")
     player = register_active_card(player, "ironworks")  # sin resource_type: no aparece
     assert snapshot_card_resource_totals(player) == {"animal": 4, "microbe": 2}
+
+
+def test_on_ocean_placed_acepta_production_deltas():
+    # Lakefront Resorts: +1 produccion de M€ cada vez que se coloca un oceano.
+    player = register_passive_effect(new_player_state(), "lakefront_resorts",
+                                     {"on_ocean_placed": {"production_deltas": {"mc_production": 1}}})
+    base = player["mc_production"]
+    new_player, _ = place_ocean(player, new_global_parameters())
+    assert new_player["mc_production"] == base + 1
+
+
+def test_ocean_adjacency_bonus_mc_override():
+    player = new_player_state()
+    assert ocean_adjacency_bonus_mc(player) == 2
+    lakefront = register_passive_effect(player, "lakefront_resorts", {"ocean_adjacency_bonus_mc": 3})
+    assert ocean_adjacency_bonus_mc(lakefront) == 3
+
+
+def test_on_hex_bonus_tile_placed_solo_con_el_recurso_pedido():
+    # Mining Guild: +1 produccion de acero al colocar sobre un hex con bonus
+    # de acero o titanio; un hex de plantas o sin bonus no paga.
+    player = register_passive_effect(new_player_state(), "mining_guild", {
+        "on_hex_bonus_tile_placed": {"matching_resources": ["steel", "titanium"],
+                                     "production_deltas": {"steel_production": 1}},
+    })
+    base = player["steel_production"]
+    assert apply_hex_bonus_tile_bonuses(player, [("plant", 2)])["steel_production"] == base
+    assert apply_hex_bonus_tile_bonuses(player, [])["steel_production"] == base
+    assert apply_hex_bonus_tile_bonuses(player, [("titanium", 1)])["steel_production"] == base + 1
+    # un hex con DOS recursos que matchean paga una sola vez
+    assert apply_hex_bonus_tile_bonuses(player, [("steel", 2), ("titanium", 1)])["steel_production"] == base + 1
+
+
+def test_accion_requires_zero_resource():
+    # Factorum: la opcion solo esta disponible con 0 de energia en stock.
+    player = register_active_card(new_player_state(), "factorum")
+    spec = {"requires_zero_resource": "energy", "cost": {},
+            "gains": {"production_deltas": {"energy_production": 1}}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "factorum", spec)
+    assert new_player["energy_production"] == player["energy_production"] + 1
+
+    con_energia = {**player, "energy": 3}
+    with pytest.raises(CardEffectError):
+        use_card_action(con_energia, new_global_parameters(), "factorum", spec)
+
+
+def test_accion_card_resource_delta_per_tag():
+    # Kuiper Cooperative: 1 asteroide por cada tag space que tenga el jugador.
+    player = register_active_card(new_player_state(), "kuiper_cooperative",
+                                  initial_resources=0, resource_type="asteroid")
+    player = increment_tags_played(player, ("space", "space", "earth"))
+    spec = {"cost": {}, "gains": {"card_resource_delta_per_tag": {"tag": "space", "per_tag": 1}}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "kuiper_cooperative", spec)
+    assert new_player["active_cards"]["kuiper_cooperative"]["resources"] == 2
+
+
+def test_any_tag_played_choice_target_any_card():
+    # Ecotec: "add 1 microbe to ANY card" -- el destino lo elige el jugador,
+    # no es la carta recien jugada (que es lo que hace Viral Enhancers).
+    player = register_active_card(new_player_state(), "ants", initial_resources=0, resource_type="microbe")
+    player = register_active_card(player, "pets", initial_resources=0, resource_type="animal")
+    player = register_passive_effect(player, "ecotec", {"on_any_tag_played_choice": {
+        "matching_tags": ["microbe", "plant", "animal"],
+        "add_resource_choice": {"resource_delta": 1, "target_any_card": True},
+        "gain_resource_choice": {"resource": "plants", "amount": 1},
+    }})
+    new_player = apply_any_tag_played_choice(player, "pets", ("animal",), "add", target_card_id="ants")
+    assert new_player["active_cards"]["ants"]["resources"] == 1
+    assert new_player["active_cards"]["pets"]["resources"] == 0
+    assert apply_any_tag_played_choice(player, "pets", ("animal",), "gain")["plants"] == 1
 
 
 def test_apply_corporation_start_pone_produccion_en_cero():

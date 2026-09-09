@@ -117,3 +117,106 @@ where q.name = m.nombre;
 -- Revisada pero pendiente por mecanica (ver CARDS_LOG.md).
 update corporation_review_queue set reviewed = true, corporation_id = null
 where name = 'Arcadian Communities';
+
+-- Bloque 2 (Ecotec -> Mons Insurance): 9 de 10 cargadas. Manutech queda
+-- pendiente (ver CARDS_LOG.md): su efecto exige un hook generico "subio una
+-- produccion", y hoy cada sitio del motor incrementa produccion por su cuenta.
+--
+-- TAGS: esta tanda fue la peor de todas -- SIETE informes leyeron el circulo
+-- del extremo superior derecho como "logo/insignia de la corporacion" cuando
+-- es el TAG PROPIO. Verificado en hoja de contacto: el circulo marron con la
+-- forma de casa es `building` (Interplanetary Cinematics, Lakefront Resorts,
+-- Manutech, y DOS en Mining Guild), el sol dorado sobre negro es `space`
+-- (Helion, y DOS en Kuiper Cooperative), el atomo en circulo blanco es
+-- `science` (Inventrix) y Factorum lleva `power` + `building`. Que en el
+-- bloque 1 varias corporaciones tuvieran esa esquina VACIA (CrediCor, Aridor,
+-- Beginner) confirma que no es un adorno fijo de la plantilla.
+insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) values
+    -- 42 M€, +1 produccion de plantas. Effect: al jugar un tag bio
+    -- (microbe/plant/animal, incluidos los dos propios), ganar 1 planta O
+    -- agregar 1 microbio a CUALQUIER carta (target_any_card, pieza nueva).
+    ('ecotec', 'Ecotec', 'Prelude 2', '{microbe,plant}', 42,
+     '{"production_deltas": {"plant_production": 1},
+       "passive": {"on_any_tag_played_choice": {
+           "matching_tags": ["microbe", "plant", "animal"],
+           "add_resource_choice": {"resource_delta": 1, "target_any_card": true},
+           "gain_resource_choice": {"resource": "plants", "amount": 1}}}}'::jsonb),
+
+    -- 37 M€, +1 produccion de acero. Accion: +1 produccion de energia SOLO si
+    -- el jugador tiene 0 de energia en stock (`requires_zero_resource`, pieza
+    -- nueva), o pagar 3 M€ para robar una carta con tag building.
+    ('factorum', 'Factorum', 'Promo', '{power,building}', 37,
+     '{"production_deltas": {"steel_production": 1}, "becomes_active": true,
+       "action": {"choice": [
+         {"requires_zero_resource": "energy", "cost": {},
+          "gains": {"production_deltas": {"energy_production": 1}}},
+         {"cost": {"mc": 3}, "gains": {"draw_cards_matching_tag": {"tag": "building", "n": 1}}}]}}'::jsonb),
+
+    -- 42 M€, +3 produccion de calor. Effect: el calor paga cartas como si
+    -- fuera M€ (1:1). Es `stock_resource_payment` SIN required_tag: vale para
+    -- cualquier carta, no solo para un tag (Martian Lumber Corp si lo filtra).
+    ('helion', 'Helion', 'Base', '{space}', 42,
+     '{"production_deltas": {"heat_production": 3},
+       "passive": {"stock_resource_payment": {"resource": "heat", "value_mc": 1}}}'::jsonb),
+
+    -- 30 M€ y 20 de acero en stock. Effect: +2 M€ por evento jugado (mismo
+    -- pasivo que Media Group).
+    ('interplanetary_cinematics', 'Interplanetary Cinematics', 'Base', '{building}', 30,
+     '{"resource_deltas": {"steel": 20},
+       "passive": {"on_event_played": {"mc_delta": 2}}}'::jsonb),
+
+    -- 45 M€ y roba 3 cartas. Effect: los requisitos de temperatura/oxigeno/
+    -- oceanos se relajan 2 pasos (idem Adaptation Technology).
+    ('inventrix', 'Inventrix', 'Base', '{science}', 45,
+     '{"draw_cards": 3, "passive": {"global_requirements_tolerance_steps": 2}}'::jsonb),
+
+    -- 33 M€, +1 produccion de titanio. Guarda asteroides. Accion: +1 asteroide
+    -- por cada tag space (pieza nueva `card_resource_delta_per_tag`). Effect:
+    -- cada asteroide vale 1 M€ al pagar los proyectos Asteroid y Aquifer
+    -- (pieza nueva `standard_project_card_resource_payment`).
+    ('kuiper_cooperative', 'Kuiper Cooperative', 'Promo', '{space,space}', 33,
+     '{"production_deltas": {"titanium_production": 1}, "becomes_active": true,
+       "active_card_resource_type": "asteroid",
+       "action": {"cost": {}, "gains": {"card_resource_delta_per_tag": {"tag": "space", "per_tag": 1}}},
+       "passive": {"standard_project_card_resource_payment": {
+           "resource_type": "asteroid", "applies_to": ["asteroid", "aquifer"], "value_mc": 1}}}'::jsonb),
+
+    -- 54 M€. Dos efectos: +1 produccion de M€ cada vez que se coloca CUALQUIER
+    -- oceano (on_ocean_placed ahora acepta production_deltas), y el bonus por
+    -- colocar adyacente a oceanos pasa de 2 a 3 M€ (`ocean_adjacency_bonus_mc`).
+    ('lakefront_resorts', 'Lakefront Resorts', 'Turmoil', '{building}', 54,
+     '{"passive": {"on_ocean_placed": {"production_deltas": {"mc_production": 1}},
+                   "ocean_adjacency_bonus_mc": 3}}'::jsonb),
+
+    -- 30 M€, 5 de acero, +1 produccion de acero. Effect: +1 produccion de
+    -- acero cada vez que coloca un tile sobre un hex con bonus de acero o
+    -- titanio (pieza nueva `on_hex_bonus_tile_placed`, enganchada en el unico
+    -- punto por el que pasan las cuatro vias de colocacion).
+    ('mining_guild', 'Mining Guild', 'Base', '{building,building}', 30,
+     '{"production_deltas": {"steel_production": 1}, "resource_deltas": {"steel": 5},
+       "passive": {"on_hex_bonus_tile_placed": {"matching_resources": ["steel", "titanium"],
+                                                "production_deltas": {"steel_production": 1}}}}'::jsonb),
+
+    -- 48 M€, +4 produccion de M€. El resto de la carta es MULTIJUGADOR y en
+    -- single-player resuelve a 0, no es mecanica faltante: "all opponents
+    -- decrease their M€ production 2 steps" (no hay oponentes) y el Effect
+    -- "when a player causes another player to lose production or resources,
+    -- pay 3 M€ to the victim" (nunca se dispara).
+    ('mons_insurance', 'Mons Insurance', 'Promo', '{}', 48,
+     '{"production_deltas": {"mc_production": 4}}'::jsonb)
+on conflict (id) do update set
+    name = excluded.name, expansion = excluded.expansion, tags = excluded.tags,
+    starting_mc = excluded.starting_mc, effects = excluded.effects;
+
+update corporation_review_queue q set reviewed = true, corporation_id = m.cid
+from (values
+    ('Ecotec','ecotec'),('Factorum','factorum'),('Helion','helion'),
+    ('Interplanetary Cinematics','interplanetary_cinematics'),('Inventrix','inventrix'),
+    ('Kuiper Cooperative','kuiper_cooperative'),('Lakefront Resorts','lakefront_resorts'),
+    ('Mining Guild','mining_guild'),('Mons Insurance','mons_insurance')
+) as m(nombre, cid)
+where q.name = m.nombre;
+
+-- Revisada pero pendiente por mecanica (ver CARDS_LOG.md).
+update corporation_review_queue set reviewed = true, corporation_id = null
+where name = 'Manutech';
