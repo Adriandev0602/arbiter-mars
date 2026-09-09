@@ -991,6 +991,112 @@ diseñarlo junto con las otras corporaciones de tablero que aparezcan en los pr�
 
 **38 corporaciones sin revisar** en `corporation_review_queue`.
 
+#### Corporaciones, bloques 3-5: la cola quedó VACÍA (41 de 48 cargadas)
+
+**2026-09-09.** Se revisaron las 28 corporaciones que quedaban, en tres bloques (10/10/8) con
+orquestación multi-agente (subagentes Sonnet en paralelo, uno por carta, analizando sin tocar el
+repo; integración, verificación de tags y código centralizados). **22 cargadas, 6 pendientes por
+mecánica.** Con las 19 previas, el catálogo queda en **41 de 48 corporaciones**, y
+`corporation_review_queue` en **0 sin revisar**.
+
+**Cargadas — bloque 3:** Morning Star Inc, Nirgal Enterprises, Palladin Shipping, Philares,
+Phobolog, Point Luna, Polyphemos, Poseidon. **Bloque 4:** Recyclon, Robinson Industries, Saturn
+Systems, Septem Tribus, Spire, Splice, Teractor, TerraLabs Research. **Bloque 5:** Tharsis
+Republic, Thorgate, Tycho Magnetics, Utopia Invest, Valley Trust, Viron.
+
+**Piezas de motor nuevas (todas chicas, varias compartidas por dos cartas):**
+- `venus_requirements_tolerance_steps` (Morning Star Inc): como
+  `global_requirements_tolerance_steps` pero SOLO para Venus. Se separó porque el pasivo general
+  relaja también temperatura/oxígeno/océanos, que esta carta no toca.
+- `on_event_played.resource_deltas` (Palladin Shipping): forma genérica para recursos que no son
+  M€ ni calor, que estaban hardcodeados. Mismo movimiento que `on_ocean_placed.production_deltas`
+  del bloque 2.
+- `on_tag_played_draw_cards` (Point Luna): robar cartas al jugar un tag, **automático** — a
+  diferencia de `on_any_tag_played_choice`, que es una elección del jugador.
+- `on_tag_played_production_delta` (Saturn Systems): la variante de
+  `on_tag_played_resource_delta` que sube PRODUCCIÓN en vez de stock. Pasa por
+  `_increase_production`, así que se combina bien con Manutech (hay test de las dos juntas).
+- `on_card_played_min_tags_add_resource` (Spire): mira CUÁNTOS tags trae la carta jugada, no
+  cuáles. Dispara una sola vez por carta, no una por tag.
+- `on_colony_placed` (Poseidon): análogo a `on_ocean_placed`, enganchado en los tres caminos que
+  colocan colonia (`tools.build_colony` + las vías de `play_card` y `play_prelude`).
+- `research_cost_delta_mc` (Polyphemos +2, TerraLabs Research -2): corre el precio de comprar
+  cartas en la investigación. Una fase gratuita (Inventors' Guild, costo 0) NO se toca.
+- `standard_project_discount_mc` (Thorgate): descuento sobre un proyecto estándar. El descuento
+  se acredita en M€ ANTES de llamar al motor, porque el costo se cobra dentro de
+  `standard_project_*` — mismo criterio que el pago con recursos de carta de Kuiper Cooperative.
+- `on_city_tile_placed_resource_delta` (Tharsis Republic): suma al STOCK del jugador, mientras
+  que `on_city_tile_placed_add_resource` suma a la carta activa.
+- `cost.production_delta` en `use_card_action` (Utopia Invest): pagar una acción **bajando
+  producción**, no gastando stock. Respeta el mismo piso que el resto del motor (0, y -5 para M€).
+
+**Lo que NO hizo falta construir, aunque tres agentes lo pidieron:** "revelar cartas del mazo
+hasta juntar N con un tag y descartar el resto" (Morning Star Inc, Splice) ya existía como
+`draw_cards_matching_tag` — su implementación revela de a una y descarta las que no matchean,
+exactamente el texto de esas cartas. Vale como recordatorio de por qué se verifica cada informe
+contra el código: tres agentes independientes propusieron la misma pieza redundante.
+
+**Verificación de tags: 6 errores en 28 informes, TODOS de iconografía.** La hoja de contacto
+(variante apaisada de `tag_contact_sheet.py` para corporaciones, ver abajo) los atrapó a todos:
+
+| Corporación | Tag real | Qué reportó el agente |
+|---|---|---|
+| Pharmacy Union | `microbe` ×2 | `science` |
+| Saturn Systems | `jovian` | `space` |
+| Spire | `city` + `earth` | `building` + `earth` |
+| Stormcraft Incorporated | `jovian` | ninguno ("Júpiter decorativo") |
+| United Nations Mars Initiative | `earth` | ninguno ("logo de FryxGames") |
+| Valley Trust | `earth` | ninguno ("banner de la expansión") |
+
+**Los tres íconos que faltaban en la leyenda del prompt** (y que explican 4 de los 6 errores):
+**Júpiter, el planeta rayado naranja, es `jovian`** (no `space`); **el skyline gris de edificios
+altos es `city`** (no `building`, que es la casa marrón); y **el globo terráqueo es `earth`** —
+este último es el que más veces se leyó mal en todo el pipeline, siempre como "logo de la
+plantilla" o "banner de expansión". Agregarlos a la leyenda bajó los errores de 3/10 (bloque 4) a
+2/8 (bloque 5). **Para la próxima tanda: la leyenda del prompt tiene que traer los doce íconos,
+no los seis básicos.**
+
+**Herramienta:** la hoja de contacto de `tag_contact_sheet.py` está pensada para cartas de
+proyecto (verticales, banda superior al 13%). Las corporaciones son apaisadas y el tag vive en la
+esquina superior derecha, así que se usó una variante con zonas parametrizadas (`tag`/`cost`).
+Verificar 28 tags costó 3 imágenes en vez de 28 scans completos.
+
+**Pendientes por mecánica (6 nuevas, ver tabla "Pendientes"):**
+- **Pharmacy Union**: rama condicional según los recursos de la propia carta + perder M€ "o lo
+  máximo posible" (sin error si no alcanza) + mover la carta a la pila de eventos. Tres piezas.
+- **Pristar** y **United Nations Mars Initiative**: las dos necesitan el hook **"subió el TR
+  en esta generación"**. Con las 3 preludes que ya lo esperaban (Preservation Program, Suitable
+  Infrastructure, Terraforming Deal), la familia ya son **cinco cartas** — es la pieza pendiente
+  con más demanda acumulada del proyecto, y ahora es el próximo refactor natural, igual que lo
+  fue `_increase_production` para Manutech.
+- **Sagitta Frontier Services**: robar una carta SIN NINGÚN tag (filtro por cantidad de tags, no
+  por tag) + pagar según cuántos tags trae la carta jugada (0 o exactamente 1).
+- **Stormcraft Incorporated**: "floaters on this card may be used as 2 heat each" — una carta
+  activa que funciona como stock de CALOR en cualquier punto donde el motor gaste calor (proyecto
+  estándar, conversión 8→TR), no solo para pagar cartas como `card_resource_payment`.
+- **Vitor**: "+3 M€ al jugar una carta con VP icon no-negativo". No es solo vocabulario faltante:
+  **ninguna carta del catálogo tiene cargado su VP impreso**, así que el pasivo no tendría de
+  dónde leerlo. Necesita un retrofit de `vp_icon` en el catálogo entero primero.
+
+**Cargadas parcialmente, por decisión de alcance (no son "pendientes"):**
+- **Nirgal Enterprises**: su Effect ("awards and milestones always cost 0 M€") no se modela
+  porque milestones/awards están fuera del MVP entero (CLAUDE.md sección 7), no porque falte una
+  pieza de vocabulario.
+- **Philares**: su Effect depende de adyacencia con tiles de OPONENTES → en un jugador nunca
+  dispara, mismo criterio que Mons Insurance/Toll Station. Se cargó con `effects: {}`.
+- **Philares** y **Tharsis Republic** tienen además un "as your first action, place a
+  greenery/city tile" que no entra en `effects`: `choose_corporation` no coloca tiles (no recibe
+  `hex_id`), así que esa colocación la resuelve el jugador con la tool de siempre.
+- **Valley Trust**: su "draw 3 Prelude cards and play one" sigue sin modelarse — el sorteo de
+  preludes del setup no existe todavía.
+- **Polyphemos/TerraLabs**: la cláusula "including the starting hand" no cambia nada acá, porque
+  `deal_starting_hand` reparte la mano inicial GRATIS en este motor.
+
+**Bug encontrado y corregido:** el seed del bloque 2 tenía, después de cargar Manutech, un
+`update ... set corporation_id = null where name = 'Manutech'` sobrante del estado anterior (era
+la fila que la marcaba como pendiente). Al re-correr el seed, esa línea pisaba la carga y volvía
+a dejarla como pendiente. Lo agarró la verificación contra Supabase, no los tests.
+
 #### Corporaciones, bloque 2 (Ecotec → Manutech): 10 de 10
 
 **2026-09-08/09.** Cargadas: Ecotec, Factorum, Helion, Interplanetary Cinematics, Inventrix,

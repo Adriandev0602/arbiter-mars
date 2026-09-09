@@ -333,6 +333,16 @@ def use_standard_project(
         player = engine.spend_active_card_resource(player, source_id, card_resource_to_pay)
         player = {**player, "mc": player["mc"] + card_resource_to_pay * value_mc}
 
+    # Thorgate: "you pay 3 M€ less for the standard project power plant". El
+    # motor cobra el costo completo adentro de standard_project_*, asi que el
+    # descuento se acredita ANTES de llamarlo -- mismo criterio que el pago
+    # con recursos de carta de Kuiper Cooperative, unas lineas mas arriba.
+    # Topeado al costo del proyecto: un descuento no deja saldo a favor.
+    project_discount = engine.compute_standard_project_discount(player, project_name)
+    if project_discount:
+        project_discount = min(project_discount, STANDARD_PROJECT_BASIC_COSTS.get(project_name, 0))
+        player = {**player, "mc": player["mc"] + project_discount}
+
     if project_name == "sell_patents":
         new_player = engine.standard_project_sell_patents(player, num_cards_to_sell)
         new_globals = globals_
@@ -935,6 +945,7 @@ def play_card(
         new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], build_colony_id]}
         for key, delta in placement_bonus.items():
             new_player[key] = new_player[key] + delta
+        new_player = dict(engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         _save_colonies(new_colonies)
 
     if effects.get("convert_own_greenery_to_city"):
@@ -1407,6 +1418,15 @@ def use_card_action(
                       if k != "draw_cards_matching_tag"},
         }
 
+    # Mismo criterio: contar delegados propios por partido necesita el
+    # player_id, que el motor puro no recibe (ej. Septem Tribus).
+    if resolved_spec.get("gains", {}).get("mc_per_party_with_delegate") is not None:
+        spec_for_engine = {
+            **spec_for_engine,
+            "gains": {k: v for k, v in spec_for_engine.get("gains", {}).items()
+                      if k != "mc_per_party_with_delegate"},
+        }
+
     # Algunas acciones tienen su PROPIO requisito, distinto del de jugar la
     # carta (ej. Red Appeasement: la accion exige que Reds gobierne o tener 2
     # delegados ahi). Se valida con la misma funcion del motor.
@@ -1502,6 +1522,23 @@ def use_card_action(
         new_player = _draw_cards_matching_tag(
             dict(new_player), draw_tag_spec["tag"], draw_tag_spec.get("n", 1),
         )
+
+    # Septem Tribus: "gain 2 M€ for each party where you have at least 1
+    # delegate". Se resuelve aca y no en el motor puro porque necesita el
+    # player_id para contar delegados PROPIOS (mismo criterio que los
+    # requirements de Turmoil, que tambien lo reciben aparte).
+    party_spec = resolved_spec.get("gains", {}).get("mc_per_party_with_delegate")
+    if party_spec is not None:
+        turmoil_state = turmoil if turmoil is not None else _load_turmoil()
+        min_delegates = party_spec.get("min_delegates", 1)
+        parties = sum(
+            1 for p in turmoil_state["parties"].values()
+            if p["delegates"].get(player_id, 0) >= min_delegates
+        )
+        new_player = {
+            **new_player,
+            "mc": new_player["mc"] + parties * party_spec.get("per_party", 1),
+        }
 
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
     board = None
@@ -1704,6 +1741,9 @@ def resolve_research_phase(
     max_take, InsufficientResourcesError si no alcanza el MC.
     """
     player = _load_player(player_id)
+    # Polyphemos (+2) / TerraLabs Research (-2) corren el precio de comprar
+    # cartas; una fase gratuita (cost_per_card=0) sigue siendo gratuita.
+    cost_per_card = engine.compute_research_cost_per_card(player, cost_per_card)
     new_player = engine.resolve_research_phase(player, card_ids_to_buy, cost_per_card, max_take)
 
     _save_player(player_id, new_player)
@@ -1776,6 +1816,7 @@ def build_colony(player_id: str, colony_id: str, target_card_id: str | None = No
     }
     for key, delta in placement_bonus.items():
         new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
+    new_player = dict(engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
 
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_colonies(new_colonies)
@@ -2364,6 +2405,7 @@ def play_prelude(
         new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], build_colony_id]}
         for key, delta in placement_bonus.items():
             new_player[key] = new_player[key] + delta
+        new_player = dict(engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         _save_colonies(new_colonies)
 
     # El pasivo ya quedo registrado mas arriba, ANTES de aplicar el efecto y
