@@ -138,7 +138,30 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-09, corporaciones bloque 2 cerrado)
+### 📍 Punto de retoma (última sesión: 2026-09-09, CORPORACIONES TERMINADAS)
+
+**La cola de corporaciones quedó VACÍA (2026-09-09): 41 de 48 cargadas, 7 pendientes por
+mecánica.** Se revisaron las 28 que faltaban en tres bloques (10/10/8) con subagentes Sonnet en
+paralelo. Detalle completo en "Corporaciones, bloques 3-5" en `CARDS_LOG.md`.
+
+**Piezas de motor nuevas:** `venus_requirements_tolerance_steps`, `on_event_played.resource_deltas`,
+`on_tag_played_draw_cards`, `on_tag_played_production_delta`, `on_card_played_min_tags_add_resource`,
+`on_colony_placed`, `research_cost_delta_mc`, `standard_project_discount_mc`,
+`on_city_tile_placed_resource_delta` y `cost.production_delta` (pagar una acción bajando
+producción). Todas chicas; varias las comparten dos cartas.
+
+**El próximo refactor natural es el hook "subió el TR en esta generación": ya son CINCO cartas
+esperándolo** — Pristar, United Nations Mars Initiative y las 3 preludes (Preservation Program,
+Suitable Infrastructure, Terraforming Deal). Es la misma situación que tenía Manutech con
+`_increase_production`: una pieza de infraestructura que destraba varias cartas de una.
+
+**Aprendizaje de tags, confirmado otra vez:** 6 errores en 28 informes, **todos** de iconografía,
+y todos atrapados por la hoja de contacto. Los tres íconos que faltaban en la leyenda del prompt:
+**Júpiter (planeta rayado naranja) = `jovian`** (no `space`), **skyline gris de edificios =
+`city`** (no `building`) y **globo terráqueo = `earth`** — este último es el que más veces se leyó
+mal en todo el pipeline, siempre como "logo de la plantilla". La leyenda del prompt tiene que
+traer los doce íconos, no los seis básicos. **Delegar el análisis del efecto sí; verificar tags
+contra el scan, siempre.**
 
 **Manutech cargada (2026-09-09), cerrando el bloque 2 (10 de 10).** Resolvió el refactor
 pendiente: `rules_engine._increase_production(new_player, key, delta)` es ahora el único punto de
@@ -555,7 +578,8 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
 2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
    Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
-3. **Corporaciones: seguir la cola** (28 sin revisar, bloques de 10 con subagentes Sonnet).
+3. ~~Corporaciones: seguir la cola~~ — **cola cerrada el 2026-09-09** (41 de 48 cargadas). Lo
+   que queda son 7 pendientes por mecánica, no cartas sin revisar.
 4. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
    quedan sí necesitan mecánicas grandes (sub-mazo de Prelude, hook genérico "subió el TR",
    corporaciones). Siguen pendientes también las 3 cartas dudosas de proyecto

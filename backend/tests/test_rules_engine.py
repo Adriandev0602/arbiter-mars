@@ -69,6 +69,9 @@ from app.agent.rules_engine import (
     register_played_card,
     increment_events_played,
     apply_tag_played_resource_bonuses,
+    apply_colony_placed_bonuses,
+    compute_research_cost_per_card,
+    compute_standard_project_discount,
     apply_greenery_placed_bonuses,
     apply_standard_project_used_bonuses,
     apply_city_placed_bonuses,
@@ -4983,6 +4986,175 @@ def test_apply_corporation_start_pone_produccion_en_cero():
     assert all(corp_player[f"{r}_production"] == 0
                for r in ("mc", "steel", "titanium", "plant", "energy", "heat"))
     assert corp_player["tr"] == player["tr"]     # el TR no lo toca
+
+
+def test_tharsis_republic_gana_mc_al_colocarse_una_ciudad():
+    # Tharsis Republic: "when any city tile is placed ON MARS, increase your
+    # M€ production 1 step. When you place a city tile, gain 3 M€". En un
+    # jugador los dos disparadores coinciden: ambos pasan por este hook.
+    player = register_passive_effect(new_player_state(), "tharsis_republic", {
+        "on_city_tile_placed_production_delta": {"production": "mc_production", "per_tile": 1},
+        "on_city_tile_placed_resource_delta": {"mc": 3},
+    })
+    new_player = apply_city_placed_bonuses(player)
+    assert new_player["mc_production"] == player["mc_production"] + 1
+    assert new_player["mc"] == player["mc"] + 3
+
+
+def test_thorgate_descuenta_el_proyecto_estandar_power_plant():
+    # Thorgate: "when playing a power card OR THE STANDARD PROJECT POWER
+    # PLANT, you pay 3 M€ less for it". Esta es la mitad del proyecto.
+    player = register_passive_effect(new_player_state(), "thorgate", {
+        "standard_project_discount_mc": {"projects": ["power_plant"], "amount": 3}
+    })
+    assert compute_standard_project_discount(player, "power_plant") == 3
+    # No toca los otros proyectos.
+    assert compute_standard_project_discount(player, "asteroid") == 0
+    # Sin el pasivo no hay descuento.
+    assert compute_standard_project_discount(new_player_state(), "power_plant") == 0
+
+
+def test_utopia_invest_paga_una_accion_bajando_produccion():
+    # Utopia Invest: "decrease any production to gain 4 resources of that
+    # kind". El costo NO es stock: es un paso de produccion.
+    player = register_active_card({**new_player_state(), "steel_production": 2}, "utopia_invest")
+    spec = {
+        "cost": {"production_delta": {"steel_production": 1}},
+        "gains": {"resource_deltas": {"steel": 4}},
+    }
+    new_player, _ = use_card_action(player, new_global_parameters(), "utopia_invest", spec)
+    assert new_player["steel_production"] == 1
+    assert new_player["steel"] == player["steel"] + 4
+
+    # Con la produccion en el piso, la accion no se puede pagar.
+    sin_produccion = register_active_card({**new_player_state(), "steel_production": 0}, "utopia_invest")
+    with pytest.raises(InsufficientResourcesError):
+        use_card_action(sin_produccion, new_global_parameters(), "utopia_invest", spec)
+
+
+def test_morning_star_relaja_solo_los_requisitos_de_venus():
+    # Morning Star Inc: "your Venus requirements are +/- 2 steps". A
+    # diferencia de Inventrix, NO toca temperatura/oxigeno/oceanos.
+    globals_ = {**new_global_parameters(), "venus": 4, "temperature": -30}
+    player = register_passive_effect(new_player_state(), "morning_star_inc", {
+        "venus_requirements_tolerance_steps": 2
+    })
+
+    # Venus 8% exigido con 4% en juego: entra por los 2 pasos (4% de Venus).
+    check_card_requirements({"min_venus": 8}, globals_, player=player)
+    # Pero un requisito de temperatura NO se relaja.
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_temperature": -20}, globals_, player=player)
+    # Y sin el pasivo, el mismo requisito de Venus no entra.
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements({"min_venus": 8}, globals_, player=new_player_state())
+
+
+def test_palladin_shipping_gana_titanio_por_evento_espacial():
+    # Palladin Shipping: "when you play a space event, gain 1 titanium".
+    # on_event_played con la forma generica resource_deltas + tag_filter.
+    player = register_passive_effect(new_player_state(), "palladin_shipping", {
+        "on_event_played": {"resource_deltas": {"titanium": 1}, "tag_filter": "space"}
+    })
+    con_space = apply_event_played_bonuses(player, ("space",))
+    assert con_space["titanium"] == player["titanium"] + 1
+
+    # Un evento sin tag space no paga.
+    assert apply_event_played_bonuses(player, ("earth",))["titanium"] == player["titanium"]
+
+
+def test_saturn_systems_sube_produccion_por_tag_jugado():
+    # Saturn Systems: "each time any Jovian tag is put into play, including
+    # this, increase your M€ production 1 step". Dos tags jovian en la misma
+    # carta disparan dos veces, igual criterio que on_tag_played_resource_delta.
+    player = register_passive_effect(new_player_state(), "saturn_systems", {
+        "on_tag_played_production_delta": {
+            "matching_tags": ["jovian"], "production": "mc_production", "production_delta": 1,
+        }
+    })
+    one = apply_tag_played_resource_bonuses(player, ("jovian",))
+    assert one["mc_production"] == player["mc_production"] + 1
+
+    two = apply_tag_played_resource_bonuses(player, ("jovian", "jovian"))
+    assert two["mc_production"] == player["mc_production"] + 2
+
+    # Un tag que no matchea no paga nada.
+    assert apply_tag_played_resource_bonuses(player, ("space",))["mc_production"] == player["mc_production"]
+
+
+def test_saturn_systems_con_manutech_gana_tambien_el_recurso():
+    # Las dos piezas se combinan porque on_tag_played_production_delta pasa
+    # por _increase_production: sube la produccion Y Manutech paga el stock.
+    player = register_passive_effect(new_player_state(), "saturn_systems", {
+        "on_tag_played_production_delta": {
+            "matching_tags": ["jovian"], "production": "steel_production", "production_delta": 1,
+        }
+    })
+    player = register_passive_effect(player, "manutech", {"on_production_increased": True})
+    new_player = apply_tag_played_resource_bonuses(player, ("jovian",))
+    assert new_player["steel_production"] == player["steel_production"] + 1
+    assert new_player["steel"] == player["steel"] + 1
+
+
+def test_spire_suma_recurso_por_cantidad_de_tags_no_por_cuales():
+    # Spire: "when you play a card with AT LEAST 2 tags, add 1 science
+    # resource here". Dispara UNA vez por carta, sin importar que tags sean.
+    player = register_active_card(new_player_state(), "spire", initial_resources=0, resource_type="science")
+    player = register_passive_effect(player, "spire", {
+        "on_card_played_min_tags_add_resource": {"min_tags": 2, "resource_delta": 1}
+    })
+    dos_tags = apply_tag_played_resource_bonuses(player, ("space", "earth"))
+    assert dos_tags["active_cards"]["spire"]["resources"] == 1
+
+    # Tres tags siguen siendo UNA sola vez (no es por tag).
+    tres_tags = apply_tag_played_resource_bonuses(player, ("space", "earth", "building"))
+    assert tres_tags["active_cards"]["spire"]["resources"] == 1
+
+    # Una carta de un solo tag no dispara.
+    assert apply_tag_played_resource_bonuses(player, ("space",))["active_cards"]["spire"]["resources"] == 0
+
+
+def test_point_luna_roba_carta_por_tag_earth():
+    # Point Luna: "when you play an Earth tag, including this, draw a card".
+    player = {**new_player_state(), "deck": ["c1", "c2", "c3"], "hand": []}
+    player = register_passive_effect(player, "point_luna", {
+        "on_tag_played_draw_cards": {"matching_tags": ["earth"], "cards": 1}
+    })
+    new_player = apply_tag_played_resource_bonuses(player, ("earth",))
+    assert new_player["hand"] == ["c1"]
+    assert new_player["deck"] == ["c2", "c3"]
+
+    # Sin tag earth no roba nada.
+    assert apply_tag_played_resource_bonuses(player, ("space",))["hand"] == []
+
+
+def test_poseidon_sube_produccion_al_colocar_colonia():
+    # Poseidon: "when any colony is placed, including this, raise your M€
+    # production 1 step".
+    player = register_passive_effect(new_player_state(), "poseidon", {
+        "on_colony_placed": {"production_deltas": {"mc_production": 1}}
+    })
+    new_player = apply_colony_placed_bonuses(player)
+    assert new_player["mc_production"] == player["mc_production"] + 1
+
+    # Sin el pasivo el estado no cambia.
+    assert apply_colony_placed_bonuses(new_player_state()) == new_player_state()
+
+
+def test_research_cost_por_carta_lo_corren_polyphemos_y_terralabs():
+    base = new_player_state()
+    assert compute_research_cost_per_card(base) == 3          # sin pasivos, el default
+
+    polyphemos = register_passive_effect(base, "polyphemos", {"research_cost_delta_mc": 2})
+    assert compute_research_cost_per_card(polyphemos) == 5    # "pay 5 M€ instead of 3"
+
+    terralabs = register_passive_effect(base, "terralabs_research", {"research_cost_delta_mc": -2})
+    assert compute_research_cost_per_card(terralabs) == 1     # "costs 1 M€"
+
+    # Una fase GRATUITA (ej. Inventors' Guild) sigue siendo gratuita.
+    assert compute_research_cost_per_card(polyphemos, 0) == 0
+    # Nunca baja de 0.
+    assert compute_research_cost_per_card(terralabs, 1) == 0
 
 
 def test_manutech_gana_recurso_por_cada_paso_de_produccion_subido():
