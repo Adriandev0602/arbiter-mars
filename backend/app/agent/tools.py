@@ -640,6 +640,7 @@ def play_card(
     # +2 MC por cada animal ganado en cualquier carta) -- se compara contra
     # el estado final de la jugada, ver engine.apply_card_resource_gained_bonuses.
     card_resource_totals_before = engine.snapshot_card_resource_totals(player)
+    active_cards_before = dict(player["active_cards"])
 
     card_tags = tuple(card.get("tags", []))
     steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
@@ -1093,7 +1094,7 @@ def play_card(
 
     new_player = engine.apply_tag_played_choice(new_player, card_tags, tag_played_choice)
     new_player = engine.apply_any_tag_played_choice(new_player, card_id, card_tags, any_tag_played_choice)
-    new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before)
+    new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -1190,10 +1191,16 @@ def use_card_action(
     Lanza CardEffectError si la carta no esta activa o su accion ya se uso
     esta generacion, InsufficientResourcesError si falta stock para pagarla.
     """
-    card_res = supabase.table("cards").select("*").eq("id", card_id).single().execute()
-    card = card_res.data
+    card_res = supabase.table("cards").select("*").eq("id", card_id).maybe_single().execute()
+    card = card_res.data if card_res else None
     if card is None:
-        raise ValueError(f"Carta '{card_id}' no encontrada en el catalogo")
+        # Las preludes tambien pueden quedarse en juego con accion repetible
+        # (ej. Applied Science, Floating Trade Hub), y viven en su propia
+        # tabla porque no tienen costo ni requisitos -- ver play_prelude.
+        prelude_res = supabase.table("prelude_cards").select("*").eq("id", card_id).maybe_single().execute()
+        card = prelude_res.data if prelude_res else None
+    if card is None:
+        raise ValueError(f"Carta '{card_id}' no encontrada en el catalogo (ni en `cards` ni en `prelude_cards`)")
 
     action_spec = (card.get("effects") or {}).get("action")
     if action_spec is None:
@@ -1203,6 +1210,7 @@ def use_card_action(
     globals_ = _load_global_parameters()
     # Ver el mismo snapshot en play_card: pasivo "on_card_resource_gained".
     card_resource_totals_before = engine.snapshot_card_resource_totals(player)
+    active_cards_before = dict(player["active_cards"])
 
     resolved_spec = action_spec
     if effect_choice is not None and "choice" in (action_spec or {}):
@@ -1380,10 +1388,17 @@ def use_card_action(
             raise ValueError(
                 f"Esta accion coloca {oceans_delta} oceano(s); se recibieron {len(chosen)} hex_id(s)"
             )
+        # World Government Advisor (P67) sube el parametro "sin TR NI OTROS
+        # BONUSES": si el oceano vino de ahi, el tile se coloca igual (ocupa
+        # el hexagono) pero no se cobra el bonus de colocacion.
+        skip_bonus = bool(resolved_spec.get("gains", {}).get("raise_global_parameter_without_bonuses"))
         for hid in chosen:
             if not boardlib.can_place_ocean(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
-            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+            if skip_bonus:
+                board, _hex_bonus, _ocean_mc = boardlib.place_ocean_tile(board, hid)
+            else:
+                board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
 
     trade_result = None
     if free_trade:
@@ -1397,7 +1412,7 @@ def use_card_action(
         _save_colonies(new_colonies)
         trade_result = {"income_type": income_type, "income_amount": income_amount, "colony_bonus": colony_bonus}
 
-    new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before)
+    new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -2134,6 +2149,20 @@ def play_prelude(
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
 
+    # Una prelude puede quedarse en juego con accion repetible y/o recursos
+    # propios, igual que una carta de proyecto azul (ej. Applied Science:
+    # arranca con 6 "science" y los gasta de a uno). Se registra ANTES de
+    # aplicar el efecto, mismo orden que play_card, para que los pasivos que
+    # se autodisparan encuentren la carta ya activa.
+    if effects.get("becomes_active"):
+        player = engine.register_active_card(
+            player, prelude_id,
+            initial_resources=engine.resolve_active_card_starting_resources(player, effects),
+            resource_type=effects.get("active_card_resource_type"),
+        )
+    if effects.get("passive"):
+        player = engine.register_passive_effect(player, prelude_id, effects["passive"])
+
     new_player, new_globals = engine.apply_card_effect(
         player, globals_, effects, discard_card_ids=discard_card_ids,
     )
@@ -2213,13 +2242,12 @@ def play_prelude(
             new_player[key] = new_player[key] + delta
         _save_colonies(new_colonies)
 
-    # Pasivos permanentes: se registran ANTES de disparar los bonus por tag,
-    # para que los que se auto-disparan con su propio tag (ej. Albedo Plants:
-    # "+3 calor por cada tag plant, incluida esta") funcionen -- mismo orden
-    # que tools.play_card.
-    if effects.get("passive"):
-        new_player = engine.register_passive_effect(new_player, prelude_id, effects["passive"])
-
+    # El pasivo ya quedo registrado mas arriba, ANTES de aplicar el efecto y
+    # de disparar los bonus por tag, para que los que se auto-disparan con su
+    # propio tag (ej. Albedo Plants: "+3 calor por cada tag plant, incluida
+    # esta") funcionen -- mismo orden que tools.play_card. Registrarlo tambien
+    # aca lo duplicaba, y un pasivo duplicado paga dos veces (lo agarro la
+    # prueba de humo con Main Belt Asteroids: +2 titanio por 1 asteroide).
     new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
     new_player = engine.increment_tags_played(new_player, tags)
 

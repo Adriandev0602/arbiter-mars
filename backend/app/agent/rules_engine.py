@@ -344,6 +344,49 @@ def raise_venus(player: PlayerState, globals_: GlobalParameters, steps: int = 1)
     return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
 
 
+PARAMETERS_WITHOUT_BONUSES = ("temperature", "oxygen", "venus", "ocean")
+
+
+def raise_global_parameter_without_bonuses(
+    globals_: GlobalParameters, parameter: str,
+) -> GlobalParameters:
+    """
+    Sube UN paso del parametro global `parameter` moviendo solo el contador:
+    sin TR, sin los bonus de umbral de Venus y sin disparar ningun pasivo
+    (on_temperature_raised, on_ocean_placed...).
+
+    Es lo que pide World Government Advisor (P67, Prelude): "raise 1 global
+    parameter WITHOUT GETTING ANY TR OR OTHER BONUSES". Por eso no toca al
+    jugador y no reusa raise_temperature/raise_oxygen/raise_venus/place_ocean:
+    todas esas SI otorgan TR y disparan pasivos, que es justo lo que la carta
+    prohibe. Si el parametro ya esta al tope, levanta GlobalParameterMaxedError
+    para que el jugador elija otro en vez de perder la accion.
+
+    "ocean" aca solo mueve el contador `oceans_placed`; la eleccion del
+    hexagono y el bonus de colocacion los resuelve tools.py, que es quien
+    conoce el tablero -- y para esta carta ese bonus tampoco se cobra.
+    """
+    if parameter == "temperature":
+        if globals_["temperature"] >= TEMPERATURE_MAX:
+            raise GlobalParameterMaxedError("La temperatura ya esta en su maximo (+8 C)")
+        return {**globals_, "temperature": globals_["temperature"] + TEMPERATURE_STEP}
+    if parameter == "oxygen":
+        if globals_["oxygen"] >= OXYGEN_MAX:
+            raise GlobalParameterMaxedError("El oxigeno ya esta en su maximo (14%)")
+        return {**globals_, "oxygen": globals_["oxygen"] + 1}
+    if parameter == "venus":
+        if globals_["venus"] >= VENUS_MAX:
+            raise GlobalParameterMaxedError("El Venus scale ya esta en su maximo (30%)")
+        return {**globals_, "venus": globals_["venus"] + VENUS_STEP}
+    if parameter == "ocean":
+        if globals_["oceans_placed"] >= OCEANS_MAX:
+            raise GlobalParameterMaxedError("Ya se colocaron los 9 tiles de oceano")
+        return {**globals_, "oceans_placed": globals_["oceans_placed"] + 1}
+    raise CardEffectError(
+        f"Parametro global desconocido: '{parameter}' (validos: {', '.join(PARAMETERS_WITHOUT_BONUSES)})"
+    )
+
+
 def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[PlayerState, GlobalParameters]:
     """
     Coloca 1 tile de oceano (de los 9 disponibles en total). +1 TR.
@@ -1919,6 +1962,7 @@ def snapshot_card_resource_totals(player: PlayerState) -> dict[str, int]:
 
 def apply_card_resource_gained_bonuses(
     player: PlayerState, totals_before: dict[str, int],
+    active_cards_before: dict | None = None,
 ) -> PlayerState:
     """
     Aplica el pasivo "on_card_resource_gained": {"resource_type": "<tipo>",
@@ -1934,17 +1978,32 @@ def apply_card_resource_gained_bonuses(
     reubicarlo.
     """
     gained_mc = 0
+    gains: dict[str, int] = {}
     for effect in player["passive_effects"]:
         spec = effect.get("on_card_resource_gained")
         if spec is None:
             continue
         resource_type = spec["resource_type"]
-        delta = sum_card_resources_by_type(player, resource_type) - totals_before.get(resource_type, 0)
+        if spec.get("own_card_only"):
+            # Main Belt Asteroids: "when gaining an asteroid HERE" -- solo
+            # cuentan los recursos ganados en LA CARTA que registro el pasivo,
+            # no en cualquier carta del jugador.
+            card_id = effect["card_id"]
+            after = player["active_cards"].get(card_id, {}).get("resources", 0)
+            before = (active_cards_before or {}).get(card_id, {}).get("resources", 0)
+            delta = after - before
+        else:
+            delta = sum_card_resources_by_type(player, resource_type) - totals_before.get(resource_type, 0)
         if delta > 0:
-            gained_mc += delta * spec.get("mc_delta", 1)
-    if gained_mc == 0:
+            for key, per_unit in spec.get("resource_deltas", {}).items():
+                gains[key] = gains.get(key, 0) + delta * per_unit
+            gained_mc += delta * spec.get("mc_delta", 0)
+    if gained_mc == 0 and not gains:
         return player
-    return {**player, "mc": player["mc"] + gained_mc}  # type: ignore[return-value]
+    new_player: dict = {**player, "mc": player["mc"] + gained_mc}
+    for key, amount in gains.items():
+        new_player[key] = new_player[key] + amount
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]
 
 
 def resolve_active_card_starting_resources(player: PlayerState, effects: dict) -> int:
@@ -2040,6 +2099,11 @@ def use_card_action(
         "raise_oxygen_steps": N, "raise_temperature_steps": N, "raise_venus_steps": N,
         "card_resource_delta": N, "target_card_resource_delta": N,
         "move_from_target_card_resource_delta": N, "tr_delta": N,
+        "raise_global_parameter_without_bonuses": "<parametro>" (sube UN
+        paso de "temperature"/"oxygen"/"venus"/"ocean" sin TR, sin bonus de
+        umbral y sin disparar pasivos; ej. World Government Advisor, P67 --
+        la ELECCION del jugador se modela como una opcion de "choice" por
+        parametro, porque effect_choice es el indice de esa lista),
         "mc_per_counter": "<nombre del contador en GlobalParameters>"} -- N > 0 en
         card_resource_delta agrega recursos a la propia carta (ej. Regolith
         Eaters: agregar 1 microbio); target_card_resource_delta agrega N recursos
@@ -2280,6 +2344,20 @@ def use_card_action(
     if "target_card_resource_delta_allow_self" in gains:
         amount = gains["target_card_resource_delta_allow_self"]
         dest_id = target_card_id if target_card_id is not None else card_id
+        # Applied Science (P43): "add 1 resource to ANY CARD WITH A RESOURCE"
+        # -- el destino tiene que tener ya al menos N recursos guardados,
+        # mismo criterio que target_min_resources en apply_card_effect.
+        min_target_resources = gains.get("target_min_resources")
+        if min_target_resources is not None:
+            dest_resources = (
+                card_resources if dest_id == card_id
+                else new_active_cards.get(dest_id, {}).get("resources", 0)
+            )
+            if dest_resources < min_target_resources:
+                raise CardEffectError(
+                    f"La carta objetivo '{dest_id}' tiene {dest_resources} recursos guardados; "
+                    f"la accion de '{card_id}' exige al menos {min_target_resources}"
+                )
         if dest_id == card_id:
             card_resources = max(0, card_resources + amount)
         else:
@@ -2307,6 +2385,14 @@ def use_card_action(
             "resources": source_resources - amount,
         }
         card_resources = card_resources + amount
+    if "raise_global_parameter_without_bonuses" in gains:
+        # World Government Advisor (P67). El parametro NO viaja en
+        # effect_choice (que es el INDICE de la lista "choice", un int): cada
+        # parametro es una opcion propia de esa lista, y el valor de esta
+        # clave dice cual sube.
+        new_globals = dict(raise_global_parameter_without_bonuses(
+            GlobalParameters(**new_globals), gains["raise_global_parameter_without_bonuses"],  # type: ignore[typeddict-item]
+        ))
     if "raise_oxygen_steps" in gains:
         p2, g2 = raise_oxygen(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_oxygen_steps"])  # type: ignore[typeddict-item]
         new_player, new_globals = dict(p2), dict(g2)
@@ -2560,6 +2646,14 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         esas funciones). Requiere que las cartas que guardan ese recurso
         declaren `active_card_resource_type` -- ver el retrofit de
         microbe/animal en seed_cards.sql.
+        Dos claves opcionales: "resource_deltas": {"<recurso>": N, ...} --
+        en vez de (o ademas de) MC, suma N de ese recurso por unidad ganada;
+        y "own_card_only": true -- solo cuentan los recursos ganados en LA
+        CARTA que registro el pasivo, no en cualquier carta del jugador (ej.
+        Main Belt Asteroids, P53: "when gaining an asteroid HERE, gain 1
+        titanium"). Con own_card_only el delta se mide contra el estado
+        previo de esa carta (`active_cards_before`), no contra el total por
+        tipo.
       - "on_card_played_cost_threshold_production_delta": {"min_cost": N,
         "production": "<recurso>_production", "delta": M (default 1)} --
         analogo a on_card_played_cost_threshold_draw pero suma produccion
