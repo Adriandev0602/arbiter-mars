@@ -337,6 +337,15 @@ def raise_venus(player: PlayerState, globals_: GlobalParameters, steps: int = 1)
 
     new_globals = {**globals_, "venus": after}
     new_player: dict = {**player, "tr": player["tr"] + max_possible_steps}
+    # Pasivo "on_venus_raised" (ej. Aphrodite: +2 M€ por PASO aplicado),
+    # mismo patron que on_temperature_raised en raise_temperature: una vez
+    # por paso realmente aplicado, cero si Venus ya estaba al tope.
+    for effect in player["passive_effects"]:
+        bonus = effect.get("on_venus_raised")
+        if bonus is None:
+            continue
+        new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0) * max_possible_steps
+        new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0) * max_possible_steps
     if before < VENUS_BONUS_STEP_DRAW_CARD <= after:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), 1))  # type: ignore[typeddict-item]
     if before < VENUS_BONUS_STEP_EXTRA_TR <= after:
@@ -531,13 +540,28 @@ def standard_project_city(
 # Acciones de conversion del tablero de jugador (no son proyectos estandar)
 # ---------------------------------------------------------------------------
 
+def plants_per_greenery(player: PlayerState) -> int:
+    """
+    Cuantas plantas le cuesta a ESTE jugador convertir a greenery. Por defecto
+    PLANTS_PER_GREENERY (8), pero un pasivo "plants_per_greenery" puede
+    bajarlo (ej. EcoLine: 7). Si hubiera varios, gana el mas barato.
+    """
+    cost = PLANTS_PER_GREENERY
+    for effect in player["passive_effects"]:
+        override = effect.get("plants_per_greenery")
+        if override is not None:
+            cost = min(cost, override)
+    return cost
+
+
 def convert_plants_to_greenery(player: PlayerState, globals_: GlobalParameters) -> tuple[PlayerState, GlobalParameters]:
-    """Gasta 8 plantas, coloca tile de greenery, sube oxigeno 1 paso (+1 TR)."""
-    if player["plants"] < PLANTS_PER_GREENERY:
+    """Gasta 8 plantas (7 con EcoLine), coloca greenery, sube oxigeno 1 paso (+1 TR)."""
+    cost = plants_per_greenery(player)
+    if player["plants"] < cost:
         raise InsufficientResourcesError(
-            f"Se necesitan {PLANTS_PER_GREENERY} plantas, hay {player['plants']}"
+            f"Se necesitan {cost} plantas, hay {player['plants']}"
         )
-    paid_player = {**player, "plants": player["plants"] - PLANTS_PER_GREENERY}
+    paid_player = {**player, "plants": player["plants"] - cost}
     return raise_oxygen(paid_player, globals_, steps=1)
 
 
@@ -2724,6 +2748,21 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         recien jugada O +1 planta para el jugador). Ver tools.play_card
         (parametro any_tag_played_choice) y
         rules_engine.apply_any_tag_played_choice.
+      - "on_venus_raised": {"mc_delta": N, "heat_delta": N} -- se suma una vez
+        por cada PASO de Venus scale realmente aplicado, venga de donde venga
+        (ej. Aphrodite: +2 M€). Aplicado dentro de raise_venus, igual que
+        on_temperature_raised.
+      - "on_new_distinct_tag_played": {"production_deltas": {...},
+        "resource_deltas": {...}} -- se dispara una vez por cada tag que el
+        jugador ve por PRIMERA VEZ en la partida; los eventos no cuentan
+        (ej. Aridor: +1 produccion de M€). Ver apply_new_distinct_tag_bonuses,
+        llamado desde tools.play_card ANTES de increment_tags_played.
+      - "on_cost_threshold_paid": {"min_cost": N, "mc_delta": M} -- se suma
+        despues de pagar una carta O un proyecto estandar cuyo costo BASICO
+        (impreso/de tabla) llegue a N (ej. CrediCor: 20+ M€ -> +4 M€). Ver
+        apply_cost_threshold_mc_bonuses.
+      - "plants_per_greenery": N -- baja a N las plantas que cuesta convertir
+        a greenery (ej. EcoLine: 7 en vez de 8). Ver plants_per_greenery.
       - "card_resource_payment": {"required_tag": "<tag>", "value_mc": N
         (default 3)} -- habilita pagar OTRAS cartas que tengan ese tag
         usando los recursos guardados en ESTA carta activa, a N M€ cada
@@ -2837,6 +2876,84 @@ def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str,
         if bonus.get("draw_cards"):
             new_player = dict(draw_cards_to_hand(PlayerState(**new_player), bonus["draw_cards"]))  # type: ignore[typeddict-item]
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
+def apply_new_distinct_tag_bonuses(
+    player: PlayerState, played_card_tags: tuple[str, ...], is_event: bool = False,
+) -> PlayerState:
+    """
+    Aplica el pasivo "on_new_distinct_tag_played": {"production_deltas": {...}}
+    -- se dispara UNA VEZ por cada tag que el jugador ve por PRIMERA VEZ en la
+    partida (ej. Aridor: "when you get a new type of tag in play, increase your
+    M€ production 1 step"). Los eventos NO cuentan: `is_event=True` no dispara
+    nada (regla impresa en la propia carta).
+
+    Hay que llamarla ANTES de increment_tags_played, que es lo que convierte un
+    tag en "ya visto". Un tag repetido de la misma carta cuenta una sola vez.
+    """
+    if is_event:
+        return player
+    specs = [e["on_new_distinct_tag_played"] for e in player["passive_effects"]
+             if "on_new_distinct_tag_played" in e]
+    if not specs:
+        return player
+    nuevos = {tag for tag in played_card_tags if player["tags_played"].get(tag, 0) == 0}
+    if not nuevos:
+        return player
+    new_player: dict = dict(player)
+    for spec in specs:
+        for key, delta in spec.get("production_deltas", {}).items():
+            new_player[key] = _apply_production_floor(key, new_player[key] + delta * len(nuevos))
+        for key, delta in spec.get("resource_deltas", {}).items():
+            new_player[key] = new_player[key] + delta * len(nuevos)
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
+def apply_cost_threshold_mc_bonuses(player: PlayerState, basic_cost: int) -> PlayerState:
+    """
+    Aplica el pasivo "on_cost_threshold_paid": {"min_cost": N, "mc_delta": M}
+    -- se dispara despues de pagar una carta O un proyecto estandar cuyo costo
+    BASICO (impreso / de tabla, antes de descuentos) llegue a `min_cost`
+    (ej. CrediCor: "after you pay for a card or standard project with a basic
+    cost of 20 M€ or more, you gain 4 M€").
+
+    Es la union de on_card_played_cost_threshold_draw (que solo mira cartas y
+    solo roba) con on_standard_project_used (que solo mira proyectos y no tiene
+    umbral). Se llama desde tools.play_card y tools.use_standard_project.
+    """
+    gained = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_cost_threshold_paid")
+        if spec is None:
+            continue
+        if basic_cost >= spec["min_cost"]:
+            gained += spec.get("mc_delta", 0)
+    if gained == 0:
+        return player
+    return PlayerState(**{**player, "mc": player["mc"] + gained})  # type: ignore[typeddict-item]
+
+
+def apply_corporation_start(player: PlayerState, starting_mc: int) -> PlayerState:
+    """
+    Deja al jugador en el estado de arranque de una CORPORACION: `starting_mc`
+    de M€ y produccion 0 en los seis recursos.
+
+    El rulebook oficial dice, en el setup: "You start with 1 production of each
+    resource on the player board... (ONLY IN STANDARD GAME.)" -- o sea, esa
+    produccion 1 es de la partida ESTANDAR (la de Beginner Corporation). En una
+    partida con corporaciones se arranca en 0 y la corporacion otorga lo que
+    diga su carta. Por eso Beginner Corporation se carga con production_deltas
+    +1 en cada recurso: asi reproduce la partida estandar sin caso especial en
+    el codigo.
+
+    No toca TR, mazo, mano ni tags: solo M€ y produccion.
+    """
+    return PlayerState(**{
+        **player,
+        "mc": starting_mc,
+        "mc_production": 0, "steel_production": 0, "titanium_production": 0,
+        "plant_production": 0, "energy_production": 0, "heat_production": 0,
+    })  # type: ignore[typeddict-item]
 
 
 def apply_standard_project_used_bonuses(player: PlayerState, project_name: str) -> PlayerState:

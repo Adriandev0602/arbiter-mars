@@ -20,6 +20,9 @@ from app.agent.rules_engine import (
     raise_oxygen,
     raise_venus,
     raise_global_parameter_without_bonuses,
+    apply_corporation_start,
+    apply_new_distinct_tag_bonuses,
+    apply_cost_threshold_mc_bonuses,
     place_ocean,
     place_city_tile,
     standard_project_sell_patents,
@@ -4895,6 +4898,69 @@ def test_snapshot_card_resource_totals_agrupa_por_tipo():
     player = register_active_card(player, "ants", initial_resources=2, resource_type="microbe")
     player = register_active_card(player, "ironworks")  # sin resource_type: no aparece
     assert snapshot_card_resource_totals(player) == {"animal": 4, "microbe": 2}
+
+
+def test_apply_corporation_start_pone_produccion_en_cero():
+    # El rulebook: la produccion 1 de cada recurso es de la partida ESTANDAR;
+    # con corporacion se arranca en 0 y la carta da lo que diga.
+    player = new_player_state()
+    assert player["mc_production"] == 1
+    corp_player = apply_corporation_start(player, 57)
+    assert corp_player["mc"] == 57
+    assert all(corp_player[f"{r}_production"] == 0
+               for r in ("mc", "steel", "titanium", "plant", "energy", "heat"))
+    assert corp_player["tr"] == player["tr"]     # el TR no lo toca
+
+
+def test_ecoline_paga_7_plantas_por_greenery():
+    player = {**new_player_state(), "plants": 7}
+    with pytest.raises(InsufficientResourcesError):
+        convert_plants_to_greenery(player, new_global_parameters())
+
+    ecoline = register_passive_effect(player, "ecoline", {"plants_per_greenery": 7})
+    new_player, new_globals = convert_plants_to_greenery(ecoline, new_global_parameters())
+    assert new_player["plants"] == 0
+    assert new_globals["oxygen"] == 1 and new_player["tr"] == player["tr"] + 1
+
+
+def test_on_venus_raised_paga_por_paso_aplicado():
+    # Aphrodite: +2 M€ por cada paso de Venus, y nada si ya estaba al tope.
+    player = register_passive_effect(new_player_state(), "aphrodite",
+                                     {"on_venus_raised": {"mc_delta": 2}})
+    new_player, _ = raise_venus(player, new_global_parameters(), steps=3)
+    assert new_player["mc"] == 6
+
+    casi_tope = {**new_global_parameters(), "venus": 28}
+    new_player, new_globals = raise_venus(player, casi_tope, steps=3)
+    assert new_globals["venus"] == 30
+    assert new_player["mc"] == 2           # solo se aplico 1 paso
+
+
+def test_on_new_distinct_tag_played_solo_la_primera_vez_y_no_con_eventos():
+    # Aridor: +1 produccion de M€ por cada TIPO de tag nuevo.
+    player = register_passive_effect(new_player_state(), "aridor",
+                                     {"on_new_distinct_tag_played": {"production_deltas": {"mc_production": 1}}})
+    base = player["mc_production"]
+
+    # dos tags nuevos de una: dos pasos
+    p2 = apply_new_distinct_tag_bonuses(player, ("space", "earth"))
+    assert p2["mc_production"] == base + 2
+
+    # ya vistos: no paga de nuevo
+    p3 = increment_tags_played(p2, ("space", "earth"))
+    assert apply_new_distinct_tag_bonuses(p3, ("space",))["mc_production"] == p3["mc_production"]
+
+    # un evento con tag nuevo no dispara nada
+    assert apply_new_distinct_tag_bonuses(p3, ("jovian",), is_event=True)["mc_production"] == p3["mc_production"]
+
+
+def test_on_cost_threshold_paid_usa_el_costo_basico():
+    # CrediCor: +4 M€ tras pagar carta o proyecto estandar de costo basico 20+.
+    player = register_passive_effect(new_player_state(), "credicor",
+                                     {"on_cost_threshold_paid": {"min_cost": 20, "mc_delta": 4}})
+    assert apply_cost_threshold_mc_bonuses(player, 19)["mc"] == 0
+    assert apply_cost_threshold_mc_bonuses(player, 20)["mc"] == 4
+    assert apply_cost_threshold_mc_bonuses(player, 25)["mc"] == 4   # no escala con el costo
 
 
 def test_on_card_resource_gained_own_card_only_solo_cuenta_su_propia_carta():
