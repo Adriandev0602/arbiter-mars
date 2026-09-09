@@ -321,6 +321,35 @@ create table if not exists prelude_review_queue (
     discovered_at timestamptz not null default now()
 );
 
+-- Corporaciones. Cada jugador elige UNA al empezar la partida: define su M€
+-- inicial, su produccion/recursos de arranque, sus tags y, casi siempre, un
+-- pasivo o una accion repetible. No tienen costo (no se compran) ni requisitos,
+-- asi que no encajan en `cards` -- misma decision que se tomo con prelude_cards.
+--
+-- `starting_mc` es el M€ con el que arranca el jugador (reemplaza el default,
+-- no se suma). `effects` usa el MISMO vocabulario jsonb que cards/prelude_cards.
+create table if not exists corporation_cards (
+    id text primary key,
+    name text not null,
+    expansion text not null,
+    tags text[] not null default '{}',
+    starting_mc integer not null,
+    effects jsonb not null default '{}'::jsonb
+);
+
+-- Cola de revision de corporaciones, mismo patron que prelude_review_queue
+-- pero SIN scan_number: el indice del sitio trae `num` vacio para esta
+-- categoria, asi que la clave unica es el nombre (igual que global_events).
+create table if not exists corporation_review_queue (
+    id serial primary key,
+    name text not null unique,
+    expansion text not null,
+    image_url text not null,
+    reviewed boolean not null default false,
+    corporation_id text references corporation_cards(id),
+    discovered_at timestamptz not null default now()
+);
+
 create table if not exists transactions (
     id uuid primary key default gen_random_uuid(),
     player_id uuid references players(id) on delete cascade,

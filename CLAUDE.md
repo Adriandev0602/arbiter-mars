@@ -138,7 +138,35 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-08, preludes activos cargados)
+### 📍 Punto de retoma (última sesión: 2026-09-08, corporaciones arrancadas)
+
+**Corporaciones, bloque 1 (2026-09-08): infraestructura + 9 de 10 cargadas.** Era el hueco
+grande que quedaba. Tabla nueva `corporation_cards` (id, name, expansion, tags, **starting_mc**,
+effects), cola `corporation_review_queue` (clave = NOMBRE: el índice del sitio trae `num` vacío
+para esta categoría), script `scripts/enqueue_corporation_review_queue.py` y tool
+`tools.choose_corporation`. **Hay que correr `schema.sql` y `seed_corporations.sql` de nuevo
+contra Supabase.**
+
+**La decisión de reglas que define la mecánica:** hoy el motor arranca con producción 1 en cada
+recurso, pero el scan de Beginner Corporation no muestra ninguna producción. El rulebook oficial
+lo resuelve — *"You start with 1 production of each resource... **(only in standard game.)**"* —:
+esa producción 1 es de la partida ESTÁNDAR; con corporación se arranca en **0** y la carta da lo
+que diga. Por eso `apply_corporation_start` pone las seis producciones en 0 y **Beginner
+Corporation se carga con production_deltas +1 en cada recurso**, reproduciendo la partida
+estándar sin caso especial en el código.
+
+Piezas nuevas: `on_venus_raised` (Aphrodite), `on_new_distinct_tag_played` (Aridor, va ANTES de
+`increment_tags_played`), `on_cost_threshold_paid` (CrediCor: unión de
+`on_card_played_cost_threshold_draw` con `on_standard_project_used`, sobre el costo BÁSICO) y
+`plants_per_greenery` (EcoLine: 7 en vez de 8). Mismo hueco de cableado que las preludes:
+`use_card_action` ahora también busca en `corporation_cards`. **Pendiente: Arcadian Communities**
+(marcadores "community" que reservan hexágonos — familia de nomad/cathedral). Quedan 38
+corporaciones sin revisar. Detalle en "Corporaciones" en `CARDS_LOG.md`.
+
+**Tercera tanda seguida con errores de tags en los informes de agentes:** Celestic SÍ tiene tag
+`venus` (leído como banner de expansión) y Cheung Shing Mars SÍ tiene `building` (leído como
+parte del texto del Effect). Los atrapó la hoja de contacto. **La regla sigue firme: delegar el
+análisis del efecto sí; verificar tags contra el scan, siempre.**
 
 **Bloque de preludes 3 (2026-09-08): 4 de los 22 preludes "pendientes" cargados** -- Applied
 Science (P43), Floating Trade Hub (P49), Main Belt Asteroids (P53) y World Government Advisor
@@ -490,16 +518,15 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
 2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
    Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
-3. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
+3. **Corporaciones: seguir la cola** (38 sin revisar, bloques de 10 con subagentes Sonnet).
+4. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
    quedan sí necesitan mecánicas grandes (sub-mazo de Prelude, hook genérico "subió el TR",
    corporaciones). Siguen pendientes también las 3 cartas dudosas de proyecto
    (`self_replicating_robots`, `venus_orbital_survey`, `wg_project`).
-4. **Corporaciones (48 cartas):** el hueco grande que sigue sin modelarse en ningún lado
-   (`enqueue_card_review_queue.py` filtraba `cat != "Project"`, así que nunca entraron al
-   pipeline). Necesitan tabla, cola y mecánica propias, como se hizo con Prelude.
 5. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
    neutrales por partido en Turmoil).
-6. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
+6. El **frontend**, todavía 100% mockeado.
+7. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
 
 El flujo de trabajo, si vuelve a haber cartas para revisar: consultar la cola en Supabase
 (conexión directa con `psycopg2` y parámetros individuales de host/user/password — el

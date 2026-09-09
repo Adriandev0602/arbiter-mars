@@ -12,6 +12,18 @@ from app.agent import turmoil as turmoillib
 from app.agent import rules_engine as engine
 from app.db.supabase_client import supabase
 
+# Costo BASICO (de tabla) de cada proyecto estandar, para los pasivos que
+# miran el costo y no lo efectivamente pagado (ej. CrediCor: 20 M€ o mas).
+# sell_patents no tiene costo: gana MC, no lo gasta.
+STANDARD_PROJECT_BASIC_COSTS = {
+    "power_plant": engine.STANDARD_PROJECT_POWER_PLANT_COST,
+    "asteroid": engine.STANDARD_PROJECT_ASTEROID_COST,
+    "aquifer": engine.STANDARD_PROJECT_AQUIFER_COST,
+    "greenery": engine.STANDARD_PROJECT_GREENERY_COST,
+    "city": engine.STANDARD_PROJECT_CITY_COST,
+    "air_scrapping": engine.STANDARD_PROJECT_AIR_SCRAPPING_COST,
+}
+
 
 def _load_player(player_id: str) -> engine.PlayerState:
     """Trae el estado real del jugador desde Supabase."""
@@ -298,6 +310,12 @@ def use_standard_project(
         )
 
     new_player = engine.apply_standard_project_used_bonuses(new_player, project_name)
+    # CrediCor: "after you pay for a card OR STANDARD PROJECT with a basic cost
+    # of 20 M€ or more, gain 4 M€". El costo que cuenta es el de TABLA, no lo
+    # que termino pagando el jugador con descuentos.
+    basic_cost = STANDARD_PROJECT_BASIC_COSTS.get(project_name)
+    if basic_cost is not None:
+        new_player = engine.apply_cost_threshold_mc_bonuses(new_player, basic_cost)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -1058,8 +1076,15 @@ def play_card(
                 raise ValueError(f"'{event_id}' coloca un special tile: esta carta no permite recuperarla")
             new_player = {**new_player, "hand": [*new_player["hand"], event_id]}
 
+    # Aridor: "when you get a NEW TYPE of tag in play". Va ANTES de
+    # increment_tags_played, que es lo que convierte un tag en "ya visto".
+    new_player = engine.apply_new_distinct_tag_bonuses(
+        new_player, card_tags, is_event=bool(card.get("is_event")),
+    )
     new_player = engine.increment_tags_played(new_player, card_tags)
     new_player = engine.increment_zero_tag_cards_played(new_player, card_tags)
+    # CrediCor: umbral sobre el costo IMPRESO de la carta, no el pagado.
+    new_player = engine.apply_cost_threshold_mc_bonuses(new_player, card["cost"])
     for effect in new_player["passive_effects"]:
         threshold_spec = effect.get("on_card_played_cost_threshold_draw")
         if threshold_spec is not None and card["cost"] >= threshold_spec["min_cost"]:
@@ -1200,7 +1225,15 @@ def use_card_action(
         prelude_res = supabase.table("prelude_cards").select("*").eq("id", card_id).maybe_single().execute()
         card = prelude_res.data if prelude_res else None
     if card is None:
-        raise ValueError(f"Carta '{card_id}' no encontrada en el catalogo (ni en `cards` ni en `prelude_cards`)")
+        # Y las corporaciones, igual (ej. Astrodrill, Celestic) -- ver
+        # choose_corporation.
+        corp_res = supabase.table("corporation_cards").select("*").eq("id", card_id).maybe_single().execute()
+        card = corp_res.data if corp_res else None
+    if card is None:
+        raise ValueError(
+            f"Carta '{card_id}' no encontrada en el catalogo "
+            f"(ni en `cards`, ni en `prelude_cards`, ni en `corporation_cards`)"
+        )
 
     action_spec = (card.get("effects") or {}).get("action")
     if action_spec is None:
@@ -2261,6 +2294,75 @@ def play_prelude(
     return {"player": dict(new_player), "globals": dict(new_globals)}
 
 
+@tool
+def choose_corporation(player_id: str, corporation_id: str) -> dict:
+    """
+    Elige la CORPORACION del jugador al empezar la partida. Se hace UNA sola
+    vez, antes de jugar cartas.
+
+    A diferencia de las cartas de proyecto y de las preludes, una corporacion
+    define el punto de arranque: reemplaza el M€ inicial y pone la produccion
+    de los seis recursos en 0, y recien despues aplica lo que la propia carta
+    otorgue. Esto sale del rulebook oficial, que en el setup dice "You start
+    with 1 production of each resource on the player board... (ONLY IN
+    STANDARD GAME.)": esa produccion 1 es la partida estandar, la de Beginner
+    Corporation, no la de una partida con corporaciones. Por eso Beginner
+    Corporation se carga con production_deltas +1 en cada recurso.
+
+    Despues de eso aplica `effects` con el mismo motor de siempre
+    (rules_engine.apply_card_effect), registra la carta activa y su pasivo si
+    los tiene, y suma sus tags a `tags_played` -- los tags de la corporacion
+    cuentan para los requisitos de otras cartas.
+
+    Args:
+        player_id: id del jugador.
+        corporation_id: id en `corporation_cards` (ej. "credicor").
+
+    Returns:
+        {"player": ..., "globals": ..., "corporation": ...}
+    """
+    corp_res = supabase.table("corporation_cards").select("*").eq("id", corporation_id).maybe_single().execute()
+    corp = corp_res.data if corp_res else None
+    if corp is None:
+        raise ValueError(f"Corporacion '{corporation_id}' no encontrada en el catalogo")
+
+    effects = corp.get("effects") or {}
+    tags = tuple(corp.get("tags") or [])
+    player = _load_player(player_id)
+    globals_ = _load_global_parameters()
+
+    if player["played_cards"] or player["tags_played"]:
+        raise ValueError(
+            "Este jugador ya jugo cartas: la corporacion se elige al empezar la partida"
+        )
+
+    player = engine.apply_corporation_start(player, corp["starting_mc"])
+
+    # Mismo orden que play_card/play_prelude: la carta se registra ANTES de
+    # aplicar su efecto, para que los pasivos que se autodisparan con su
+    # propio tag la encuentren activa.
+    if effects.get("becomes_active"):
+        player = engine.register_active_card(
+            player, corporation_id,
+            initial_resources=engine.resolve_active_card_starting_resources(player, effects),
+            resource_type=effects.get("active_card_resource_type"),
+        )
+    if effects.get("passive"):
+        player = engine.register_passive_effect(player, corporation_id, effects["passive"])
+
+    new_player, new_globals = engine.apply_card_effect(player, globals_, effects)
+    new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
+    new_player = engine.increment_tags_played(new_player, tags)
+    new_player = engine.register_played_card(new_player, corporation_id)
+
+    _save_player(player_id, new_player)
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
+    _log_transaction(player_id, "choose_corporation", {"corporation_id": corporation_id})
+
+    return {"player": dict(new_player), "globals": dict(new_globals), "corporation": corp["name"]}
+
+
 # Lista de tools que se bindean al LLM en graph.py
 ALL_TOOLS = [
     use_standard_project, convert_resources, run_production_phase,
@@ -2268,5 +2370,5 @@ ALL_TOOLS = [
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
-    get_active_cards_state, resolve_ocean_offer,
+    get_active_cards_state, resolve_ocean_offer, choose_corporation,
 ]

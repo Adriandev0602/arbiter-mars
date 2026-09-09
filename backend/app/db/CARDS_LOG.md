@@ -919,6 +919,78 @@ Los VP de Main Belt Asteroids (1 por cada 2 asteroides) no se modelan: el motor 
 
 **Quedan 18 preludes pendientes** en `prelude_review_queue` (revisadas, sin cargar).
 
+### Corporaciones: la categoría que faltaba entera
+
+**2026-09-08.** Las 48 corporaciones nunca habían entrado al pipeline, por el mismo filtro
+`cat != "Project"` que había dejado afuera a las preludes. Ahora tienen tabla propia
+`corporation_cards` (id, name, expansion, tags, **starting_mc**, effects), cola
+`corporation_review_queue` (sin `scan_number`: el índice del sitio trae `num` vacío para esta
+categoría, así que la clave única es el NOMBRE, igual que en `global_events`), script
+`scripts/enqueue_corporation_review_queue.py` y tool `tools.choose_corporation`.
+
+**La decisión de reglas que define toda la mecánica.** Hoy `new_player_state()` arranca con
+**producción 1 en cada recurso**, y el scan de Beginner Corporation no muestra ninguna
+producción — o sea que una de las dos cosas estaba mal. El rulebook oficial lo resuelve en el
+setup: *"You start with 1 production of each resource on the player board, so place player
+markers on the tracks **(only in standard game.)**"*. Esa producción 1 es de la partida
+ESTÁNDAR (la de Beginner Corporation); en una partida con corporaciones se arranca en **0** y la
+corporación otorga lo que diga su carta.
+
+Por eso `rules_engine.apply_corporation_start(player, starting_mc)` fija el M€ inicial y pone las
+seis producciones en 0, y **Beginner Corporation se carga con `production_deltas` +1 en cada
+recurso**: reproduce la partida estándar sin ningún caso especial en el código. `starting_mc`
+REEMPLAZA el M€ del jugador, no se suma.
+
+`choose_corporation` exige que el jugador no haya jugado nada todavía (`played_cards` y
+`tags_played` vacíos): la corporación se elige al empezar la partida. Después registra la carta
+activa y su pasivo ANTES de aplicar el efecto (mismo orden que `play_card`/`play_prelude`) y suma
+sus tags a `tags_played` — los tags de la corporación cuentan para los requisitos de otras cartas.
+
+**Bloque 1 (alfabético, Aphrodite → EcoLine): 9 de 10 cargadas.** Piezas nuevas, todas chicas:
+
+- `on_venus_raised` (Aphrodite: +2 M€ por PASO de Venus) — dentro de `raise_venus`, mismo patrón
+  que `on_temperature_raised`: una vez por paso realmente aplicado, cero si Venus ya está al tope.
+- `on_new_distinct_tag_played` (Aridor: +1 producción de M€ por cada TIPO de tag nuevo) — se
+  dispara una sola vez por tag, los eventos no cuentan. Hay que llamarla ANTES de
+  `increment_tags_played`, que es lo que convierte un tag en "ya visto".
+- `on_cost_threshold_paid` (CrediCor: +4 M€ tras pagar carta o proyecto estándar de costo BÁSICO
+  20+) — es la unión de `on_card_played_cost_threshold_draw` (solo cartas, solo roba) con
+  `on_standard_project_used` (solo proyectos, sin umbral). El costo que cuenta es el impreso / de
+  tabla, no el efectivamente pagado con descuentos; los costos de tabla viven en
+  `tools.STANDARD_PROJECT_BASIC_COSTS`.
+- `plants_per_greenery` (EcoLine: 7 plantas en vez de 8) — `PLANTS_PER_GREENERY` era una
+  constante de módulo usada directo; ahora `convert_plants_to_greenery` consulta
+  `plants_per_greenery(player)`, que mira los pasivos y se queda con el más barato.
+
+**Hueco de cableado, el mismo que tenían las preludes:** `use_card_action` buscaba el id en
+`cards` y `prelude_cards`; ahora también en `corporation_cards` (Astrodrill y Celestic tienen
+acción repetible).
+
+**Dos errores de TAGS en los informes de los agentes, atrapados con hoja de contacto** (van 3
+tandas seguidas con el mismo patrón):
+- **Celestic SÍ tiene tag `venus`.** El agente leyó el círculo "V" del extremo superior derecho
+  como el banner de la expansión. Es un TAG: Aphrodite lleva ese mismo círculo al lado del de
+  `plant`, en la misma posición.
+- **Cheung Shing Mars SÍ tiene tag `building`.** El agente lo leyó como parte del texto del Effect.
+
+**Cláusulas de SETUP, no de motor** (documentadas, no implementadas como efecto):
+- Beginner Corporation: "instead of choosing from 10 cards, you get 10 cards for free" — se
+  reparten con `deal_starting_hand` sin cobrar.
+- Aridor: "as your first action, put an additional Colony Tile into play" — se resuelve con
+  `setup_colonies` agregando una colonia más.
+- Celestic: "reveal cards until 2 with a floater ICON" — **queda sin modelar**: el ícono de
+  floater no es un tag, es una marca del arte que el catálogo no guarda.
+- Los VP de Arklight (1 por 2 animales) y Celestic (1 por 3 floaters) no se modelan: el motor no
+  puntúa.
+
+**Pendiente del bloque: Arcadian Communities.** Necesita "communities" — marcadores por jugador
+que reservan un hexágono, NO ocupan el tile, se encadenan por adyacencia y pagan 3 M€ cuando el
+jugador construye encima. Es la misma familia que los marcadores del bloque 37 (nomad,
+cathedral): el tablero solo sabe de tiles permanentes que ocupan un hex vacío. Conviene
+diseñarlo junto con las otras corporaciones de tablero que aparezcan en los próximos bloques.
+
+**38 corporaciones sin revisar** en `corporation_review_queue`.
+
 ### Recursos tipados por carta activa (floaters entre cartas)
 
 **Resuelto (2026-09-04).** Hasta ahora `active_cards[card_id]["resources"]` era un contador SIN
