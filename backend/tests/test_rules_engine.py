@@ -19,6 +19,7 @@ from app.agent.rules_engine import (
     raise_temperature,
     raise_oxygen,
     raise_venus,
+    raise_global_parameter_without_bonuses,
     place_ocean,
     place_city_tile,
     standard_project_sell_patents,
@@ -4894,6 +4895,103 @@ def test_snapshot_card_resource_totals_agrupa_por_tipo():
     player = register_active_card(player, "ants", initial_resources=2, resource_type="microbe")
     player = register_active_card(player, "ironworks")  # sin resource_type: no aparece
     assert snapshot_card_resource_totals(player) == {"animal": 4, "microbe": 2}
+
+
+def test_on_card_resource_gained_own_card_only_solo_cuenta_su_propia_carta():
+    # Main Belt Asteroids (P53): "when gaining an asteroid HERE, gain 1 titanium".
+    # Un asteroide ganado en OTRA carta no paga nada.
+    player = register_active_card(new_player_state(), "main_belt_asteroids",
+                                  initial_resources=0, resource_type="asteroid")
+    player = register_active_card(player, "asteroid_deflection_system",
+                                  initial_resources=0, resource_type="asteroid")
+    player = register_passive_effect(player, "main_belt_asteroids", {
+        "on_card_resource_gained": {"resource_type": "asteroid", "own_card_only": True,
+                                    "resource_deltas": {"titanium": 1}},
+    })
+    before_totals = snapshot_card_resource_totals(player)
+    before_cards = dict(player["active_cards"])
+
+    player_otra = {**player, "active_cards": {
+        **player["active_cards"],
+        "asteroid_deflection_system": {**player["active_cards"]["asteroid_deflection_system"], "resources": 3},
+    }}
+    assert apply_card_resource_gained_bonuses(player_otra, before_totals, before_cards)["titanium"] == 0
+
+    player_propia = {**player, "active_cards": {
+        **player["active_cards"],
+        "main_belt_asteroids": {**player["active_cards"]["main_belt_asteroids"], "resources": 2},
+    }}
+    assert apply_card_resource_gained_bonuses(player_propia, before_totals, before_cards)["titanium"] == 2
+
+
+def test_raise_global_parameter_without_bonuses_no_da_tr_ni_bonus():
+    # World Government Advisor (P67): sube el parametro, nada mas.
+    player = register_passive_effect(new_player_state(), "homeostasis_bureau",
+                                     {"on_temperature_raised": {"mc_delta": 3}})
+    globals_ = new_global_parameters()
+    tr_antes, mc_antes = player["tr"], player["mc"]
+
+    g2 = raise_global_parameter_without_bonuses(globals_, "temperature")
+    assert g2["temperature"] == globals_["temperature"] + 2
+    assert player["tr"] == tr_antes and player["mc"] == mc_antes  # el pasivo NO se dispara
+
+    assert raise_global_parameter_without_bonuses(globals_, "oxygen")["oxygen"] == 1
+    assert raise_global_parameter_without_bonuses(globals_, "ocean")["oceans_placed"] == 1
+    # cruzar el umbral de 8% de Venus normalmente roba 1 carta: aca tampoco
+    venus_globals = {**globals_, "venus": 6}
+    g3 = raise_global_parameter_without_bonuses(venus_globals, "venus")
+    assert g3["venus"] == 8
+
+
+def test_raise_global_parameter_without_bonuses_al_tope_y_desconocido():
+    maxed = {**new_global_parameters(), "oxygen": 14}
+    with pytest.raises(GlobalParameterMaxedError):
+        raise_global_parameter_without_bonuses(maxed, "oxygen")
+    with pytest.raises(CardEffectError):
+        raise_global_parameter_without_bonuses(new_global_parameters(), "gravity")
+
+
+def test_accion_raise_global_parameter_without_bonuses_por_opcion():
+    # El parametro es una OPCION de la lista "choice" (effect_choice es su indice).
+    player = register_active_card(new_player_state(), "world_government_advisor")
+    player = register_passive_effect(player, "homeostasis_bureau",
+                                     {"on_temperature_raised": {"mc_delta": 3}})
+    spec = {"choice": [
+        {"cost": {}, "gains": {"raise_global_parameter_without_bonuses": "temperature"}},
+        {"cost": {}, "gains": {"raise_global_parameter_without_bonuses": "oxygen"}},
+    ]}
+    new_player, new_globals = use_card_action(
+        player, new_global_parameters(), "world_government_advisor", spec, effect_choice=1,
+    )
+    assert new_globals["oxygen"] == 1
+    assert new_player["tr"] == player["tr"]           # sin TR
+
+    new_player, new_globals = use_card_action(
+        player, new_global_parameters(), "world_government_advisor", spec, effect_choice=0,
+    )
+    assert new_globals["temperature"] == -28
+    assert new_player["tr"] == player["tr"] and new_player["mc"] == player["mc"]  # ni TR ni pasivo
+
+
+def test_accion_target_min_resources_exige_recursos_en_el_destino():
+    # Applied Science (P43): "add 1 resource to ANY CARD WITH A RESOURCE"
+    player = register_active_card(new_player_state(), "applied_science",
+                                  initial_resources=6, resource_type="science")
+    player = register_active_card(player, "pets", initial_resources=0, resource_type="animal")
+    spec = {"cost": {"card_resource": 1},
+            "gains": {"target_card_resource_delta_allow_self": 1, "target_min_resources": 1}}
+    with pytest.raises(CardEffectError):
+        use_card_action(player, new_global_parameters(), "applied_science", spec, target_card_id="pets")
+
+    player = {**player, "active_cards": {
+        **player["active_cards"],
+        "pets": {**player["active_cards"]["pets"], "resources": 2},
+    }}
+    new_player, _ = use_card_action(
+        player, new_global_parameters(), "applied_science", spec, target_card_id="pets",
+    )
+    assert new_player["active_cards"]["pets"]["resources"] == 3
+    assert new_player["active_cards"]["applied_science"]["resources"] == 5
 
 
 def test_on_card_resource_gained_paga_por_unidad_ganada():

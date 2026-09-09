@@ -860,6 +860,65 @@ Eccentric Sponsor no pueden apuntar a la misma carta.
 
 **46 pendientes de revisar** en `prelude_review_queue`.
 
+### Prelude bloque 3: los preludes ACTIVOS (4 de 22)
+
+**2026-09-08.** El bloque 2 dejó 20 preludes "pendientes por mecánica" (22 contando P10/P11). La
+revisión de esa lista mostró que el grupo más grande -- *"cartas activas / acciones repetibles en
+preludes"* -- ya no estaba bloqueado por el motor sino por **dos huecos de cableado en
+`tools.py`**, ambos corregidos acá:
+
+1. `play_prelude` no registraba `becomes_active` / `active_card_resource_type` /
+   `active_card_starting_resources`: una prelude nunca llegaba a `active_cards`, así que su
+   acción no existía. Ahora los registra ANTES de aplicar el efecto, mismo orden que `play_card`.
+2. `use_card_action` buscaba el id solo en `cards`. Ahora, si no está ahí, lo busca en
+   `prelude_cards` (con `maybe_single()`, que no explota cuando no hay fila).
+
+**Cargadas: Applied Science (P43), Floating Trade Hub (P49), Main Belt Asteroids (P53) y World
+Government Advisor (P67).** Board of Directors (P45) sigue pendiente: su acción roba una carta
+del **sub-mazo de Prelude**, que no existe (misma familia que New Partner, Double Down y WG
+Project).
+
+**Piezas nuevas del bloque:**
+- `rules_engine.raise_global_parameter_without_bonuses(globals_, parameter)` -- sube UN paso de
+  `temperature`/`oxygen`/`venus`/`ocean` moviendo **solo el contador**: sin TR, sin los bonus de
+  umbral de Venus y sin disparar ningún pasivo (`on_temperature_raised`, `on_ocean_placed`). Es
+  el texto literal de World Government Advisor: *"raise 1 global parameter without getting any TR
+  or other bonuses"*. No reusa `raise_temperature`/`place_ocean` justamente porque esas SÍ
+  otorgan TR y disparan pasivos. En `use_card_action` se expone como
+  `gains.raise_global_parameter_without_bonuses: "<parámetro>"`, y **la elección del jugador se
+  modela como una opción de `choice` por parámetro** -- `effect_choice` es el ÍNDICE de esa
+  lista (un `int` en la firma de la tool), no admite el nombre del parámetro. Si se elige
+  `"ocean"`, `tools.use_card_action` coloca el tile igual (ocupa el hexágono) pero **no cobra el
+  bonus de colocación**, que también es "otro bonus".
+- `on_card_resource_gained` acepta `own_card_only: true` y `resource_deltas` -- Main Belt
+  Asteroids paga *"when gaining an asteroid HERE"*, no en cualquier carta, y paga titanio en vez
+  de M€. Con `own_card_only` el delta se mide contra el estado previo de ESA carta
+  (`active_cards_before`, parámetro nuevo de `apply_card_resource_gained_bonuses`) en vez del
+  total por tipo. Se intentó primero meter claves `__own__<card_id>` dentro de
+  `snapshot_card_resource_totals` y fue un error: ese dict lo consume además
+  `count_distinct_resource_types`, que habría contado cada carta como un "tipo distinto" más.
+- `gains.target_min_resources` en `use_card_action` -- Applied Science agrega 1 recurso a
+  *"ANY CARD WITH A RESOURCE"*: el destino tiene que tener ya ≥1 recurso guardado. Es la versión
+  de acción del `target_min_resources` que ya existía en `apply_card_effect`.
+
+**Bug encontrado por la prueba de humo, no por los tests unitarios (otra vez).** `play_prelude`
+registraba el pasivo DOS veces: una en el bloque nuevo (antes de aplicar el efecto) y otra en el
+bloque que ya existía (antes de los bonus por tag). Un pasivo duplicado **paga dos veces**: Main
+Belt Asteroids daba +2 titanio por 1 asteroide. Eliminado el registro duplicado.
+
+**Modelado de "gana X de UN recurso estándar":** tanto Applied Science como Floating Trade Hub
+dejan elegir CUÁL de los seis recursos se gana. No hizo falta pieza nueva -- se modela como una
+opción de `choice` por recurso (7 opciones en cada carta). Mismo criterio que la elección de
+parámetro global de P67.
+
+**Tags verificados uno por uno contra los scans:** Applied Science lleva el `?` del tag COMODÍN
+(`wild`); Floating Trade Hub y Main Belt Asteroids llevan el SOL DORADO sobre negro, que es
+`space` (no `power` -- ver "Iconografía de tags").
+
+Los VP de Main Belt Asteroids (1 por cada 2 asteroides) no se modelan: el motor no puntúa.
+
+**Quedan 18 preludes pendientes** en `prelude_review_queue` (revisadas, sin cargar).
+
 ### Recursos tipados por carta activa (floaters entre cartas)
 
 **Resuelto (2026-09-04).** Hasta ahora `active_cards[card_id]["resources"]` era un contador SIN

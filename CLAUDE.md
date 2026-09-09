@@ -138,9 +138,25 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-08, auditoría de tags completada)
+### 📍 Punto de retoma (última sesión: 2026-09-08, preludes activos cargados)
 
-**Progreso:** catálogo en **408 cartas de proyecto**, **36 Global Events** y **48 cartas
+**Bloque de preludes 3 (2026-09-08): 4 de los 22 preludes "pendientes" cargados** -- Applied
+Science (P43), Floating Trade Hub (P49), Main Belt Asteroids (P53) y World Government Advisor
+(P67). No estaban trabados por el motor sino por **dos huecos de cableado en `tools.py`**:
+`play_prelude` no registraba `becomes_active` (una prelude nunca llegaba a `active_cards`, así
+que su acción no existía) y `use_card_action` buscaba el id solo en `cards`, no en
+`prelude_cards`. Piezas nuevas: `raise_global_parameter_without_bonuses` (World Government
+Advisor: subir un parámetro global SIN TR, sin bonus de umbral de Venus, sin pasivos y -- si es
+océano -- sin bonus de hexágono); `own_card_only` + `resource_deltas` en el pasivo
+`on_card_resource_gained` (Main Belt Asteroids paga "when gaining an asteroid HERE"); y
+`gains.target_min_resources` en `use_card_action` (Applied Science: "any card WITH A RESOURCE").
+**La elección del jugador -- qué parámetro global, qué recurso estándar -- se modela siempre como
+una opción de `choice`**, porque `effect_choice` es el ÍNDICE de esa lista (un `int`), no un
+nombre. **Bug agarrado por la prueba de humo, no por los tests:** `play_prelude` registraba el
+pasivo dos veces y un pasivo duplicado paga dos veces (+2 titanio por 1 asteroide). Quedan 18
+preludes pendientes. Detalle en "Prelude bloque 3" en `CARDS_LOG.md`.
+
+**Progreso:** catálogo en **408 cartas de proyecto**, **36 Global Events** y **52 cartas
 Prelude**. **La cola `card_review_queue` quedó en 0: no hay más cartas de proyecto por revisar.**
 La cola de preludes también está en 0 (46 revisadas en el bloque 2: 26 cargadas, 20 pendientes
 por mecánica).
@@ -474,12 +490,16 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
 2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
    Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
-3. **Corporaciones (48 cartas):** el hueco grande que sigue sin modelarse en ningún lado
+3. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
+   quedan sí necesitan mecánicas grandes (sub-mazo de Prelude, hook genérico "subió el TR",
+   corporaciones). Siguen pendientes también las 3 cartas dudosas de proyecto
+   (`self_replicating_robots`, `venus_orbital_survey`, `wg_project`).
+4. **Corporaciones (48 cartas):** el hueco grande que sigue sin modelarse en ningún lado
    (`enqueue_card_review_queue.py` filtraba `cat != "Project"`, así que nunca entraron al
    pipeline). Necesitan tabla, cola y mecánica propias, como se hizo con Prelude.
-4. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
+5. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
    neutrales por partido en Turmoil).
-5. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
+6. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
 
 El flujo de trabajo, si vuelve a haber cartas para revisar: consultar la cola en Supabase
 (conexión directa con `psycopg2` y parámetros individuales de host/user/password — el
