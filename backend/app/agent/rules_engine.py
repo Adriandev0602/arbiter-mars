@@ -418,6 +418,10 @@ def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[Player
         if bonus is None:
             continue
         new_player["plants"] = new_player["plants"] + bonus.get("plants_delta", 0)
+        # Lakefront Resorts: "when ANY ocean is placed, increase your M€
+        # production 1 step" -- el mismo hook, pero sobre produccion.
+        for key, delta in bonus.get("production_deltas", {}).items():
+            new_player = _increase_production(new_player, key, delta)
         # Ofertas OPCIONALES y PAGADAS (ej. Neptunian Power Consultants: "you
         # MAY spend 5 M€ to raise energy production and add 1 hydroelectric
         # here"). No se pueden resolver aca -- necesitan que el jugador
@@ -466,11 +470,8 @@ def standard_project_power_plant(player: PlayerState) -> PlayerState:
         raise InsufficientResourcesError(
             f"Se necesitan {STANDARD_PROJECT_POWER_PLANT_COST} MC, hay {player['mc']}"
         )
-    return {
-        **player,
-        "mc": player["mc"] - STANDARD_PROJECT_POWER_PLANT_COST,
-        "energy_production": player["energy_production"] + 1,
-    }
+    paid_player = {**player, "mc": player["mc"] - STANDARD_PROJECT_POWER_PLANT_COST}
+    return _increase_production(paid_player, "energy_production", 1)
 
 
 def standard_project_asteroid(player: PlayerState, globals_: GlobalParameters) -> tuple[PlayerState, GlobalParameters]:
@@ -707,6 +708,47 @@ def calculate_card_payment(
 def _apply_production_floor(key: str, value: int) -> int:
     """Todas las producciones tienen piso 0, salvo la de MC (piso -5)."""
     return max(MC_PRODUCTION_FLOOR if key == "mc_production" else 0, value)
+
+
+# Traduce cada campo "<recurso>_production" al campo de stock que corresponde
+# (plants/plant es la unica irregularidad). Usado solo por _increase_production
+# para saber que stock sumarle al pasivo "on_production_increased" (Manutech).
+_PRODUCTION_STOCK_KEY = {
+    "mc_production": "mc",
+    "steel_production": "steel",
+    "titanium_production": "titanium",
+    "plant_production": "plants",
+    "energy_production": "energy",
+    "heat_production": "heat",
+}
+
+
+def _increase_production(new_player: dict, key: str, delta: int) -> dict:
+    """
+    Punto UNICO por el que pasa todo cambio de produccion del motor (positivo
+    o negativo): aplica el piso correspondiente (ver _apply_production_floor)
+    y, si el cambio es un aumento real, dispara el pasivo
+    "on_production_increased" (Manutech, corporaciones bloque 2: *"For each
+    step you increase the production of a resource, including this, you also
+    gain that resource"* -- texto literal de la carta, sin excepcion para M€
+    -- gana tantas unidades de stock como pasos subio esa produccion).
+
+    Reemplaza el patron repetido `new_player[key] = _apply_production_floor(
+    key, new_player[key] + delta)` que antes vivia suelto en ~17 lugares del
+    motor (production_deltas, production_delta_per_tag, proyectos estandar,
+    etc.) -- centralizarlo evita tener que cablear Manutech en cada uno.
+    """
+    current = new_player[key]
+    new_value = _apply_production_floor(key, current + delta)
+    applied_delta = new_value - current
+    new_player = {**new_player, key: new_value}
+    if applied_delta > 0:
+        stock_key = _PRODUCTION_STOCK_KEY.get(key)
+        if stock_key is not None and any(
+            effect.get("on_production_increased") for effect in new_player["passive_effects"]
+        ):
+            new_player[stock_key] = new_player[stock_key] + applied_delta
+    return new_player
 
 
 def is_blue_card(is_event: bool, effects: dict | None) -> bool:
@@ -1433,16 +1475,14 @@ def apply_card_effect(
     new_globals: dict = dict(globals_)
 
     if "mc_production_delta" in effects:
-        new_player["mc_production"] = _apply_production_floor(
-            "mc_production", new_player["mc_production"] + effects["mc_production_delta"]
-        )
+        new_player = _increase_production(new_player, "mc_production", effects["mc_production_delta"])
 
     if "mc_delta" in effects:
         new_player["mc"] = max(0, new_player["mc"] + effects["mc_delta"])
 
     if "production_deltas" in effects:
         for key, delta in effects["production_deltas"].items():
-            new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+            new_player = _increase_production(new_player, key, delta)
 
     if "production_delta_per_tag" in effects:
         specs = effects["production_delta_per_tag"]
@@ -1456,7 +1496,7 @@ def apply_card_effect(
             tags_per_step = spec.get("tags_per_step", 1)
             per_step = spec.get("per_step", spec.get("per_tag", 1))
             delta = (count // tags_per_step) * per_step
-            new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+            new_player = _increase_production(new_player, key, delta)
 
     if "production_delta_per_distinct_tag" in effects:
         # Interplanetary Trade (X05, bloque 32): "+1 M€ production per
@@ -1471,7 +1511,7 @@ def apply_card_effect(
         distinct = {tag for tag, count in player["tags_played"].items() if count > 0}
         distinct |= set(spec.get("extra_tags", []))
         delta = len(distinct) * spec.get("per_tag", 1)
-        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+        new_player = _increase_production(new_player, key, delta)
 
     if "tr_delta_per_tag" in effects:
         spec = effects["tr_delta_per_tag"]
@@ -1486,7 +1526,7 @@ def apply_card_effect(
         count = len(player["colonies_owned"])
         if spec.get("cap") is not None:
             count = min(count, spec["cap"])
-        new_player[key] = _apply_production_floor(key, new_player[key] + count * spec.get("per_colony", 1))
+        new_player = _increase_production(new_player, key, count * spec.get("per_colony", 1))
 
     if "resource_delta_per_colony" in effects:
         spec = effects["resource_delta_per_colony"]
@@ -1537,7 +1577,7 @@ def apply_card_effect(
 
     if "production_delta_per_influence" in effects:
         for key, per_unit in effects["production_delta_per_influence"].items():
-            new_player[key] = _apply_production_floor(key, new_player[key] + influence * per_unit)
+            new_player = _increase_production(new_player, key, influence * per_unit)
 
     if "tr_delta_reduced_by_influence" in effects:
         spec = effects["tr_delta_reduced_by_influence"]
@@ -1610,7 +1650,7 @@ def apply_card_effect(
         key = spec["production"]
         count = player["tags_played"].get(spec["tag"], 0) + influence
         units = count // spec.get("divisor", 1)
-        new_player[key] = _apply_production_floor(key, new_player[key] + units * spec.get("per_unit", 1))
+        new_player = _increase_production(new_player, key, units * spec.get("per_unit", 1))
 
     if "production_delta_per_tag_pair" in effects:
         spec = effects["production_delta_per_tag_pair"]
@@ -1618,7 +1658,7 @@ def apply_card_effect(
         count_a = player["tags_played"].get(spec["tag_a"], 0)
         count_b = player["tags_played"].get(spec["tag_b"], 0)
         sets = min(count_a, count_b)
-        new_player[key] = _apply_production_floor(key, new_player[key] + sets * spec.get("per_set", 1))
+        new_player = _increase_production(new_player, key, sets * spec.get("per_set", 1))
 
     if "production_delta_per_zero_tag_card" in effects:
         spec = effects["production_delta_per_zero_tag_card"]
@@ -1626,14 +1666,14 @@ def apply_card_effect(
         count = player["zero_tag_cards_played"]
         if spec.get("include_this"):
             count += 1
-        new_player[key] = _apply_production_floor(key, new_player[key] + count * spec.get("per_card", 1))
+        new_player = _increase_production(new_player, key, count * spec.get("per_card", 1))
 
     if "production_delta_per_counter" in effects:
         spec = effects["production_delta_per_counter"]
         key = spec["production"]
         count = globals_[spec["counter"]]
         delta = count * spec.get("per_counter", 1)
-        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+        new_player = _increase_production(new_player, key, delta)
 
     if "resource_delta_per_counter" in effects:
         spec = effects["resource_delta_per_counter"]
@@ -1661,7 +1701,7 @@ def apply_card_effect(
             )
 
         new_player[from_key] = _apply_production_floor(from_key, new_player[from_key] - effect_amount)
-        new_player[to_key] = _apply_production_floor(to_key, new_player[to_key] + effect_amount)
+        new_player = _increase_production(new_player, to_key, effect_amount)
 
     if "raise_temperature_steps" in effects:
         p2, g2 = raise_temperature(
@@ -1841,7 +1881,7 @@ def apply_card_effect(
         total = sum_card_resources_by_type(PlayerState(**new_player), spec["resource_type"])  # type: ignore[typeddict-item]
         units = total // spec.get("divisor", 1)
         key = spec["production"]
-        new_player[key] = _apply_production_floor(key, new_player[key] + units * spec.get("per_unit", 1))
+        new_player = _increase_production(new_player, key, units * spec.get("per_unit", 1))
 
     if "draw_cards_per_influence" in effects and effects["draw_cards_per_influence"]:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), influence))  # type: ignore[typeddict-item]
@@ -2105,6 +2145,11 @@ def use_card_action(
         jugador): gasta `effect_amount` (X) recursos de la carta y gana X*ratio
         del recurso `to` (ej. Sulphur-Eating Bacteria: gastar X microbios
         guardados para ganar 3X MC). Mismos errores que convert_resource_amount.
+      - "requires_zero_resource": "<recurso>" -- la accion (o esa opcion del
+        `choice`) solo esta disponible si el jugador tiene 0 de ese recurso en
+        stock (ej. Factorum: "increase your energy production 1 step IF YOU
+        HAVE NO ENERGY RESOURCES"). Va al nivel del action_spec, no dentro de
+        `gains`.
       - "cost": {"<recurso>": N, ...} -- recursos de stock del jugador que se
         gastan (ej. Ironworks: {"energy": 4}). La clave especial
         "mc_or_titanium": N -- cuesta N MC, pero el jugador puede cubrir
@@ -2123,6 +2168,11 @@ def use_card_action(
         "raise_oxygen_steps": N, "raise_temperature_steps": N, "raise_venus_steps": N,
         "card_resource_delta": N, "target_card_resource_delta": N,
         "move_from_target_card_resource_delta": N, "tr_delta": N,
+        "card_resource_delta_per_tag": {"tag": "<tag>", "per_tag": N
+        (default 1)} -- agrega a la PROPIA carta tantos recursos como tags de
+        ese tipo tenga el jugador (ej. Kuiper Cooperative: 1 asteroide por
+        cada tag space). Version escalada por tags de card_resource_delta,
+        analoga a mc_per_tag.
         "raise_global_parameter_without_bonuses": "<parametro>" (sube UN
         paso de "temperature"/"oxygen"/"venus"/"ocean" sin TR, sin bonus de
         umbral y sin disparar pasivos; ej. World Government Advisor, P67 --
@@ -2350,7 +2400,7 @@ def use_card_action(
     for key, delta in gains.get("resource_deltas", {}).items():
         new_player[key] = max(0, new_player[key] + delta)
     for key, delta in gains.get("production_deltas", {}).items():
-        new_player[key] = _apply_production_floor(key, new_player[key] + delta)
+        new_player = _increase_production(new_player, key, delta)
     if "card_resource_delta" in gains:
         card_resources = max(0, card_resources + gains["card_resource_delta"])
     if "target_card_resource_delta" in gains:
@@ -2409,6 +2459,25 @@ def use_card_action(
             "resources": source_resources - amount,
         }
         card_resources = card_resources + amount
+    if "requires_zero_resource" in action_spec:
+        # Factorum: "increase your energy production 1 step IF YOU HAVE NO
+        # ENERGY RESOURCES". Es una condicion sobre el STOCK propio, no sobre
+        # tags ni parametros globales, asi que no pasa por
+        # check_card_requirements.
+        recurso = action_spec["requires_zero_resource"]
+        if new_player[recurso] != 0:
+            raise CardEffectError(
+                f"Esta opcion de '{card_id}' solo esta disponible con 0 de {recurso}; "
+                f"el jugador tiene {new_player[recurso]}"
+            )
+    if "card_resource_delta_per_tag" in gains:
+        # Kuiper Cooperative: "add 1 asteroid here for every space tag you
+        # have". Version de card_resource_delta escalada por tags, analoga a
+        # gains.mc_per_tag.
+        spec = gains["card_resource_delta_per_tag"]
+        card_resources = card_resources + (
+            player["tags_played"].get(spec["tag"], 0) * spec.get("per_tag", 1)
+        )
     if "raise_global_parameter_without_bonuses" in gains:
         # World Government Advisor (P67). El parametro NO viaja en
         # effect_choice (que es el INDICE de la lista "choice", un int): cada
@@ -2643,13 +2712,16 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         on_ocean_placed en place_ocean: si la temperatura ya estaba al
         tope no paga nada, mismo criterio que el TR.
       - "stock_resource_payment": {"resource": "<recurso>", "required_tag":
-        "<tag>" (o LISTA), "value_mc": N} -- habilita pagar cartas con ese
+        "<tag>" (o LISTA, u OMITIDO para cualquier carta), "value_mc": N} --
+        habilita pagar cartas con ese
         tag usando un recurso de STOCK del jugador distinto de acero y
         titanio, a N M€ cada uno (ej. Martian Lumber Corp, bloque 36: las
         plantas valen 3 M€ al jugar cartas building). Es la cuarta via de
         pago: acero/titanio estan cableados en el motor, card_resource_payment
         gasta recursos guardados EN UNA CARTA, y esta gasta stock normal.
         La consume `tools.play_card` con el parametro `stock_resource_to_pay`.
+        Si `required_tag` NO esta, el recurso paga CUALQUIER carta (ej.
+        Helion: "you may use heat as M€", sin restriccion de tag).
       - "optional_energy_to_heat": true -- hace OPCIONAL (unidad por unidad)
         la conversion de energia a calor de la fase de produccion, que la
         regla base aplica entera y sin preguntar (ej. Supercapacitors,
@@ -2761,6 +2833,22 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         despues de pagar una carta O un proyecto estandar cuyo costo BASICO
         (impreso/de tabla) llegue a N (ej. CrediCor: 20+ M€ -> +4 M€). Ver
         apply_cost_threshold_mc_bonuses.
+      - "standard_project_card_resource_payment": {"resource_type":
+        "<tipo>", "applies_to": ["<proyecto>", ...], "value_mc": N (default
+        1)} -- habilita pagar ESOS proyectos estandar con los recursos
+        guardados en una carta activa de ese tipo (ej. Kuiper Cooperative:
+        cada asteroide vale 1 M€ para Asteroid y Aquifer). Distinto de
+        card_resource_payment, que paga CARTAS con cierto tag. Lo consume
+        tools.use_standard_project con el parametro `card_resource_to_pay`.
+      - "ocean_adjacency_bonus_mc": N -- sube a N (default 2) los M€ que da
+        cada oceano adyacente al colocar un tile (ej. Lakefront Resorts: 3).
+        Ver ocean_adjacency_bonus_mc.
+      - "on_hex_bonus_tile_placed": {"matching_resources": ["steel",
+        "titanium"], "production_deltas": {...}, "resource_deltas": {...}} --
+        se dispara al colocar un tile sobre un hexagono cuyo bonus impreso
+        incluya alguno de esos recursos (ej. Mining Guild: +1 produccion de
+        acero). Ver apply_hex_bonus_tile_bonuses, llamado desde
+        tools._apply_hex_bonus.
       - "plants_per_greenery": N -- baja a N las plantas que cuesta convertir
         a greenery (ej. EcoLine: 7 en vez de 8). Ver plants_per_greenery.
       - "card_resource_payment": {"required_tag": "<tag>", "value_mc": N
@@ -2773,6 +2861,16 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         cualquier carta con su tag, no dependen de una carta activa
         puntual). Ver tools.play_card (parametro card_resource_to_pay) y
         rules_engine.spend_active_card_resource.
+      - "on_production_increased": true -- cada vez que CUALQUIER produccion
+        del jugador sube, sin excepcion (proyecto estandar, production_deltas,
+        production_delta_per_tag, etc. -- cualquier via, incluida M€), gana
+        tambien esa cantidad de unidades del recurso correspondiente en
+        stock (ej. Manutech, corporaciones bloque 2: texto literal "for each
+        step you increase the production of a resource, including this, you
+        also gain that resource", sin excepcion de M€). Aplicado dentro de
+        _increase_production, el unico punto por el que pasan todos los
+        aumentos de produccion del motor -- no hace falta cablearlo en cada
+        efecto.
 
     No revisa duplicados: cada carta se juega una sola vez en este motor.
     """
@@ -2903,7 +3001,7 @@ def apply_new_distinct_tag_bonuses(
     new_player: dict = dict(player)
     for spec in specs:
         for key, delta in spec.get("production_deltas", {}).items():
-            new_player[key] = _apply_production_floor(key, new_player[key] + delta * len(nuevos))
+            new_player = _increase_production(new_player, key, delta * len(nuevos))
         for key, delta in spec.get("resource_deltas", {}).items():
             new_player[key] = new_player[key] + delta * len(nuevos)
     return PlayerState(**new_player)  # type: ignore[typeddict-item]
@@ -2954,6 +3052,52 @@ def apply_corporation_start(player: PlayerState, starting_mc: int) -> PlayerStat
         "mc_production": 0, "steel_production": 0, "titanium_production": 0,
         "plant_production": 0, "energy_production": 0, "heat_production": 0,
     })  # type: ignore[typeddict-item]
+
+
+OCEAN_ADJACENCY_BONUS_MC = 2   # M€ por cada oceano adyacente al colocar un tile
+
+
+def ocean_adjacency_bonus_mc(player: PlayerState) -> int:
+    """
+    Cuanto vale para ESTE jugador cada oceano adyacente al colocar un tile.
+    Por defecto 2 (regla base); el pasivo "ocean_adjacency_bonus_mc" lo sube
+    (ej. Lakefront Resorts: 3). Si hubiera varios, gana el mas alto.
+    """
+    value = OCEAN_ADJACENCY_BONUS_MC
+    for effect in player["passive_effects"]:
+        override = effect.get("ocean_adjacency_bonus_mc")
+        if override is not None:
+            value = max(value, override)
+    return value
+
+
+def apply_hex_bonus_tile_bonuses(
+    player: PlayerState, hex_bonus: list[tuple[str, int]],
+) -> PlayerState:
+    """
+    Aplica el pasivo "on_hex_bonus_tile_placed": {"matching_resources":
+    [...], "production_deltas": {...}} -- se dispara al colocar un tile sobre
+    un hexagono cuyo BONUS IMPRESO incluya alguno de esos recursos (ej. Mining
+    Guild: acero o titanio -> +1 produccion de acero).
+
+    Dispara UNA vez por colocacion aunque el hex de varios recursos que
+    matcheen. Se llama desde tools._apply_hex_bonus, que es el unico punto por
+    donde pasan todos los caminos de colocacion (oceano, ciudad, greenery,
+    special tile).
+    """
+    recursos = {resource for resource, _ in hex_bonus}
+    new_player: dict = dict(player)
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_hex_bonus_tile_placed")
+        if spec is None:
+            continue
+        if not recursos & set(spec.get("matching_resources", [])):
+            continue
+        for key, delta in spec.get("production_deltas", {}).items():
+            new_player = _increase_production(new_player, key, delta)
+        for key, delta in spec.get("resource_deltas", {}).items():
+            new_player[key] = new_player[key] + delta
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]
 
 
 def apply_standard_project_used_bonuses(player: PlayerState, project_name: str) -> PlayerState:
@@ -3094,7 +3238,7 @@ def apply_city_placed_bonuses(player: PlayerState) -> PlayerState:
         production_spec = effect.get("on_city_tile_placed_production_delta")
         if production_spec is not None:
             key = production_spec["production"]
-            new_player[key] = _apply_production_floor(key, new_player[key] + production_spec.get("per_tile", 1))
+            new_player = _increase_production(new_player, key, production_spec.get("per_tile", 1))
             changed = True
     if not changed:
         return player
@@ -3184,7 +3328,8 @@ def apply_tag_played_choice(
 
 
 def apply_any_tag_played_choice(
-    player: PlayerState, played_card_id: str, played_card_tags: tuple[str, ...], choice: str | None
+    player: PlayerState, played_card_id: str, played_card_tags: tuple[str, ...], choice: str | None,
+    target_card_id: str | None = None,
 ) -> PlayerState:
     """
     Aplica el pasivo "on_any_tag_played_choice": {"matching_tags": ["<tag>",
@@ -3195,6 +3340,10 @@ def apply_any_tag_played_choice(
     pasivo (ej. Viral Enhancers: +1 recurso a la carta que se acaba de
     jugar, O +1 planta para el jugador). None (no elegir) no hace nada --
     ver tools.play_card, parametro any_tag_played_choice.
+
+    Con "add_resource_choice": {"target_any_card": true} el destino deja de
+    ser la carta recien jugada y pasa a ser el `target_card_id` que elige el
+    jugador (ej. Ecotec: "gain 1 plant OR add 1 microbe to ANY CARD").
 
     Si mas de un pasivo de este tipo matchea, se aplica el de la PRIMERA
     carta activa encontrada con este pasivo.
@@ -3209,16 +3358,21 @@ def apply_any_tag_played_choice(
         if not matching_tags.intersection(played_card_tags):
             continue
         if choice == "add":
-            if played_card_id not in player["active_cards"]:
+            add_spec = spec.get("add_resource_choice", {})
+            # Ecotec: "add 1 microbe to ANY card" -- el destino lo elige el
+            # jugador (`target_card_id`), no es la carta recien jugada como en
+            # Viral Enhancers.
+            destino = target_card_id if add_spec.get("target_any_card") else played_card_id
+            if destino is None or destino not in player["active_cards"]:
                 raise CardEffectError(
-                    f"'{played_card_id}' no tiene caja de recursos, no se le puede agregar recurso"
+                    f"'{destino}' no tiene caja de recursos, no se le puede agregar recurso"
                 )
-            amount = spec.get("add_resource_choice", {}).get("resource_delta", 1)
-            current_res = player["active_cards"][played_card_id]["resources"]
+            amount = add_spec.get("resource_delta", 1)
+            current_res = player["active_cards"][destino]["resources"]
             new_active_cards = {
                 **player["active_cards"],
-                played_card_id: {
-                    **player["active_cards"][played_card_id],
+                destino: {
+                    **player["active_cards"][destino],
                     "resources": current_res + amount,
                 },
             }

@@ -138,7 +138,44 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-08, corporaciones arrancadas)
+### 📍 Punto de retoma (última sesión: 2026-09-09, corporaciones bloque 2 cerrado)
+
+**Manutech cargada (2026-09-09), cerrando el bloque 2 (10 de 10).** Resolvió el refactor
+pendiente: `rules_engine._increase_production(new_player, key, delta)` es ahora el único punto de
+paso para todo aumento de producción del motor (reemplazó el patrón repetido `new_player[key] =
+_apply_production_floor(key, new_player[key] + delta)` suelto en ~17 lugares — reemplazo mecánico
+verificado, los 609 tests previos siguieron pasando sin tocar). Pasivo nuevo
+`on_production_increased`: por cada paso real que sube cualquier producción (incluida M€, porque
+el texto de la carta no la excluye — verificado contra el scan), el jugador gana esa misma
+cantidad del recurso en stock. Detalle en "Manutech, cargada" en `CARDS_LOG.md`. **Van 19 de 48
+corporaciones; quedan 28 sin revisar** (bloque 3 es el próximo paso natural). Preludes: sigue
+pendiente la misma familia de hook mencionada abajo (subió el TR) para desbloquear
+Preservation Program / Suitable Infrastructure / Terraforming Deal — no se tocó esta sesión.
+
+**Corporaciones, bloque 2 (2026-09-08): 9 de 10 cargadas** — Ecotec, Factorum, Helion,
+Interplanetary Cinematics, Inventrix, Kuiper Cooperative, Lakefront Resorts, Mining Guild y Mons
+Insurance. **Van 18 de 48; quedan 28 sin revisar.** Piezas nuevas: `on_ocean_placed` acepta
+`production_deltas`; `ocean_adjacency_bonus_mc` (el 2 M€ por océano adyacente estaba hardcodeado
+en `board.py`); `on_hex_bonus_tile_placed` (enganchado en `tools._apply_hex_bonus`, el único
+punto por el que pasan las cuatro vías de colocación); `requires_zero_resource`;
+`card_resource_delta_per_tag`; `standard_project_card_resource_payment` (quinta vía de pago, y la
+primera hacia proyectos estándar); `required_tag` ahora OPCIONAL en `stock_resource_payment`
+(Helion paga cualquier carta con calor); `target_any_card` en `on_any_tag_played_choice`; y
+`draw_cards_matching_tag` disponible también como ganancia de una acción.
+
+**⚠️ La peor tanda de tags hasta ahora: 7 de 10 informes mal.** Los agentes leyeron el círculo
+del extremo superior derecho como "logo de la corporación" y reportaron "sin tags" en Factorum
+(`power`+`building`), Helion (`space`), Interplanetary Cinematics (`building`), Inventrix
+(`science`), Kuiper Cooperative (`space`×2), Lakefront Resorts (`building`), Manutech
+(`building`) y Mining Guild (`building`×2). **Lo que lo zanja:** en el bloque 1 varias
+corporaciones tienen esa esquina VACÍA (CrediCor, Aridor, Beginner), así que no es un adorno de
+la plantilla. La hoja de contacto los atrapó a los 7.
+
+**Pendiente del bloque: Manutech** ("por cada paso de producción que subís, ganás también ese
+recurso"). Necesita un hook genérico "subió una producción" y hoy cada sitio del motor la
+incrementa por su cuenta: es un refactor hacia un único `_increase_production`, no una pieza de
+vocabulario. **Misma familia que las 3 preludes que esperan un hook "subió el TR" — conviene
+diseñarlos juntos.**
 
 **Corporaciones, bloque 1 (2026-09-08): infraestructura + 9 de 10 cargadas.** Era el hueco
 grande que quedaba. Tabla nueva `corporation_cards` (id, name, expansion, tags, **starting_mc**,
@@ -518,7 +555,7 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
 2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
    Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
-3. **Corporaciones: seguir la cola** (38 sin revisar, bloques de 10 con subagentes Sonnet).
+3. **Corporaciones: seguir la cola** (28 sin revisar, bloques de 10 con subagentes Sonnet).
 4. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
    quedan sí necesitan mecánicas grandes (sub-mazo de Prelude, hook genérico "subió el TR",
    corporaciones). Siguen pendientes también las 3 cartas dudosas de proyecto

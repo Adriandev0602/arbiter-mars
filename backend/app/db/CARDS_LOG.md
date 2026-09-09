@@ -991,6 +991,92 @@ diseñarlo junto con las otras corporaciones de tablero que aparezcan en los pr�
 
 **38 corporaciones sin revisar** en `corporation_review_queue`.
 
+#### Corporaciones, bloque 2 (Ecotec → Manutech): 10 de 10
+
+**2026-09-08/09.** Cargadas: Ecotec, Factorum, Helion, Interplanetary Cinematics, Inventrix,
+Kuiper Cooperative, Lakefront Resorts, Mining Guild, Mons Insurance y Manutech (esta última
+requirió el refactor `_increase_production`, ver más abajo).
+
+**La peor tanda de tags hasta ahora: 7 de 10 informes mal.** Los agentes leyeron el círculo del
+extremo superior derecho como "logo/insignia de la corporación" y reportaron "sin tags". Es el
+TAG PROPIO. Verificado en hoja de contacto:
+
+| Corporación | Tag real | Qué reportó el agente |
+|---|---|---|
+| Factorum | `power` + `building` | ninguno |
+| Helion | `space` | ninguno ("es el logo") |
+| Interplanetary Cinematics | `building` | ninguno |
+| Inventrix | `science` | ninguno ("átomo decorativo") |
+| Kuiper Cooperative | `space` ×2 | ninguno ("banner de expansión") |
+| Lakefront Resorts | `building` | ninguno |
+| Manutech | `building` | ninguno |
+| Mining Guild | `building` ×2 | ninguno ("no calza con ningún ícono") |
+
+**Lo que zanja la duda:** en el bloque 1 varias corporaciones tienen esa esquina **vacía**
+(CrediCor, Aridor, Beginner Corporation, Mons Insurance). Si fuera un adorno fijo de la
+plantilla estaría en todas. El círculo marrón con forma de casa es `building`, el sol dorado
+sobre negro es `space`, el átomo en círculo blanco es `science`.
+
+**Piezas nuevas del bloque:**
+- `on_ocean_placed` acepta `production_deltas` (Lakefront Resorts: +1 producción de M€ por
+  océano). Antes solo sabía de `plants_delta`.
+- `ocean_adjacency_bonus_mc` (Lakefront Resorts: 3 M€ por océano adyacente en vez de 2). La
+  constante vivía hardcodeada en `board.resolve_ocean_adjacency_bonus`; se reescala en
+  `tools._scale_ocean_adjacency_bonus` para no meterle estado del jugador a las funciones puras
+  del tablero.
+- `on_hex_bonus_tile_placed` (Mining Guild: +1 producción de acero al colocar sobre un hex con
+  bonus de acero o titanio). Enganchado en `tools._apply_hex_bonus`, que es el único punto por
+  el que pasan las cuatro vías de colocación (océano, ciudad, greenery, special tile). Dispara
+  una sola vez por colocación aunque el hex tenga dos recursos que matcheen.
+- `requires_zero_resource` (Factorum: "+1 producción de energía SI NO TENÉS energía"). Es una
+  condición sobre el stock propio, no sobre tags ni parámetros globales, así que no pasa por
+  `check_card_requirements`; va al nivel del action_spec, no dentro de `gains`.
+- `card_resource_delta_per_tag` (Kuiper Cooperative: +1 asteroide por cada tag space). Versión
+  de `card_resource_delta` escalada por tags, análoga a `mc_per_tag`.
+- `standard_project_card_resource_payment` (Kuiper Cooperative: cada asteroide vale 1 M€ para
+  los proyectos Asteroid y Aquifer). Quinta vía de pago, y la primera hacia PROYECTOS ESTÁNDAR:
+  `card_resource_payment` paga cartas de cierto tag, esta paga proyectos. Como el motor cobra el
+  costo adentro de `standard_project_*`, `tools.use_standard_project` gasta el recurso de la
+  carta y acredita su equivalente en M€ **antes** de llamar al motor, topeado al costo del
+  proyecto (no hay vuelto, igual que al pagar cartas con acero/titanio).
+- `stock_resource_payment` con `required_tag` OPCIONAL (Helion: "you may use heat as M€", sin
+  filtro de tag). Antes el tag era obligatorio (Martian Lumber Corp: plantas → building).
+- `on_any_tag_played_choice.add_resource_choice.target_any_card` (Ecotec: "add 1 microbe to ANY
+  card"): el destino pasa a ser el `target_card_id` que elige el jugador, en vez de la carta
+  recién jugada (que es lo que hace Viral Enhancers).
+- `gains.draw_cards_matching_tag` en `use_card_action` (Factorum: "spend 3 M€ to draw a building
+  card"). Ya existía como efecto de `play_card`; ahora también como ganancia de una acción, y se
+  resuelve en `tools.py` porque necesita los tags del catálogo.
+
+**Mons Insurance: casi toda la carta es multijugador**, y en single-player resuelve a 0 — no es
+mecánica faltante. "All opponents decrease their M€ production 2 steps" (no hay oponentes) y el
+Effect "when a player causes another player to lose production or resources, pay 3 M€ to the
+victim" (nunca se dispara). Lo único modelable es su +4 de producción de M€.
+
+**Manutech, cargada (2026-09-09).** *"For each step you increase the production of a resource,
+including this, you also gain that resource."* Texto literal, sin excepción de M€ (verificado
+contra el scan: `scripts/scan_cache/CORP_manutech.png` — 35 M€, +1 producción de acero, tag
+`building`). Necesitaba un hook genérico "subió una producción", porque cada sitio del motor
+incrementaba producción por su cuenta (`production_deltas`, `convert_production`, las cinco
+variantes `production_delta_per_*`, los gains de `use_card_action`, y los propios pasivos que
+suman producción). Se resolvió con `rules_engine._increase_production(new_player, key, delta)`:
+único punto de paso que reemplazó el patrón repetido `new_player[key] =
+_apply_production_floor(key, new_player[key] + delta)` que vivía suelto en ~17 lugares del motor
+(reemplazo mecánico, sin cambiar ningún cálculo existente — los 609 tests previos siguieron
+pasando sin tocar). Pasivo nuevo `on_production_increased`: cada vez que una producción sube un
+paso real (después del piso, no antes), el jugador gana esa misma cantidad de unidades del
+recurso en stock — incluida M€, porque el texto de la carta no la excluye (a diferencia de otras
+implementaciones de TM que sí la excluyen; acá se siguió el texto impreso literal). El orden de
+`choose_corporation` (registra el pasivo ANTES de aplicar `effects`) hace que hasta la propia
+producción inicial de Manutech (+1 acero) dispare el pasivo — coherente con el "including this"
+del texto.
+
+Es la misma familia que "Preservation Program / Suitable Infrastructure / Terraforming Deal" de
+las preludes pendientes, que esperan un hook "subió el TR" (mismo patrón, no implementado
+todavía — sigue siendo el próximo candidato natural si se retoma esa familia).
+
+**28 corporaciones sin revisar.**
+
 ### Recursos tipados por carta activa (floaters entre cartas)
 
 **Resuelto (2026-09-04).** Hasta ahora `active_cards[card_id]["resources"]` era un contador SIN

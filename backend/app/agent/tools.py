@@ -111,6 +111,20 @@ def _save_turmoil(turmoil: turmoillib.TurmoilState, game_id: str = "default") ->
     supabase.table("global_parameters").update({"turmoil": dict(turmoil)}).eq("game_id", game_id).execute()
 
 
+def _scale_ocean_adjacency_bonus(player: engine.PlayerState, ocean_bonus_mc: int) -> int:
+    """
+    board.py calcula el bonus por oceano adyacente a la tarifa base de 2 M€
+    por oceano; Lakefront Resorts lo sube a 3 ("your bonus for placing
+    adjacent to oceans is 3 M€ instead of 2"). Se reescala aca, en tools.py,
+    para no meterle estado del jugador a las funciones puras del tablero.
+    """
+    valor = engine.ocean_adjacency_bonus_mc(player)
+    if valor == engine.OCEAN_ADJACENCY_BONUS_MC:
+        return ocean_bonus_mc
+    oceanos = ocean_bonus_mc // engine.OCEAN_ADJACENCY_BONUS_MC
+    return oceanos * valor
+
+
 def _apply_hex_bonus(player: engine.PlayerState, hex_bonus: list[tuple[str, int]]) -> engine.PlayerState:
     """
     Aplica el bonus impreso de un hexagono (steel/titanium/plant/card) al
@@ -126,7 +140,11 @@ def _apply_hex_bonus(player: engine.PlayerState, hex_bonus: list[tuple[str, int]
             new_player["plants"] = new_player["plants"] + amount
         else:
             new_player[resource] = new_player[resource] + amount
-    return new_player  # type: ignore[return-value]
+    # Mining Guild: "each time you place a tile on an area with steel or
+    # titanium placement bonus, increase your steel production 1 step". Se
+    # engancha ACA porque es el unico punto por el que pasan las cuatro vias
+    # de colocacion (oceano, ciudad, greenery, special tile).
+    return engine.apply_hex_bonus_tile_bonuses(new_player, hex_bonus)  # type: ignore[arg-type]
 
 
 def _place_ocean_and_apply_bonus(
@@ -139,6 +157,7 @@ def _place_ocean_and_apply_bonus(
     """
     place_fn = boardlib.place_ocean_tile_on_land if on_land else boardlib.place_ocean_tile
     new_board, hex_bonus, ocean_bonus_mc = place_fn(board, hex_id)
+    ocean_bonus_mc = _scale_ocean_adjacency_bonus(player, ocean_bonus_mc)
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     return new_board, new_player  # type: ignore[return-value]
@@ -159,6 +178,7 @@ def _place_city_and_apply_bonus(
         )
     else:
         new_board, hex_bonus, ocean_bonus_mc = boardlib.place_city_tile(board, hex_id, owner_id)
+    ocean_bonus_mc = _scale_ocean_adjacency_bonus(player, ocean_bonus_mc)
     if placement_bonus_multiplier != 1:
         # Frontier Town: "gain the printed placement bonus 2 additional
         # times". Multiplica el bonus impreso del hex Y el de 2 MC por
@@ -228,6 +248,7 @@ def _place_greenery_and_apply_bonus(
     new_board, hex_bonus, ocean_bonus_mc = boardlib.place_greenery_tile(
         board, hex_id, owner_id, ignore_restrictions=ignore_restrictions
     )
+    ocean_bonus_mc = _scale_ocean_adjacency_bonus(player, ocean_bonus_mc)
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     new_player = engine.apply_greenery_placed_bonuses(new_player)
@@ -236,7 +257,8 @@ def _place_greenery_and_apply_bonus(
 
 @tool
 def use_standard_project(
-    player_id: str, project_name: str, num_cards_to_sell: int = 0, hex_id: str | None = None
+    player_id: str, project_name: str, num_cards_to_sell: int = 0, hex_id: str | None = None,
+    card_resource_to_pay: int = 0,
 ) -> dict:
     """
     Ejecuta uno de los 6 proyectos estandar de Terraforming Mars, siempre
@@ -249,6 +271,11 @@ def use_standard_project(
             Next: 15 MC, +1 paso de Venus).
         num_cards_to_sell: solo se usa si project_name == 'sell_patents';
             cantidad de cartas que el jugador descarta (1 MC cada una).
+        card_resource_to_pay: recursos guardados en una carta activa que se
+            usan como M€ para pagar ESTE proyecto, si el jugador tiene el
+            pasivo que lo habilita (ej. Kuiper Cooperative: cada asteroide
+            vale 1 M€ para Asteroid y Aquifer). No hay vuelto: gastar mas de
+            lo que cuesta el proyecto es un error.
         hex_id: OBLIGATORIO para 'aquifer' (coloca oceano), 'greenery' (coloca
             greenery) y 'city' (coloca ciudad) -- el id del hexagono del mapa
             Tharsis (ver app.agent.board.HEX_DEFS, ids "03".."63") donde se
@@ -268,6 +295,43 @@ def use_standard_project(
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
     board = None
+
+    # Kuiper Cooperative: "when paying for the ASTEROID or AQUIFER standard
+    # projects, each asteroid here may be used as 1 M€". El motor cobra el
+    # costo del proyecto en M€ adentro de standard_project_*, asi que el
+    # recurso de la carta se convierte ACA en poder de compra: se gasta de la
+    # carta y se acredita su equivalente en M€ antes de llamar al motor,
+    # topeado al costo del proyecto (no hay vuelto, igual que al pagar cartas
+    # con acero/titanio).
+    if card_resource_to_pay:
+        spec = next(
+            (p["standard_project_card_resource_payment"] for p in player["passive_effects"]
+             if "standard_project_card_resource_payment" in p
+             and project_name in p["standard_project_card_resource_payment"]["applies_to"]),
+            None,
+        )
+        if spec is None:
+            raise ValueError(
+                f"El jugador no tiene un pasivo que permita pagar el proyecto "
+                f"'{project_name}' con recursos de una carta"
+            )
+        source_id = next(
+            (cid for cid, c in player["active_cards"].items()
+             if c.get("resource_type") == spec["resource_type"] and c["resources"] > 0),
+            None,
+        )
+        if source_id is None:
+            raise ValueError(f"No hay ninguna carta activa con {spec['resource_type']}s para gastar")
+        basic_cost = STANDARD_PROJECT_BASIC_COSTS.get(project_name, 0)
+        value_mc = spec.get("value_mc", 1)
+        max_utiles = -(-basic_cost // value_mc) if value_mc else 0
+        if card_resource_to_pay > max_utiles:
+            raise ValueError(
+                f"El proyecto '{project_name}' cuesta {basic_cost} M€: gastar "
+                f"{card_resource_to_pay} {spec['resource_type']}(s) seria pagar de mas"
+            )
+        player = engine.spend_active_card_resource(player, source_id, card_resource_to_pay)
+        player = {**player, "mc": player["mc"] + card_resource_to_pay * value_mc}
 
     if project_name == "sell_patents":
         new_player = engine.standard_project_sell_patents(player, num_cards_to_sell)
@@ -694,7 +758,13 @@ def play_card(
             (
                 p for p in player["passive_effects"]
                 if "stock_resource_payment" in p
-                and _matches_required_tag(p["stock_resource_payment"]["required_tag"], card_tags)
+                # Sin required_tag el recurso paga CUALQUIER carta (Helion:
+                # "you may use heat as M€"). Con required_tag, solo las que
+                # lleven ese tag (Martian Lumber Corp: plantas -> building).
+                and (
+                    "required_tag" not in p["stock_resource_payment"]
+                    or _matches_required_tag(p["stock_resource_payment"]["required_tag"], card_tags)
+                )
             ),
             None,
         )
@@ -839,7 +909,10 @@ def play_card(
             new_player, new_globals = engine.apply_card_effect(
                 new_player, new_globals, {"production_deltas": {production_key: 1}}
             )
-        new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
+        new_player = {
+            **new_player,
+            "mc": new_player["mc"] + _scale_ocean_adjacency_bonus(new_player, ocean_bonus_mc),
+        }
 
     if effects.get("mc_per_empty_hex_adjacent_to_own_tiles"):
         # Red Tourism Wave (T12, Turmoil, bloque 31): "Gain 1 M€ for each
@@ -1118,7 +1191,9 @@ def play_card(
         new_player = engine.swap_card_for_draw(new_player, discard_for_draw_card_id)
 
     new_player = engine.apply_tag_played_choice(new_player, card_tags, tag_played_choice)
-    new_player = engine.apply_any_tag_played_choice(new_player, card_id, card_tags, any_tag_played_choice)
+    new_player = engine.apply_any_tag_played_choice(
+        new_player, card_id, card_tags, any_tag_played_choice, target_card_id=target_card_id,
+    )
     new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
 
     _save_player(player_id, new_player)
@@ -1321,6 +1396,17 @@ def use_card_action(
         new_gains = {k: v for k, v in resolved_spec.get("gains", {}).items() if k != "place_cathedral"}
         spec_for_engine = {**resolved_spec, "gains": new_gains}
 
+    # Robar filtrando por tag: se resuelve ACA porque necesita el catalogo
+    # (los tags de cada carta del mazo), igual criterio que free_trade
+    # (ej. Factorum: "spend 3 M€ to draw a building card").
+    draw_tag_spec = resolved_spec.get("gains", {}).get("draw_cards_matching_tag")
+    if draw_tag_spec is not None:
+        spec_for_engine = {
+            **spec_for_engine,
+            "gains": {k: v for k, v in spec_for_engine.get("gains", {}).items()
+                      if k != "draw_cards_matching_tag"},
+        }
+
     # Algunas acciones tienen su PROPIO requisito, distinto del de jugar la
     # carta (ej. Red Appeasement: la accion exige que Reds gobierne o tener 2
     # delegados ahi). Se valida con la misma funcion del motor.
@@ -1411,6 +1497,11 @@ def use_card_action(
             "reserve_delegates": new_player["reserve_delegates"] - place_delegates_count,
         }
         _save_turmoil(turmoil)
+
+    if draw_tag_spec is not None:
+        new_player = _draw_cards_matching_tag(
+            dict(new_player), draw_tag_spec["tag"], draw_tag_spec.get("n", 1),
+        )
 
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
     board = None
