@@ -946,14 +946,19 @@ def check_card_requirements(
         return
 
     tolerance_steps = 0
+    venus_only_steps = 0
     if player is not None:
         for effect in player["passive_effects"]:
             tolerance_steps = max(tolerance_steps, effect.get("global_requirements_tolerance_steps", 0))
+            # Morning Star Inc solo relaja los requisitos de VENUS ("your Venus
+            # requirements are +/- 2 steps"), no los de temperatura/oxigeno/
+            # oceanos como Inventrix o Adaptation Technology.
+            venus_only_steps = max(venus_only_steps, effect.get("venus_requirements_tolerance_steps", 0))
         tolerance_steps += abs(player.get("pending_requirement_tolerance_steps", 0))
     temperature_tolerance = tolerance_steps * TEMPERATURE_STEP
     oxygen_tolerance = tolerance_steps * OXYGEN_STEP
     oceans_tolerance = tolerance_steps
-    venus_tolerance = tolerance_steps * VENUS_STEP
+    venus_tolerance = max(tolerance_steps, venus_only_steps) * VENUS_STEP
 
     if "min_tag_count" in requirements:
         specs = requirements["min_tag_count"]
@@ -2318,6 +2323,18 @@ def use_card_action(
                     f"'{card_id}' tiene {card_resources} recursos guardados, se necesitan {amount}"
                 )
             card_resources -= amount
+        elif key == "production_delta":
+            # Pagar BAJANDO produccion, no gastando stock (ej. Utopia Invest:
+            # "decrease any production to gain 4 resources of that kind"). El
+            # piso es el mismo del resto del motor: 0, o -5 para la de MC.
+            for prod_key, steps in amount.items():
+                floor = MC_PRODUCTION_FLOOR if prod_key == "mc_production" else 0
+                if new_player[prod_key] - steps < floor:
+                    raise InsufficientResourcesError(
+                        f"No se puede bajar {prod_key} {steps} paso(s): esta en "
+                        f"{new_player[prod_key]} y el piso es {floor}"
+                    )
+                new_player[prod_key] -= steps
         elif key == "any_card_resource":
             # Gasta (destruye) recursos guardados en CUALQUIER carta activa
             # elegida con target_card_id -- por defecto la propia. Distinto de
@@ -2861,6 +2878,61 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         cualquier carta con su tag, no dependen de una carta activa
         puntual). Ver tools.play_card (parametro card_resource_to_pay) y
         rules_engine.spend_active_card_resource.
+      - "standard_project_discount_mc": {"projects": ["<nombre>", ...]
+        (opcional: sin el campo vale para todos), "amount": N} -- paga N M€
+        menos por esos proyectos estandar (ej. Thorgate, corporaciones
+        bloque 5: -3 M€ en el proyecto power_plant, ademas del descuento en
+        cartas con tag power que ya da card_cost_discount_mc). Ver
+        compute_standard_project_discount, consumido por
+        tools.use_standard_project.
+      - "on_city_tile_placed_resource_delta": {"<recurso>": N, ...} -- suma
+        al STOCK del jugador al colocarse una ciudad en el mapa, a
+        diferencia de on_city_tile_placed_add_resource, que suma a la carta
+        activa (ej. Tharsis Republic, corporaciones bloque 5: +3 M€). Ver
+        apply_city_placed_bonuses.
+      - "venus_requirements_tolerance_steps": N -- como
+        global_requirements_tolerance_steps pero SOLO para los requisitos de
+        Venus (ej. Morning Star Inc, corporaciones bloque 3: "your Venus
+        requirements are +/- 2 steps, your choice in each case"). Se separa
+        porque el pasivo general relaja tambien temperatura/oxigeno/oceanos,
+        que esta carta no toca. Ver check_card_requirements.
+      - "on_event_played" acepta ademas "resource_deltas": {"<recurso>": N}
+        -- forma generica para recursos que no son M€ ni calor, sin agregar
+        un "<recurso>_delta" hardcodeado por cada uno (ej. Palladin
+        Shipping, corporaciones bloque 3: "when you play a space event, gain
+        1 titanium", con tag_filter "space").
+      - "on_tag_played_production_delta": {"matching_tags": ["<tag>", ...],
+        "production": "<recurso>_production", "production_delta": N
+        (default 1)} -- misma familia que on_tag_played_resource_delta pero
+        sobre PRODUCCION en vez de stock (ej. Saturn Systems, corporaciones
+        bloque 4: "each time any Jovian tag is put into play, including
+        this, increase your M€ production 1 step"). Pasa por
+        _increase_production, asi que se combina con Manutech.
+      - "on_tag_played_draw_cards": {"matching_tags": ["<tag>", ...],
+        "cards": N (default 1)} -- roba N cartas por cada tag coincidente de
+        la carta recien jugada, AUTOMATICO (a diferencia de
+        on_any_tag_played_choice, que es una eleccion) (ej. Point Luna,
+        corporaciones bloque 3: "when you play an Earth tag, including this,
+        draw a card").
+      - "on_card_played_min_tags_add_resource": {"min_tags": N (default 2),
+        "resource_delta": M (default 1)} -- suma M recursos a la propia
+        carta activa cuando la carta recien jugada trae AL MENOS N tags. No
+        mira cuales son los tags sino cuantos, asi que dispara una sola vez
+        por carta (ej. Spire, corporaciones bloque 4: "when you play a card
+        with at least 2 tags, add 1 science resource here").
+      - "on_colony_placed": {"production_deltas": {...}, "resource_deltas":
+        {...}} -- se dispara cada vez que se coloca una colonia, sin importar
+        la fuente (proyecto estandar, efecto de carta, prelude) (ej.
+        Poseidon, corporaciones bloque 3: +1 produccion de M€). Ver
+        apply_colony_placed_bonuses, llamado desde tools.build_colony y
+        desde las dos vias de carta que construyen colonia.
+      - "research_cost_delta_mc": N -- corre lo que cuesta comprar cada carta
+        en la fase de investigacion (default RESEARCH_PHASE_COST_MC = 3): +2
+        en Polyphemos ("pay 5 M€ instead of 3"), -2 en TerraLabs Research
+        ("buying cards to hand costs 1 M€"). Ver
+        compute_research_cost_per_card, consumido por
+        tools.resolve_research_phase. Una fase GRATUITA (Inventors' Guild,
+        costo 0) no se toca.
       - "on_production_increased": true -- cada vez que CUALQUIER produccion
         del jugador sube, sin excepcion (proyecto estandar, production_deltas,
         production_delta_per_tag, etc. -- cualquier via, incluida M€), gana
@@ -2943,6 +3015,74 @@ def compute_trade_cost_discount(player: PlayerState) -> int:
     return discount
 
 
+def compute_standard_project_discount(player: PlayerState, project_name: str) -> int:
+    """
+    Descuento en M€ que tiene ESTE jugador sobre el costo de un proyecto
+    estandar puntual, por el pasivo "standard_project_discount_mc":
+    {"projects": ["power_plant", ...], "amount": N} (ej. Thorgate: "when
+    playing a power card OR THE STANDARD PROJECT POWER PLANT, you pay 3 M€
+    less for it" -- la mitad de las cartas la cubre card_cost_discount_mc,
+    esta es la otra mitad). Si el pasivo no trae "projects", vale para
+    todos. Se suman varios; el costo nunca baja de 0 (lo acota el caller).
+    """
+    discount = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("standard_project_discount_mc")
+        if spec is None:
+            continue
+        projects = spec.get("projects")
+        if projects is None or project_name in projects:
+            discount += spec.get("amount", 0)
+    return discount
+
+
+def compute_research_cost_per_card(
+    player: PlayerState, base_cost: int = RESEARCH_PHASE_COST_MC
+) -> int:
+    """
+    Cuanto le cuesta a ESTE jugador comprar una carta en la fase de
+    investigacion. Por defecto RESEARCH_PHASE_COST_MC (3), pero el pasivo
+    "research_cost_delta_mc" lo corre (ej. Polyphemos: +2, paga 5; TerraLabs
+    Research: -2, paga 1). Nunca baja de 0.
+
+    `base_cost` 0 (fases GRATUITAS como la de Inventors' Guild) no se toca:
+    una accion que regala la carta la sigue regalando, el pasivo solo mueve
+    el precio de la investigacion que efectivamente se paga.
+    """
+    if base_cost <= 0:
+        return base_cost
+    delta = 0
+    for effect in player["passive_effects"]:
+        delta += effect.get("research_cost_delta_mc", 0)
+    return max(0, base_cost + delta)
+
+
+def apply_colony_placed_bonuses(player: PlayerState) -> PlayerState:
+    """
+    Aplica el pasivo "on_colony_placed": {"production_deltas": {...},
+    "resource_deltas": {...}} -- se dispara cada vez que se coloca una
+    colonia, sin importar la fuente (proyecto estandar build_colony, un
+    efecto de carta, el setup de la propia corporacion) (ej. Poseidon:
+    "when any colony is placed, including this, raise your M€ production 1
+    step"). Mismo criterio que on_ocean_placed: el hook vive en un solo
+    lugar (tools.build_colony y el efecto build_colony de una carta) para
+    que todos los caminos se beneficien.
+    """
+    new_player: dict = dict(player)
+    changed = False
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_colony_placed")
+        if spec is None:
+            continue
+        for key, delta in spec.get("resource_deltas", {}).items():
+            new_player[key] = max(0, new_player[key] + delta)
+            changed = True
+        for key, delta in spec.get("production_deltas", {}).items():
+            new_player = _increase_production(new_player, key, delta)
+            changed = True
+    return PlayerState(**new_player) if changed else player  # type: ignore[typeddict-item]
+
+
 def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str, ...] = ()) -> PlayerState:
     """
     Aplica los bonus "on_event_played" de todos los efectos pasivos activos
@@ -2968,6 +3108,12 @@ def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str,
             continue
         new_player["mc"] = new_player["mc"] + bonus.get("mc_delta", 0)
         new_player["heat"] = new_player["heat"] + bonus.get("heat_delta", 0)
+        # Forma generica para cualquier otro recurso, sin tener que agregar un
+        # "<recurso>_delta" hardcodeado por cada uno (ej. Palladin Shipping,
+        # corporaciones bloque 3: "when you play a space event, gain 1
+        # titanium").
+        for key, delta in bonus.get("resource_deltas", {}).items():
+            new_player[key] = max(0, new_player[key] + delta)
         # Solar Logistics (X63, bloque 36): "when any player plays a space
         # event, draw 1 card" -- mismo pasivo, pero robando en vez de sumar
         # recursos. En single-player "any player" es el propio jugador.
@@ -3126,6 +3272,11 @@ def apply_tag_played_resource_bonuses(
     +1 animal por cada tag animal/plant jugado; Decomposers: +1 microbio por
     cada tag animal/plant/microbe jugado).
     Suma resource_delta a la carta activa del jugador por cada tag coincidente.
+
+    Tambien resuelve las variantes que premian con PRODUCCION
+    ("on_tag_played_production_delta", ej. Saturn Systems) y las que miran la
+    CANTIDAD de tags de la carta jugada en vez de cuales son
+    ("on_card_played_min_tags_add_resource", ej. Spire).
     """
     new_active_cards = dict(player["active_cards"])
     changed = False
@@ -3143,6 +3294,24 @@ def apply_tag_played_resource_bonuses(
             new_active_cards[target_card_id] = {
                 **new_active_cards[target_card_id],
                 "resources": current_res + matches * spec.get("resource_delta", 1),
+            }
+            changed = True
+
+    # Spire: "when you play a card with AT LEAST 2 tags, add 1 science resource
+    # here". No mira CUALES son los tags -- mira cuantos trae la carta jugada,
+    # asi que dispara una sola vez por carta, no una vez por tag.
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_card_played_min_tags_add_resource")
+        if spec is None:
+            continue
+        target_card_id = effect["card_id"]
+        if target_card_id not in new_active_cards:
+            continue
+        if len(played_card_tags) >= spec.get("min_tags", 2):
+            current_res = new_active_cards[target_card_id]["resources"]
+            new_active_cards[target_card_id] = {
+                **new_active_cards[target_card_id],
+                "resources": current_res + spec.get("resource_delta", 1),
             }
             changed = True
 
@@ -3166,11 +3335,40 @@ def apply_tag_played_resource_bonuses(
         amount = spec.get("resource_delta", spec.get("mc_delta", 0))
         stock_gains[key] = stock_gains.get(key, 0) + matches * amount
 
-    if not changed and not stock_gains:
+    # Misma familia, pero sobre PRODUCCION en vez de stock (ej. Saturn Systems:
+    # "each time any Jovian tag is put into play, including this, increase your
+    # M€ production 1 step"). Pasa por _increase_production como todo el resto
+    # del motor, asi que se combina bien con Manutech.
+    production_gains: list[tuple[str, int]] = []
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_tag_played_production_delta")
+        if spec is None:
+            continue
+        matching_tags = set(spec.get("matching_tags", []))
+        matches = sum(1 for t in played_card_tags if t in matching_tags)
+        if matches:
+            production_gains.append((spec["production"], matches * spec.get("production_delta", 1)))
+
+    # Point Luna: "when you play an Earth tag, including this, draw a card".
+    # Automatico, no una eleccion (a diferencia de on_any_tag_played_choice).
+    cards_to_draw = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_tag_played_draw_cards")
+        if spec is None:
+            continue
+        matching_tags = set(spec.get("matching_tags", []))
+        matches = sum(1 for t in played_card_tags if t in matching_tags)
+        cards_to_draw += matches * spec.get("cards", 1)
+
+    if not changed and not stock_gains and not production_gains and not cards_to_draw:
         return player
     new_player = {**player, "active_cards": new_active_cards}
     for key, amount in stock_gains.items():
         new_player[key] = max(0, new_player[key] + amount)
+    for key, amount in production_gains:
+        new_player = _increase_production(new_player, key, amount)
+    if cards_to_draw:
+        new_player = dict(draw_cards_to_hand(PlayerState(**new_player), cards_to_draw))  # type: ignore[typeddict-item]
     return new_player
 
 
@@ -3220,6 +3418,14 @@ def apply_city_placed_bonuses(player: PlayerState) -> PlayerState:
         produccion N pasos (ej. Immigrant City: +1 produccion MC, incluida
         su propia colocacion -- funciona porque tools.play_card registra
         la carta como activa/pasiva ANTES de colocar su ciudad).
+      - "on_city_tile_placed_resource_delta": {"<recurso>": N, ...} -- suma
+        al STOCK del jugador, no a una carta activa (ej. Tharsis Republic,
+        corporaciones bloque 5: "when you place a city tile, gain 3 M€").
+        La carta distingue "when YOU place" de "when ANY city tile is
+        placed", pero este motor es de UN jugador y este hook solo corre
+        para ciudades reales del mapa (ver de donde se llama), asi que los
+        dos disparadores coinciden -- las ciudades fuera del tablero (ej.
+        Phobos Space Haven) no pasan por aca ni por el otro.
     """
     new_active_cards = dict(player["active_cards"])
     new_player: dict = dict(player)
@@ -3235,6 +3441,11 @@ def apply_city_placed_bonuses(player: PlayerState) -> PlayerState:
                     "resources": current_res + resource_spec.get("resource_delta", 1),
                 }
                 changed = True
+        stock_spec = effect.get("on_city_tile_placed_resource_delta")
+        if stock_spec is not None:
+            for key, delta in stock_spec.items():
+                new_player[key] = max(0, new_player[key] + delta)
+            changed = True
         production_spec = effect.get("on_city_tile_placed_production_delta")
         if production_spec is not None:
             key = production_spec["production"]
