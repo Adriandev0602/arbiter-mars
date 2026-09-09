@@ -1127,17 +1127,37 @@ disponibles). Campos nuevos en `PlayerState`: `colonies_owned`, `trade_fleets`,
 `trade_fleets_used`; en `GlobalParameters` (cargado/guardado aparte, igual que `board`):
 `colonies`. Tools nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`.
 
-**Catálogo de colonias — solo Callisto cargada por ahora.** El juego real tiene 11 Colony Tiles
-con nombre (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto, Ceres,
-Io), cada una con su propio track de valores. Mismo criterio que el catálogo de cartas: no se
-generan datos al voleo. Callisto quedó verificada con dos fuentes independientes (el ejemplo
-trabajado del rulebook oficial, que muestra el track completo 0/2/3/5/7/10/13 con el marcador en
-10 energía y colony bonus 3 energía; y una búsqueda independiente que reporta el mismo track).
-Las otras 10 quedan sin cargar hasta verificarlas de la misma forma — el mecanismo ya es
-genérico (`COLONY_DEFS`) y no hace falta tocar código para agregar una colonia nueva, solo datos
-verificados. Cartas que targeteen una colonia específica por nombre distinta de Callisto quedan
-pendientes hasta cargar esa colonia (ninguna hasta ahora — Cryo-Sleep y Ecology Research no
-dependían de una colonia puntual).
+**Catálogo de colonias — 9 de 11 cargadas (2026-09-08).** El juego real tiene 11 Colony Tiles con
+nombre (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto, Ceres, Io).
+Callisto ya estaba, verificada con dos fuentes independientes (el ejemplo trabajado del rulebook
+oficial, que muestra el track 0/2/3/5/7/10/13 con el marcador en 10 energía y colony bonus 3
+energía; y una búsqueda independiente con el mismo track). Las otras 8 se transcribieron del
+**scan de cada Colony Tile**, que es la fuente primaria — el tile impreso mismo — usando
+**Callisto como control del método**: leída del scan da exactamente los valores ya verificados
+por esas dos fuentes.
+
+Cómo leer un Colony Tile, por si hay que agregar más: "COLONY BONUS" son iconos sueltos (stock
+para todos los dueños); "TRADE INCOME" es "X <recurso>", con X según la casilla actual; la fila
+de 7 casillas con números abajo es el track; y **los 3 primeros espacios de esa fila son los
+colony spots, cuyo ícono es el placement bonus**. Un ícono DENTRO de un marco marrón/dorado es
+PRODUCCIÓN; el mismo ícono sin marco es recurso de stock — comparar Callisto (+1 producción de
+energía) con Triton (3 titanios de stock).
+
+**Corrección a una estimación previa:** se había anotado que agregar una colonia era "solo datos,
+sin tocar código". Vale para 5 de ellas (Ceres, Ganymede, Io, Luna, Triton), pero **no** para el
+resto: al leer los scans aparecieron tres formas de premio que el modelo no contemplaba.
+- **Recursos que viven EN UNA CARTA** (Enceladus microbios, Titan floaters, Miranda animales).
+  Se resolvió con el prefijo `card_resource:<tipo>` en `income_type`/`colony_bonus`/
+  `placement_bonus`, que `tools._apply_colony_gain` interpreta pidiendo `target_card_id` y
+  validando que la carta destino guarde ese tipo. `build_colony` y `use_trade_fleet` suman ese
+  parámetro.
+- **Robar cartas como premio** (Miranda colony bonus): clave `"cards"` en el mismo helper.
+- **Pendientes, 2 de 11:** *Pluto*, cuyo colony bonus es "roba 1 carta y descarta 1" y necesita
+  que el jugador ELIJA el descarte (su income, robar X cartas, sí entraría — pero cargarla a
+  medias sería peor que no cargarla); y *Europa*, cuyo trade income no es "X de un recurso" sino
+  "gana la PRODUCCIÓN indicada", distinta en cada casilla del track (MC, MC, energía, energía,
+  plantas, plantas, plantas), lo que rompe el tipo `track: list[int]` + `income_type: str`, y
+  cuyo placement bonus es **colocar un océano**.
 
 Esto desbloqueó **Cryo-Sleep** (pasivo `trade_cost_discount`) y **Ecology Research** (efecto
 nuevo `production_delta_per_colony`, que cuenta `player["colonies_owned"]` sin importar cuál).
