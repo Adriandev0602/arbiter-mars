@@ -118,9 +118,9 @@ where q.name = m.nombre;
 update corporation_review_queue set reviewed = true, corporation_id = null
 where name = 'Arcadian Communities';
 
--- Bloque 2 (Ecotec -> Mons Insurance): 9 de 10 cargadas. Manutech queda
--- pendiente (ver CARDS_LOG.md): su efecto exige un hook generico "subio una
--- produccion", y hoy cada sitio del motor incrementa produccion por su cuenta.
+-- Bloque 2 (Ecotec -> Manutech): 10 de 10 cargadas. Manutech necesito el
+-- hook generico "subio una produccion" (rules_engine._increase_production,
+-- ver CARDS_LOG.md) antes de poder cargarse -- ya esta resuelto.
 --
 -- TAGS: esta tanda fue la peor de todas -- SIETE informes leyeron el circulo
 -- del extremo superior derecho como "logo/insignia de la corporacion" cuando
@@ -203,7 +203,15 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
     -- "when a player causes another player to lose production or resources,
     -- pay 3 M€ to the victim" (nunca se dispara).
     ('mons_insurance', 'Mons Insurance', 'Promo', '{}', 48,
-     '{"production_deltas": {"mc_production": 4}}'::jsonb)
+     '{"production_deltas": {"mc_production": 4}}'::jsonb),
+
+    -- 35 M€, +1 produccion de acero. Effect: "for each step you increase the
+    -- production of a resource, including this, you also gain that resource"
+    -- -- texto literal, sin excepcion de M€ (pasivo nuevo
+    -- `on_production_increased`, ver rules_engine._increase_production).
+    ('manutech', 'Manutech', 'Promo', '{building}', 35,
+     '{"production_deltas": {"steel_production": 1},
+       "passive": {"on_production_increased": true}}'::jsonb)
 on conflict (id) do update set
     name = excluded.name, expansion = excluded.expansion, tags = excluded.tags,
     starting_mc = excluded.starting_mc, effects = excluded.effects;
@@ -213,7 +221,8 @@ from (values
     ('Ecotec','ecotec'),('Factorum','factorum'),('Helion','helion'),
     ('Interplanetary Cinematics','interplanetary_cinematics'),('Inventrix','inventrix'),
     ('Kuiper Cooperative','kuiper_cooperative'),('Lakefront Resorts','lakefront_resorts'),
-    ('Mining Guild','mining_guild'),('Mons Insurance','mons_insurance')
+    ('Mining Guild','mining_guild'),('Mons Insurance','mons_insurance'),
+    ('Manutech','manutech')
 ) as m(nombre, cid)
 where q.name = m.nombre;
 

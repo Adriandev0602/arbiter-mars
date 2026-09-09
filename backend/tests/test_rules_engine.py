@@ -4985,6 +4985,44 @@ def test_apply_corporation_start_pone_produccion_en_cero():
     assert corp_player["tr"] == player["tr"]     # el TR no lo toca
 
 
+def test_manutech_gana_recurso_por_cada_paso_de_produccion_subido():
+    # Manutech, corporaciones bloque 2: "for each step you increase the
+    # production of a resource, including this, you also gain that resource"
+    # -- sin excepcion de M€, y se dispara desde CUALQUIER via de aumento de
+    # produccion, no solo production_deltas.
+    player = register_passive_effect(new_player_state(), "manutech", {"on_production_increased": True})
+
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {
+        "production_deltas": {"steel_production": 2}
+    })
+    assert new_player["steel_production"] == player["steel_production"] + 2
+    assert new_player["steel"] == player["steel"] + 2
+
+    # Tambien aplica a la produccion de M€, sin excepcion.
+    mc_player, _ = apply_card_effect(player, new_global_parameters(), {
+        "mc_production_delta": 1
+    })
+    assert mc_player["mc"] == player["mc"] + 1
+
+    # Un proyecto estandar (Power Plant) tambien dispara el pasivo.
+    pp_player = {**player, "mc": 20}
+    pp_player = standard_project_power_plant(pp_player)
+    assert pp_player["energy_production"] == player["energy_production"] + 1
+    assert pp_player["energy"] == player["energy"] + 1
+
+
+def test_manutech_no_gana_recurso_si_la_produccion_no_sube_realmente():
+    # Si el piso ya frena el cambio (ej. mc_production ya en el piso -5 y
+    # bajando), no hay paso "aplicado" y el pasivo no dispara.
+    player = register_passive_effect(new_player_state(), "manutech", {"on_production_increased": True})
+    steady = {**player, "steel_production": 0}
+    new_player, _ = apply_card_effect(steady, new_global_parameters(), {
+        "production_deltas": {"steel_production": -1}
+    })
+    assert new_player["steel_production"] == 0
+    assert new_player["steel"] == steady["steel"]
+
+
 def test_ecoline_paga_7_plantas_por_greenery():
     player = {**new_player_state(), "plants": 7}
     with pytest.raises(InsufficientResourcesError):

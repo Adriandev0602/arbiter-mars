@@ -991,10 +991,11 @@ diseñarlo junto con las otras corporaciones de tablero que aparezcan en los pr�
 
 **38 corporaciones sin revisar** en `corporation_review_queue`.
 
-#### Corporaciones, bloque 2 (Ecotec → Mons Insurance): 9 de 10
+#### Corporaciones, bloque 2 (Ecotec → Manutech): 10 de 10
 
-**2026-09-08.** Cargadas: Ecotec, Factorum, Helion, Interplanetary Cinematics, Inventrix, Kuiper
-Cooperative, Lakefront Resorts, Mining Guild y Mons Insurance. **Pendiente: Manutech.**
+**2026-09-08/09.** Cargadas: Ecotec, Factorum, Helion, Interplanetary Cinematics, Inventrix,
+Kuiper Cooperative, Lakefront Resorts, Mining Guild, Mons Insurance y Manutech (esta última
+requirió el refactor `_increase_production`, ver más abajo).
 
 **La peor tanda de tags hasta ahora: 7 de 10 informes mal.** Los agentes leyeron el círculo del
 extremo superior derecho como "logo/insignia de la corporación" y reportaron "sin tags". Es el
@@ -1052,15 +1053,27 @@ mecánica faltante. "All opponents decrease their M€ production 2 steps" (no h
 Effect "when a player causes another player to lose production or resources, pay 3 M€ to the
 victim" (nunca se dispara). Lo único modelable es su +4 de producción de M€.
 
-**Manutech, pendiente:** *"For each step you increase the production of a resource, including
-this, you also gain that resource."* Necesita un hook genérico "subió una producción", y hoy
-cada sitio del motor incrementa producción por su cuenta (`production_deltas`,
-`convert_production`, las cinco variantes `production_delta_per_*`, los gains de
-`use_card_action`, y los propios pasivos que suman producción). Hacerlo bien implica un único
-punto de paso `_increase_production(player, key, delta)` que hoy no existe — es un refactor, no
-una pieza de vocabulario. Es la misma familia que "Preservation Program / Suitable
-Infrastructure / Terraforming Deal" de las preludes pendientes, que esperan un hook "subió el
-TR": **conviene diseñar los dos juntos.**
+**Manutech, cargada (2026-09-09).** *"For each step you increase the production of a resource,
+including this, you also gain that resource."* Texto literal, sin excepción de M€ (verificado
+contra el scan: `scripts/scan_cache/CORP_manutech.png` — 35 M€, +1 producción de acero, tag
+`building`). Necesitaba un hook genérico "subió una producción", porque cada sitio del motor
+incrementaba producción por su cuenta (`production_deltas`, `convert_production`, las cinco
+variantes `production_delta_per_*`, los gains de `use_card_action`, y los propios pasivos que
+suman producción). Se resolvió con `rules_engine._increase_production(new_player, key, delta)`:
+único punto de paso que reemplazó el patrón repetido `new_player[key] =
+_apply_production_floor(key, new_player[key] + delta)` que vivía suelto en ~17 lugares del motor
+(reemplazo mecánico, sin cambiar ningún cálculo existente — los 609 tests previos siguieron
+pasando sin tocar). Pasivo nuevo `on_production_increased`: cada vez que una producción sube un
+paso real (después del piso, no antes), el jugador gana esa misma cantidad de unidades del
+recurso en stock — incluida M€, porque el texto de la carta no la excluye (a diferencia de otras
+implementaciones de TM que sí la excluyen; acá se siguió el texto impreso literal). El orden de
+`choose_corporation` (registra el pasivo ANTES de aplicar `effects`) hace que hasta la propia
+producción inicial de Manutech (+1 acero) dispare el pasivo — coherente con el "including this"
+del texto.
+
+Es la misma familia que "Preservation Program / Suitable Infrastructure / Terraforming Deal" de
+las preludes pendientes, que esperan un hook "subió el TR" (mismo patrón, no implementado
+todavía — sigue siendo el próximo candidato natural si se retoma esa familia).
 
 **28 corporaciones sin revisar.**
 

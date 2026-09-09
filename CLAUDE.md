@@ -138,7 +138,19 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-08, corporaciones bloque 2)
+### 📍 Punto de retoma (última sesión: 2026-09-09, corporaciones bloque 2 cerrado)
+
+**Manutech cargada (2026-09-09), cerrando el bloque 2 (10 de 10).** Resolvió el refactor
+pendiente: `rules_engine._increase_production(new_player, key, delta)` es ahora el único punto de
+paso para todo aumento de producción del motor (reemplazó el patrón repetido `new_player[key] =
+_apply_production_floor(key, new_player[key] + delta)` suelto en ~17 lugares — reemplazo mecánico
+verificado, los 609 tests previos siguieron pasando sin tocar). Pasivo nuevo
+`on_production_increased`: por cada paso real que sube cualquier producción (incluida M€, porque
+el texto de la carta no la excluye — verificado contra el scan), el jugador gana esa misma
+cantidad del recurso en stock. Detalle en "Manutech, cargada" en `CARDS_LOG.md`. **Van 19 de 48
+corporaciones; quedan 28 sin revisar** (bloque 3 es el próximo paso natural). Preludes: sigue
+pendiente la misma familia de hook mencionada abajo (subió el TR) para desbloquear
+Preservation Program / Suitable Infrastructure / Terraforming Deal — no se tocó esta sesión.
 
 **Corporaciones, bloque 2 (2026-09-08): 9 de 10 cargadas** — Ecotec, Factorum, Helion,
 Interplanetary Cinematics, Inventrix, Kuiper Cooperative, Lakefront Resorts, Mining Guild y Mons
