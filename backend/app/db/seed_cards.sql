@@ -2464,3 +2464,27 @@ update cards set tags = '{power,building}' where id = 'tectonic_stress_power';
 --    derecha del scan esta vacia en ambas).
 update cards set tags = '{}' where id = 'aerial_lenses';
 update cards set tags = '{}' where id = 'trade_envoys';
+
+-- T11 Recruitment (Turmoil), cargada (2026-09-10): cierra la unica fila que
+-- quedaba en la tabla "Pendientes" de CARDS_LOG.md. "Exchange one NEUTRAL
+-- NON-LEADER delegate with one of your own from the reserve" en el partido
+-- que el jugador elija. Necesito una pieza nueva de infraestructura,
+-- delegados NEUTRALES por partido (turmoil.PartyState.neutral,
+-- turmoil.exchange_neutral_delegate) -- turmoil.py documentaba
+-- explicitamente que no los modelaba. Cantidad inicial fija (2 por partido,
+-- turmoil.STARTING_NEUTRAL_DELEGATES) elegida como supuesto de diseño
+-- razonable para el modo un jugador, NO un dato verificado contra el
+-- reglamento oficial (que fija la cantidad segun numero de jugadores, algo
+-- que este proyecto no modela). Ver "T11 Recruitment" en CARDS_LOG.md.
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'recruitment', 'Recruitment', 2, '{}', null,
+        '{"exchange_neutral_delegate": true}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id = 'recruitment';
+
+update card_review_queue set card_id = 'recruitment' where scan_number = 'T11';

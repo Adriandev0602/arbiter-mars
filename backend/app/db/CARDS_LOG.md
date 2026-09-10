@@ -629,9 +629,47 @@ función de motor con un dict armado a mano.
 Estas NO son descartes definitivos — son casos donde ya se identificó qué falta agregar al
 motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la carta.
 
-| # scan | Nombre | Qué falta |
-|---|---|---|
-| T11 | Recruitment | Delegados NEUTRALES por partido (`turmoil.py` hoy solo trackea `delegates: {player_id: N}`, sin entrada para "neutral" -- ver comentario en `turmoil.py` "neutrales/de otros jugadores... no se simulan"). El texto es "exchange one NEUTRAL non-leader delegate with one of your own from reserve", en el partido que el jugador elija -- necesita saber cuántos delegados neutrales hay en cada partido, algo que el setup actual nunca inicializa. Distinto de Vote of No Confidence (T16, bloque 31, sí cargada): esa solo necesitaba el Chairman neutral, que YA es representable (`chairman is None`) sin tocar `delegates` |
+**Ninguna fila.** La única que quedaba (T11 Recruitment) se cargó el 2026-09-10 — ver
+"T11 Recruitment" más abajo.
+
+#### T11 Recruitment, cargada (2026-09-10)
+
+*"Exchange one NEUTRAL NON-LEADER delegate with one of your own from the reserve"*, en el
+partido que el jugador elija. Necesitó una pieza real de infraestructura: `turmoil.py`
+explícitamente NO modelaba delegados neutrales (`delegates: {player_id: N}`, sin entrada para
+"neutral" — el propio docstring del módulo decía "neutrales/de otros jugadores... no se
+simulan").
+
+**Decisión de alcance, consultada con el usuario antes de tocar código** (no es un dato
+verificado contra el reglamento, es un supuesto de diseño explícito): el reglamento oficial fija
+la cantidad de delegados neutrales por partido según el número de jugadores, algo que este
+proyecto no modela. Con las opciones sobre la mesa (cantidad fija razonable / marcar T11 fuera de
+alcance / re-verificar el reglamento primero), el usuario eligió una **cantidad fija de 2
+delegados neutrales por partido** al arrancar — documentado como tal en el código
+(`turmoil.STARTING_NEUTRAL_DELEGATES`), no presentado como número oficial.
+
+**Piezas nuevas:**
+- `PartyState.neutral: int` — nuevo campo, inicializado en `new_turmoil()` y preservado en los
+  demás constructores de `PartyState` (`place_delegate`, `remove_delegate`,
+  `resolve_new_government`).
+- `turmoil.exchange_neutral_delegate(turmoil, party, player_id)`: un neutral sale de juego (no
+  vuelve a ninguna reserva, a nadie le pertenecía), uno propio de `player_id` ocupa su lugar.
+  Un neutral NUNCA es Party Leader, así que alcanza con exigir `neutral >= 1` — no hace falta
+  distinguir "cuál" se intercambia. Mismo efecto de tablero que `place_delegate` (puede volver al
+  jugador Party Leader, puede cambiar el partido Dominante), pero sin cobrar MC.
+- `effects.exchange_neutral_delegate: true` en `apply_card_effect`/`play_card`, resuelto en
+  `tools.py` (reutiliza el parámetro `removal_party` que ya existía para `remove_own_delegate`,
+  en vez de agregar uno nuevo). Sale de la Reserva del jugador, sin costo de MC.
+
+**Migración de estado compartido necesaria:** `global_parameters.turmoil` es estado COMPARTIDO
+(fila única `game_id='default'`, no por jugador) y ya existía guardado en Supabase de sesiones
+anteriores, con los partidos en la forma vieja (sin `neutral`). Agregar el campo al `TypedDict`
+no alcanza para el dato YA persistido — hubo que parchear la fila existente sumando
+`neutral: 2` a cada partido antes de que `exchange_neutral_delegate` pudiera leerla (si no,
+`KeyError: 'neutral'`). Se verificó que los 6 partidos estaban vacíos (ningún delegado colocado
+por ninguna partida real) antes de tocar la fila. **Cualquier otro entorno con una fila
+`global_parameters.turmoil` vieja va a necesitar el mismo parche** — no es algo que
+`schema.sql` resuelva solo, porque `turmoil` es una columna jsonb sin sub-esquema.
 
 ### Turmoil: núcleo político (Colonial Envoys, Colonial Representation)
 

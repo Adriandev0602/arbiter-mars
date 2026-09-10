@@ -1100,13 +1100,30 @@ def play_card(
         new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] + 1}
         _save_turmoil(turmoil)
 
+    if effects.get("exchange_neutral_delegate"):
+        # Recruitment (T11): "exchange one NEUTRAL NON-LEADER delegate with
+        # one of your own from the reserve" -- reusa removal_party para el
+        # partido elegido (mismo parametro que remove_own_delegate; aca no
+        # "remueve", intercambia). Sale de la Reserva, NO cuesta MC.
+        if removal_party is None:
+            raise ValueError(f"La carta '{card_id}' requiere removal_party")
+        if new_player["reserve_delegates"] < 1:
+            raise engine.InsufficientResourcesError("El jugador no tiene delegados en la Reserva")
+        turmoil = turmoil if turmoil is not None else _load_turmoil()
+        old_leader = turmoil["parties"][removal_party]["leader"]
+        turmoil = turmoillib.exchange_neutral_delegate(turmoil, removal_party, player_id)
+        if turmoil["parties"][removal_party]["leader"] == player_id and old_leader != player_id:
+            new_player = dict(engine.apply_become_party_leader_bonus(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
+        new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] - 1}
+        _save_turmoil(turmoil)
+
     if effects.get("become_chairman_from_neutral"):
         # Vote of No Confidence (T16, bloque 31): requisito
         # "party_leader_and_neutral_chairman" ya garantizo chairman neutral.
         # Mueve 1 delegado propio de la Reserva a la silla de Chairman y
-        # gana 1 TR (regla real de la carta) -- turmoil.py no modela
-        # delegados neutrales en partidos, pero el Chairman SI tiene un
-        # estado neutral explicito (`chairman is None`), asi que esta carta
+        # gana 1 TR (regla real de la carta). El Chairman tiene su propio
+        # estado neutral explicito (`chairman is None`), distinto del
+        # `neutral` por partido que usa Recruitment (T11) -- esta carta
         # no necesita esa pieza mas grande (ver "Pendientes" para
         # Recruitment, que si la necesita).
         if new_player["reserve_delegates"] < 1:
