@@ -161,6 +161,10 @@ class PlayerState(TypedDict):
     # True si Preservation Program ya anulo su primer paso de TR de la
     # generacion. Limpiado junto con tr_raised_this_generation.
     tr_skip_used_this_generation: bool
+    # True si el jugador ya uso la Ruling Policy de Scientists esta
+    # generacion ("pay 10 M€ to draw 3 cards -- may only be used once per
+    # generation and player"). Limpiado en run_production_phase.
+    scientists_policy_used_this_generation: bool
 
     # Igual que pending_mc_discount pero para relajar/endurecer (puede ser
     # negativo) los requisitos de temperatura/oxigeno/oceanos de la
@@ -247,6 +251,7 @@ def new_player_state() -> PlayerState:
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0, pending_ocean_offers=0,
         tr_raised_this_generation=False, tr_skip_used_this_generation=False,
+        scientists_policy_used_this_generation=False,
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
         lobby_delegates=1, reserve_delegates=6,
@@ -676,6 +681,7 @@ def run_production_phase(player: PlayerState, energy_to_convert: int | None = No
         # Arranca la generacion nueva sin TR subido (ver _raise_tr).
         "tr_raised_this_generation": False,
         "tr_skip_used_this_generation": False,
+        "scientists_policy_used_this_generation": False,
     }
 
 
@@ -2275,6 +2281,7 @@ def use_card_action(
     titanium_to_pay: int = 0,
     steel_to_pay: int = 0,
     discard_card_id: str | None = None,
+    ruling_party: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
@@ -2540,7 +2547,7 @@ def use_card_action(
                 raise InsufficientResourcesError(
                     f"Se necesita {titanium_to_pay} de titanio, hay {new_player['titanium']}"
                 )
-            _, titanium_value_mc = compute_conversion_rates(PlayerState(**new_player))  # type: ignore[typeddict-item]
+            _, titanium_value_mc = compute_conversion_rates(PlayerState(**new_player), ruling_party)  # type: ignore[typeddict-item]
             mc_needed = max(0, amount - titanium_to_pay * titanium_value_mc)
             if new_player["mc"] < mc_needed:
                 raise InsufficientResourcesError(f"Se necesita {mc_needed} de MC, hay {new_player['mc']}")
@@ -2555,7 +2562,7 @@ def use_card_action(
                 raise InsufficientResourcesError(
                     f"Se necesita {steel_to_pay} de acero, hay {new_player['steel']}"
                 )
-            steel_value_mc, _ = compute_conversion_rates(PlayerState(**new_player))  # type: ignore[typeddict-item]
+            steel_value_mc, _ = compute_conversion_rates(PlayerState(**new_player), ruling_party)  # type: ignore[typeddict-item]
             mc_needed = max(0, amount - steel_to_pay * steel_value_mc)
             if new_player["mc"] < mc_needed:
                 raise InsufficientResourcesError(f"Se necesita {mc_needed} de MC, hay {new_player['mc']}")
@@ -3186,17 +3193,24 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
     return {**player, "passive_effects": [*player["passive_effects"], {"card_id": card_id, **passive}]}
 
 
-def compute_conversion_rates(player: PlayerState) -> tuple[int, int]:
+def compute_conversion_rates(player: PlayerState, ruling_party: str | None = None) -> tuple[int, int]:
     """
     Devuelve (steel_value_mc, titanium_value_mc) sumando los bonus de todos
     los efectos pasivos activos del jugador a las constantes oficiales
     (ej. con Advanced Alloys en juego: 2+1=3 MC por acero, 3+1=4 por titanio).
+
+    `ruling_party`: si es "unity", suma +1 al titanio -- Ruling Policy de
+    Turmoil, rulebook oficial pagina 6: "Titanium is worth 1 M€ extra",
+    activa solo mientras Unity gobierna. `None` (default) para partidas sin
+    Turmoil o cuando el caller no cargo el estado de Turmoil.
     """
     steel_value = STEEL_VALUE_MC
     titanium_value = TITANIUM_VALUE_MC
     for effect in player["passive_effects"]:
         steel_value += effect.get("steel_value_bonus", 0)
         titanium_value += effect.get("titanium_value_bonus", 0)
+    if ruling_party == "unity":
+        titanium_value += 1
     return steel_value, titanium_value
 
 
@@ -3423,6 +3437,53 @@ def apply_become_party_leader_bonus(player: PlayerState) -> PlayerState:
     if not cards_to_draw:
         return player
     return draw_cards_to_hand(player, cards_to_draw)
+
+
+def apply_ruling_bonus(player: PlayerState, ruling_party: str) -> PlayerState:
+    """
+    Ruling Bonus de Turmoil (rulebook oficial, pagina 6, TM_TURMOIL_ENG_RULES
+    -- texto literal transcrito y verificado, no de memoria): un pago UNICO
+    a TODOS los jugadores (en este motor de un jugador, solo a este) cada
+    vez que un partido se vuelve Ruling (New Government, paso 3b). Seis
+    formulas, una por partido:
+
+      - mars_first: "1 M€ for each building tag they have" -> tags_played
+        de building.
+      - kelvinists: "1 M€ for each heat production they have" -> el VALOR
+        de heat_production (no un tag, la produccion en si).
+      - reds: "The player with lowest TR gains 1 TR. Ties are friendly. In
+        solo, you receive 1 TR if you have TR 20 or below" -- la regla
+        aclara explicitamente el caso de UN jugador: no hay "el mas bajo"
+        que comparar, se usa el umbral fijo TR<=20.
+      - greens: "1 M€ for each plant tag, microbe tag, and animal tag" ->
+        suma de las tres.
+      - scientists: "1 M€ for each science tag they have".
+      - unity: "1 M€ for each Venus tag, Earth tag, and Jovian tag" -> suma
+        de las tres.
+
+    Llamado UNA vez por generacion, solo cuando el partido Ruling
+    efectivamente CAMBIO (tools.resolve_new_government compara el
+    `ruling_party` de antes/despues) -- si no hubo Dominante todavia, no
+    hay cambio de gobierno y esta funcion no se llama.
+    """
+    tags = player["tags_played"]
+    if ruling_party == "mars_first":
+        bonus = tags.get("building", 0)
+    elif ruling_party == "kelvinists":
+        bonus = player["heat_production"]
+    elif ruling_party == "greens":
+        bonus = tags.get("plant", 0) + tags.get("microbe", 0) + tags.get("animal", 0)
+    elif ruling_party == "scientists":
+        bonus = tags.get("science", 0)
+    elif ruling_party == "unity":
+        bonus = tags.get("venus", 0) + tags.get("earth", 0) + tags.get("jovian", 0)
+    elif ruling_party == "reds":
+        return _raise_tr(dict(player), 1) if player["tr"] <= 20 else player  # type: ignore[return-value]
+    else:
+        raise ValueError(f"Partido desconocido: '{ruling_party}'")
+    if not bonus:
+        return player
+    return {**player, "mc": player["mc"] + bonus}  # type: ignore[return-value]
 
 
 def apply_card_played_vp_icon_bonus(player: PlayerState, played_card_id: str) -> PlayerState:

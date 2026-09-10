@@ -1583,6 +1583,55 @@ resource" es una elección del jugador entre los 6 recursos básicos (MC/acero/t
 energía/calor), pieza de "elección de recurso genérica" todavía no construida. Pospuesta hasta
 resolver ambas.
 
+### Turmoil: TR Revision, Ruling Bonus y Ruling Policy (2026-09-10, COMPLETO)
+
+**Fuente de datos:** rulebook oficial de Turmoil (`TM_TURMOIL_ENG_RULES`, PDF de fryxgames.se),
+página 6 (las 6 Ruling Bonus + Ruling Policy, una tabla por partido) y página "Turmoil phase" paso
+4 (TR Revision). Texto literal citado en los docstrings de cada pieza -- no de memoria, mismo
+criterio que el resto del proyecto.
+
+**TR Revision** (`tools.resolve_new_government`, incondicional): "At the beginning of the Turmoil
+phase, after the Production phase, all players lose 1 TR." -1 TR SIEMPRE, pase lo que pase con el
+partido Dominante (incluso antes de que exista un Ruling Party). Reusa `engine._raise_tr`, el
+choke-point único de cambios de TR ya existente.
+
+**Ruling Bonus** (`engine.apply_ruling_bonus`), un pago único a todos los jugadores la vez que un
+partido se vuelve Ruling -- disparado en `tools.resolve_new_government` comparando `ruling_party`
+de antes/después (mismo idioma diff-antes/después que `apply_become_party_leader_bonus`):
+
+| Partido | Ruling Bonus |
+|---|---|
+| Mars First | 1 M€ por cada tag building jugado |
+| Kelvinists | 1 M€ por cada punto de producción de calor |
+| Reds | El jugador con TR más bajo gana 1 TR -- en solitario, umbral fijo: TR ≤ 20 |
+| Greens | 1 M€ por cada tag plant + microbe + animal jugado |
+| Scientists | 1 M€ por cada tag science jugado |
+| Unity | 1 M€ por cada tag venus + earth + jovian jugado |
+
+**Ruling Policy**, efecto activo/acción SOLO durante la fase de Acción mientras ese partido
+gobierna:
+
+| Partido | Ruling Policy | Implementación |
+|---|---|---|
+| Mars First | "When you place any tile on Mars, you receive 1 steel." | `tools._apply_mars_first_ruling_bonus`, enganchada en los 3 wrappers de colocación real (`_place_ocean_and_apply_bonus`, `_place_city_and_apply_bonus`, `_place_greenery_and_apply_bonus`) -- este motor solo modela Tharsis, nunca tiles fuera de mapa, así que "on Mars" es sencillamente "pasó por uno de esos 3 wrappers". |
+| Kelvinists | "Spend 10 M€ to increase your heat production 1 step and your energy production 1 step." | Tool nueva `use_kelvinists_ruling_policy`, usable cualquier cantidad de veces por generación (sin flag de "usado"). |
+| Reds | "Whenever a player takes an action that raises their TR, that player must pay 3 M€ per step raised. If you don't have enough M€, you cannot take that action." | `tools._apply_reds_ruling_policy`: NO toca `engine._raise_tr` (que sigue pura, sin conocer Turmoil) -- se resuelve en el BORDE de tools.py, comparando el TR de antes/después de cada tool que representa una acción del jugador (`play_card`, `use_card_action`, `play_prelude`, `use_standard_project`, `convert_resources`). Si el cargo deja MC negativo, lanza `InsufficientResourcesError` antes de guardar (la acción entera se cancela). NO se aplica a la TR Revision ni al propio Ruling Bonus de Reds en `resolve_new_government` -- esos son efectos automáticos, no "una acción que el jugador toma". |
+| Greens | "Gain 4 M€ each time you place a Greenery tile." | Enganchada en `_place_greenery_and_apply_bonus`, mismo criterio que Mars First. |
+| Scientists | "Spend 10 M€ to draw 3 cards -- may only be used once per generation and player." | Tool nueva `use_scientists_ruling_policy`, gateada por el flag nuevo `PlayerState.scientists_policy_used_this_generation` (se limpia en `run_production_phase`, mismo patrón que `tr_skip_used_this_generation`). |
+| Unity | "When performing a Standard Project, or playing a Prelude, Blue or Green card, the price of steel and titanium resource is raised by 1 M€." Este motor solo modela el aumento de titanio (steel no tiene una vía de pago separada aparte de producción/venta que use `compute_conversion_rates`) | `engine.compute_conversion_rates(player, ruling_party)`: +1 M€ al `titanium_value` si `ruling_party == "unity"`. Threadeado a través de `use_card_action`, `play_card`, `resolve_ocean_offer` (parcial, ver nota abajo) y los wrappers de proyecto estándar. |
+
+**Gap conocido, no bloqueante:** `tools.resolve_ocean_offer` (ofertas opcionales tipo Neptunian
+Power Consultants) no recibe `ruling_party` -- su `compute_conversion_rates(player)` no ve la
+subida de Unity. Caso de borde raro (pagar una oferta de océano parcialmente con acero mientras
+Unity gobierna); documentado acá como deuda técnica menor, no arreglado en esta pasada.
+
+**Piezas nuevas en `PlayerState`:** `scientists_policy_used_this_generation: bool` (init `False`,
+reset en `run_production_phase`). Migración en `schema.sql`: columna
+`scientists_policy_used_this_generation boolean not null default false`.
+
+Tests: `tests/test_rules_engine.py` (7 casos de `apply_ruling_bonus`, 1 de `compute_conversion_rates`
+con Unity). 653/653 pasando.
+
 ### Bloque 5 (2026-09-04): las 22 restantes, analizadas en paralelo por 4 agentes
 
 Único bloque hecho con **orquestación multi-agente**: se repartieron las 22 cartas que quedaban

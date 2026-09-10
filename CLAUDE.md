@@ -138,7 +138,46 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-10, T11 Recruitment cargada: catálogo de proyecto SIN pendientes por mecánica)
+### 📍 Punto de retoma (última sesión: 2026-09-10, Turmoil: TR Revision + Ruling Bonus + las 6 Ruling Policy, COMPLETO)
+
+**Las dos piezas "fuera de alcance" que quedaban de Turmoil, cargadas enteras.** El usuario eligió
+explícitamente el alcance más grande ("Todo: Bonus + las 6 Ruling Policy") ante la opción de
+recortar. Fuente: rulebook oficial (`TM_TURMOIL_ENG_RULES`, PDF de fryxgames.se), página 6 —
+detalle completo en `CARDS_LOG.md`, sección "Turmoil: TR Revision, Ruling Bonus y Ruling Policy".
+
+**TR Revision:** -1 TR incondicional a cada New Government (`tools.resolve_new_government`),
+reusando `engine._raise_tr`. **Ruling Bonus:** pago único cuando el Ruling Party cambia —
+`engine.apply_ruling_bonus`, 6 fórmulas (una por partido), disparada con el mismo idioma
+diff-antes/después que `apply_become_party_leader_bonus`. **Ruling Policy** (activa solo mientras
+ese partido gobierna): Mars First (+1 acero al colocar tile) y Greens (+4 M€ al colocar greenery)
+enganchadas en los 3 wrappers de colocación real; Unity (+1 M€ valor titanio) extendiendo
+`compute_conversion_rates`; Kelvinists y Scientists como tools nuevas
+(`use_kelvinists_ruling_policy`, `use_scientists_ruling_policy` — esta última con el flag nuevo
+`scientists_policy_used_this_generation`, migración aplicada en `schema.sql`).
+
+**La pieza que tocaba la arquitectura, resuelta sin romperla:** Reds ("-3 M€ por cada paso de TR
+subido; si no alcanza, no podés tomar la acción") necesitaba que subir TR supiera de Turmoil, pero
+`engine._raise_tr` es el choke-point puro usado desde ~10 sitios distintos dentro del motor. Se
+resolvió con diff-antes/después en el BORDE de `tools.py` (`tools._apply_reds_ruling_policy`),
+sin tocar `_raise_tr` ni su pureza — enganchada en las 5 tools que representan una acción real del
+jugador (`play_card`, `use_card_action`, `play_prelude`, `use_standard_project`,
+`convert_resources`). Deliberadamente NO se aplica a la TR Revision ni al Ruling Bonus de Reds en
+`resolve_new_government`, porque esos son automáticos, no "una acción que el jugador toma".
+
+**Gap conocido, no bloqueante:** `tools.resolve_ocean_offer` no recibe `ruling_party`, así que el
+alza de Unity al titanio no aplica ahí (caso de borde raro). Documentado en `CARDS_LOG.md`, no
+arreglado en esta pasada.
+
+**Tests:** 8 nuevos en `tests/test_rules_engine.py` (Ruling Bonus × 6 partidos + unknown-party +
+Unity en `compute_conversion_rates`). 653/653 pasando en total.
+
+**Deuda técnica NO tocada en esta sesión** (ya documentada, no pedida por el usuario): T11
+Recruitment usa una cantidad fija de 2 delegados neutrales por partido
+(`turmoil.STARTING_NEUTRAL_DELEGATES`) que no coincide con el mecanismo oficial verificado (14
+neutrales totales, 1 al Chairman en el setup, el resto entra vía Global Events) — señalado al
+usuario como FYI, pendiente de decisión futura.
+
+### 📍 Punto de retoma anterior (última sesión: 2026-09-10, T11 Recruitment cargada: catálogo de proyecto SIN pendientes por mecánica)
 
 **T11 Recruitment cargada.** Era la única fila que quedaba en "Pendientes" de `CARDS_LOG.md`.
 Necesitó delegados NEUTRALES por partido, algo que `turmoil.py` explícitamente no modelaba (el

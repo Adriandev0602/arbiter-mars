@@ -90,6 +90,7 @@ from app.agent.rules_engine import (
     apply_card_resource_gained_bonuses,
     is_blue_card,
     resolve_active_card_starting_resources,
+    apply_ruling_bonus,
 )
 
 
@@ -6397,3 +6398,59 @@ def test_card_cost_discount_requires_requirement():
     )
     assert compute_card_cost_discount(player, (), has_requirement=True) == 2
     assert compute_card_cost_discount(player, (), has_requirement=False) == 0
+
+
+def test_apply_ruling_bonus_mars_first_pays_per_building_tag():
+    player = new_player_state()
+    player["tags_played"] = {"building": 3}
+    new_player = apply_ruling_bonus(player, "mars_first")
+    assert new_player["mc"] == player["mc"] + 3
+
+
+def test_apply_ruling_bonus_kelvinists_pays_per_heat_production():
+    player = {**new_player_state(), "heat_production": 4}
+    new_player = apply_ruling_bonus(player, "kelvinists")
+    assert new_player["mc"] == player["mc"] + 4
+
+
+def test_apply_ruling_bonus_greens_pays_per_plant_microbe_animal_tags():
+    player = new_player_state()
+    player["tags_played"] = {"plant": 2, "microbe": 1, "animal": 1, "building": 5}
+    new_player = apply_ruling_bonus(player, "greens")
+    assert new_player["mc"] == player["mc"] + 4
+
+
+def test_apply_ruling_bonus_scientists_pays_per_science_tag():
+    player = new_player_state()
+    player["tags_played"] = {"science": 2}
+    new_player = apply_ruling_bonus(player, "scientists")
+    assert new_player["mc"] == player["mc"] + 2
+
+
+def test_apply_ruling_bonus_unity_pays_per_venus_earth_jovian_tags():
+    player = new_player_state()
+    player["tags_played"] = {"venus": 1, "earth": 2, "jovian": 1}
+    new_player = apply_ruling_bonus(player, "unity")
+    assert new_player["mc"] == player["mc"] + 4
+
+
+def test_apply_ruling_bonus_reds_raises_tr_only_if_20_or_below():
+    low_tr_player = {**new_player_state(), "tr": 20}
+    new_player = apply_ruling_bonus(low_tr_player, "reds")
+    assert new_player["tr"] == 21
+
+    high_tr_player = {**new_player_state(), "tr": 21}
+    unchanged = apply_ruling_bonus(high_tr_player, "reds")
+    assert unchanged["tr"] == 21
+
+
+def test_apply_ruling_bonus_unknown_party_raises():
+    with pytest.raises(ValueError):
+        apply_ruling_bonus(new_player_state(), "bogus_party")
+
+
+def test_compute_conversion_rates_unity_ruling_raises_titanium_value():
+    player = new_player_state()
+    _, titanium_value = compute_conversion_rates(player)
+    _, titanium_value_unity = compute_conversion_rates(player, ruling_party="unity")
+    assert titanium_value_unity == titanium_value + 1
