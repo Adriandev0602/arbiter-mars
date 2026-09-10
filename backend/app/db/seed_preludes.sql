@@ -423,19 +423,50 @@ from (values
 ) as m(scan, pid)
 where q.scan_number = m.scan;
 
--- Pendientes por mecanica (ver CARDS_LOG.md, "Preludes pendientes"):
---   * Ecology Experts (P10): "play a card from hand, ignoring global
---     requirements" -- necesita extender play_card con
---     ignore_global_requirements + cost_reduction_mc y una forma de
---     invocarlo encadenado desde play_prelude. Mismo hueco que se penso
---     compartido con Eccentric Sponsor (P11) y WG Project -- ya resuelto que
---     NO lo comparten: Eccentric Sponsor es next_card_discount_mc (arriba) y
---     WG Project ya estaba cargado con otra pieza.
---   * Board of Directors (P45): pide robar una prelude de un pool que no
---     repita descartes anteriores -- a diferencia de New Partner (un solo
---     robo, sin estado), esta es una ACCION REPETIBLE, asi que necesita un
---     "mazo de preludes vistas" persistente para no redescartar siempre la
---     misma carta. Ademas jugar la robada es "jugar una carta dentro de una
---     accion", el mismo hueco de Ecology Experts.
-update prelude_review_queue set reviewed = true, prelude_id = null
-where scan_number in ('P10', 'P45');
+-- ---------------------------------------------------------------------------
+-- Las 2 ultimas preludes pendientes, cargadas (2026-09-10): CATALOGO DE
+-- PRELUDES COMPLETO, 70 de 70.
+--
+-- Ambas necesitaban la misma pieza de infraestructura ("jugar una carta
+-- dentro de otra jugada"), resuelta una sola vez:
+--   * play_card suma dos parametros nuevos: `ignore_global_requirements`
+--     (salta los 8 requisitos de parametro global -- temperatura/oxigeno/
+--     oceanos/Venus, min y max de cada uno -- el resto se sigue exigiendo,
+--     segun el FAQ oficial) y `cost_reduction_mc` (descuento extra antes de
+--     calcular el pago, mismo mecanismo que next_card_discount_mc).
+--   * play_prelude suma `nested_card_id` + los parametros de pago/eleccion
+--     de esa carta: aplica el resto de `effects` de la prelude y lo guarda
+--     primero, despues juega la carta anidada con el camino normal de
+--     play_card (sale de la mano, paga de verdad, coloca tiles) y devuelve
+--     ESA respuesta, no la de la prelude.
+--   * use_card_action suma `reveal_prelude` (revela N preludes al azar sin
+--     cobrar nada, mismo mecanismo que `reveal_random_preludes` de New
+--     Partner pero como GANANCIA de una accion) y `play_revealed_prelude`
+--     (despues de que el motor cobre el costo generico de la rama del
+--     `choice`, llama a play_prelude.func de verdad sobre `target_card_id`
+--     -- Board of Directors "juega" la prelude robada, no copia su efecto
+--     como Double Down).
+insert into prelude_cards (id, name, tags, effects) values
+    -- P10: +1 produccion de plantas, despues jugar una carta de la mano
+    -- ignorando los requisitos de parametro global. Sin descuento de costo.
+    ('ecology_experts', 'Ecology Experts', '{plant,microbe}',
+     '{"production_deltas": {"plant_production": 1},
+       "play_card_from_hand": {"ignore_global_requirements": true}}'::jsonb),
+
+    -- P45: +4 director resources. Accion repetible: revelar 1 prelude al
+    -- azar (entre las no jugadas por este jugador) y, en una llamada
+    -- separada, o no hacer nada con ella (= descartarla, preludes no tienen
+    -- pila de descarte en este motor) o pagar 12 M€ + 1 director resource
+    -- para jugarla de verdad.
+    ('board_of_directors', 'Board of Directors', '{earth}',
+     '{"active_card_resource_type": "director", "becomes_active": true,
+       "active_card_starting_resources": 4,
+       "action": {"choice": [
+         {"cost": {}, "gains": {"reveal_prelude": {"n": 1}}},
+         {"cost": {"mc": 12, "card_resource": 1}, "gains": {"play_revealed_prelude": true}}]}}'::jsonb)
+on conflict (id) do update set
+    name = excluded.name, tags = excluded.tags, effects = excluded.effects;
+
+update prelude_review_queue q set reviewed = true, prelude_id = m.pid
+from (values ('P10','ecology_experts'), ('P45','board_of_directors')) as m(scan, pid)
+where q.scan_number = m.scan;
