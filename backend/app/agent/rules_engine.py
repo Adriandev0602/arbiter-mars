@@ -1245,6 +1245,12 @@ def apply_card_effect(
       - "production_deltas": {"<recurso>_production": delta, ...} -- forma
         generica para cambiar una o mas producciones a la vez (ej. Nuclear
         Power: -2 produccion MC, +3 produccion energia).
+      - "raise_production_floor": {"min": N} -- sube CADA produccion que
+        este por debajo de N hasta N (no suma un delta fijo: las que ya
+        estan en N o mas quedan intactas) (ej. Industrial Complex, prelude:
+        "increase all your productions that are lower than 1, to 1"). Cada
+        aumento pasa por _increase_production con el delta ya calculado, asi
+        que se combina bien con Manutech.
       - "resource_deltas": {"<recurso>": delta, ...} -- forma generica para
         cambiar stock de uno o mas recursos (ej. Solar Wind Power: +2 titanio).
         Un delta negativo que dejaria el stock por debajo de 0 lanza
@@ -1577,6 +1583,20 @@ def apply_card_effect(
     if "production_deltas" in effects:
         for key, delta in effects["production_deltas"].items():
             new_player = _increase_production(new_player, key, delta)
+
+    if "raise_production_floor" in effects:
+        # Industrial Complex: "increase all your productions that are lower
+        # than 1, to 1". No es un delta fijo: cada produccion sube SOLO lo
+        # que le falta para llegar al piso (0 si ya esta en 1 o mas). Cada
+        # aumento pasa por _increase_production con el delta ya calculado,
+        # para no saltarse el punto unico (Manutech se combina bien).
+        floor = effects["raise_production_floor"]["min"]
+        for key in (
+            "mc_production", "steel_production", "titanium_production",
+            "plant_production", "energy_production", "heat_production",
+        ):
+            if new_player[key] < floor:
+                new_player = _increase_production(new_player, key, floor - new_player[key])
 
     if "production_delta_per_tag" in effects:
         specs = effects["production_delta_per_tag"]
@@ -2254,6 +2274,7 @@ def use_card_action(
     reserved_card_id: str | None = None,
     titanium_to_pay: int = 0,
     steel_to_pay: int = 0,
+    discard_card_id: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
@@ -2291,7 +2312,11 @@ def use_card_action(
         Advanced Alloys tambien lo beneficia) (ej. Rotator Impacts: 6 MC,
         "titanium may be used"). Otra clave especial
         "card_resource" gasta N recursos guardados en la propia carta (ej.
-        Regolith Eaters: remover 2 microbios). El VALOR de cualquier clave
+        Regolith Eaters: remover 2 microbios). "discard_card" descarta la
+        carta `discard_card_id` (parametro nuevo de esta funcion) de la MANO
+        del jugador -- no del catalogo, motor puro (ej. Focused
+        Organization: "discard 1 card and spend 1 standard resource to draw
+        1 card and gain 1 standard resource"). El VALOR de cualquier clave
         (no solo las especiales de arriba) puede ser el string literal
         "effect_amount" en vez de un N fijo -- costo VARIABLE, X elegido
         por el jugador via `effect_amount` (ej. Hi-Tech Lab, bloque 31:
@@ -2451,6 +2476,16 @@ def use_card_action(
                     f"'{card_id}' tiene {card_resources} recursos guardados, se necesitan {amount}"
                 )
             card_resources -= amount
+        elif key == "discard_card":
+            # Pagar descartando 1 carta de la MANO, elegida por el jugador
+            # (ej. Focused Organization: "discard 1 card and spend 1 standard
+            # resource to draw 1 card and gain 1 standard resource"). No
+            # necesita el catalogo -- remove_card_from_hand es motor puro --
+            # asi que, a diferencia de discard_card_then_draw (un effect
+            # inmediato de carta), esto vive directo aca.
+            if discard_card_id is None:
+                raise CardEffectError(f"La accion de '{card_id}' requiere discard_card_id")
+            new_player = dict(remove_card_from_hand(PlayerState(**new_player), discard_card_id))  # type: ignore[typeddict-item]
         elif key == "production_delta":
             # Pagar BAJANDO produccion, no gastando stock (ej. Utopia Invest:
             # "decrease any production to gain 4 resources of that kind"). El
@@ -3062,6 +3097,12 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         diferencia de on_city_tile_placed_add_resource, que suma a la carta
         activa (ej. Tharsis Republic, corporaciones bloque 5: +3 M€). Ver
         apply_city_placed_bonuses.
+      - "on_become_party_leader": {"draw": N (default 1)} -- roba N cartas
+        cada vez que el jugador se vuelve Party Leader de un partido (ej.
+        Corridors of Power, prelude: "each time you become party leader,
+        draw 1 card"). `turmoil.place_delegate` es pura y no conoce pasivos
+        -- lo dispara el caller (tools.lobby) comparando el leader de antes
+        y despues. Ver apply_become_party_leader_bonus.
       - "venus_requirements_tolerance_steps": N -- como
         global_requirements_tolerance_steps pero SOLO para los requisitos de
         Venus (ej. Morning Star Inc, corporaciones bloque 3: "your Venus
@@ -3359,6 +3400,29 @@ def apply_colony_placed_bonuses(player: PlayerState) -> PlayerState:
             new_player = _increase_production(new_player, key, delta)
             changed = True
     return PlayerState(**new_player) if changed else player  # type: ignore[typeddict-item]
+
+
+def apply_become_party_leader_bonus(player: PlayerState) -> PlayerState:
+    """
+    Aplica el pasivo "on_become_party_leader": {"draw": N (default 1)} --
+    dispara cuando el jugador ACABA de volverse Party Leader de un partido
+    (ej. Corridors of Power: "each time you become party leader, draw 1
+    card"). `turmoil.place_delegate` es una funcion PURA que no conoce
+    `PlayerState`/pasivos (separacion arquitectonica de turmoil.py), asi que
+    esto no se resuelve adentro de esa funcion: el caller (tools.lobby y
+    cualquier otro punto que llame place_delegate) compara el `leader` de
+    ANTES contra el de DESPUES y, si cambio a este jugador, llama a esta
+    funcion -- mismo patron de "diff antes/despues" que
+    apply_production_increased_bonus.
+    """
+    cards_to_draw = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_become_party_leader")
+        if spec is not None:
+            cards_to_draw += spec.get("draw", 1)
+    if not cards_to_draw:
+        return player
+    return draw_cards_to_hand(player, cards_to_draw)
 
 
 def apply_card_played_vp_icon_bonus(player: PlayerState, played_card_id: str) -> PlayerState:

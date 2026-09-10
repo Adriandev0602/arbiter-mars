@@ -72,6 +72,7 @@ from app.agent.rules_engine import (
     apply_colony_placed_bonuses,
     snapshot_production_totals,
     apply_card_played_vp_icon_bonus,
+    apply_become_party_leader_bonus,
     apply_production_increased_bonus,
     retire_card_as_event,
     spend_card_resource_as_heat,
@@ -4991,6 +4992,58 @@ def test_apply_corporation_start_pone_produccion_en_cero():
     assert all(corp_player[f"{r}_production"] == 0
                for r in ("mc", "steel", "titanium", "plant", "energy", "heat"))
     assert corp_player["tr"] == player["tr"]     # el TR no lo toca
+
+
+def test_corridors_of_power_roba_al_volverse_party_leader():
+    # Corridors of Power: "each time you become party leader, draw 1 card".
+    player = register_passive_effect({**new_player_state(), "deck": ["c1", "c2"]},
+                                     "corridors_of_power", {"on_become_party_leader": {"draw": 1}})
+    new_player = apply_become_party_leader_bonus(player)
+    assert new_player["hand"] == ["c1"]
+    assert new_player["deck"] == ["c2"]
+
+    # Sin el pasivo, no pasa nada.
+    assert apply_become_party_leader_bonus(new_player_state()) == new_player_state()
+
+
+def test_industrial_complex_sube_solo_las_producciones_por_debajo_del_piso():
+    # Industrial Complex: "increase all your productions that are lower
+    # than 1, to 1" -- las que ya estan en 1 o mas quedan intactas.
+    player = {**new_player_state(), "mc_production": -2, "steel_production": 0,
+              "titanium_production": 2, "energy_production": 1}
+    new_player, _ = apply_card_effect(player, new_global_parameters(), {
+        "raise_production_floor": {"min": 1}
+    })
+    assert new_player["mc_production"] == 1
+    assert new_player["steel_production"] == 1
+    assert new_player["titanium_production"] == 2   # ya estaba en 2, no se toca
+    assert new_player["energy_production"] == 1      # ya estaba en el piso, no se toca
+    assert new_player["plant_production"] == 1        # ya estaba en el piso (estandar arranca en 1)
+
+    # Combinado con Manutech: cada suba real pasa por _increase_production,
+    # asi que tambien paga stock DEL MISMO RECURSO que subio.
+    con_manutech = register_passive_effect(player, "manutech", {"on_production_increased": True})
+    tras, _ = apply_card_effect(con_manutech, new_global_parameters(), {
+        "raise_production_floor": {"min": 1}
+    })
+    assert tras["mc"] == con_manutech["mc"] + 3       # mc_production: -2 -> 1, 3 pasos
+    assert tras["steel"] == con_manutech["steel"] + 1  # steel_production: 0 -> 1, 1 paso
+
+
+def test_focused_organization_descarta_una_carta_como_costo_de_accion():
+    # Focused Organization: "discard 1 card and spend 1 standard resource to
+    # draw 1 card and gain 1 standard resource".
+    player = register_active_card({**new_player_state(), "mc": 5, "deck": ["c1"], "hand": ["h1", "h2"]},
+                                  "focused_organization")
+    spec = {"cost": {"discard_card": 1, "mc": 1}, "gains": {"draw_cards": 1, "resource_deltas": {"mc": 1}}}
+    new_player, _ = use_card_action(player, new_global_parameters(), "focused_organization", spec,
+                                    discard_card_id="h1")
+    assert new_player["hand"] == ["h2", "c1"]
+    assert new_player["mc"] == player["mc"]  # -1 de costo +1 de gains, neto 0
+
+    # Sin discard_card_id, la accion no se puede pagar.
+    with pytest.raises(CardEffectError):
+        use_card_action(player, new_global_parameters(), "focused_organization", spec)
 
 
 def test_vitor_paga_por_carta_con_vp_no_negativo():

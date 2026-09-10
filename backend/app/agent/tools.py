@@ -4,6 +4,8 @@ Tools que el LLM puede invocar. Son wrappers delgados sobre agent/rules_engine.p
 El LLM llama estas funciones con argumentos extraidos de la consulta en
 lenguaje natural -- nunca calcula los numeros el mismo.
 """
+import random
+
 from langchain_core.tools import tool
 
 from app.agent import board as boardlib
@@ -1058,7 +1060,10 @@ def play_card(
             )
         turmoil = turmoil if turmoil is not None else _load_turmoil()
         for party in chosen_parties:
+            old_leader = turmoil["parties"][party]["leader"]
             turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+            if turmoil["parties"][party]["leader"] == player_id and old_leader != player_id:
+                new_player = dict(engine.apply_become_party_leader_bonus(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] - num_delegates}
         _save_turmoil(turmoil)
 
@@ -1559,7 +1564,10 @@ def use_card_action(
             )
         turmoil = turmoil if turmoil is not None else _load_turmoil()
         for party in chosen_parties:
+            old_leader = turmoil["parties"][party]["leader"]
             turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+            if turmoil["parties"][party]["leader"] == player_id and old_leader != player_id:
+                new_player = dict(engine.apply_become_party_leader_bonus(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         new_player = {
             **new_player,
             "reserve_delegates": new_player["reserve_delegates"] - place_delegates_count,
@@ -2008,7 +2016,15 @@ def lobby(player_id: str, party: str, from_reserve: bool = False) -> dict:
         new_player = {**player, "lobby_delegates": player["lobby_delegates"] - 1}
 
     turmoil = _load_turmoil()
+    old_leader = turmoil["parties"][party]["leader"]
     new_turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+
+    # Corridors of Power: "each time you become party leader, draw 1 card".
+    # place_delegate es pura y no conoce pasivos, asi que el disparo se
+    # detecta aca, comparando el leader de antes y despues.
+    new_leader = new_turmoil["parties"][party]["leader"]
+    if new_leader == player_id and old_leader != player_id:
+        new_player = dict(engine.apply_become_party_leader_bonus(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
 
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_turmoil(new_turmoil)
@@ -2142,6 +2158,85 @@ def resolve_ocean_offer(player_id: str, card_id: str, steel_to_pay: int = 0) -> 
     _save_player(player_id, new_player)  # type: ignore[arg-type]
     _log_transaction(player_id, "resolve_ocean_offer", {"card_id": card_id, "steel_to_pay": steel_to_pay})
     return {"player": new_player}
+
+
+@tool
+def play_double_down(
+    player_id: str, other_prelude_id: str,
+    ocean_hex_ids: list[str] | None = None, city_hex_ids: list[str] | None = None,
+    greenery_hex_id: str | None = None,
+) -> dict:
+    """
+    Resuelve Double Down (prelude): "copy your other Prelude's direct
+    effect". "Direct effect" es el efecto INMEDIATO de la otra prelude, no
+    su `passive` ni su `action` repetible -- esas dos claves se descartan
+    antes de reaplicar el resto con el mismo motor de siempre
+    (engine.apply_card_effect).
+
+    Args:
+        player_id: id del jugador.
+        other_prelude_id: id en `prelude_cards` de la OTRA prelude que este
+            jugador ya tiene/jugo (debe estar en `player.played_cards`).
+        ocean_hex_ids/city_hex_ids/greenery_hex_id: igual que play_prelude,
+            si el efecto copiado coloca tiles.
+
+    Returns:
+        dict con el estado actualizado del jugador y los parametros globales.
+
+    Lanza ValueError si `other_prelude_id` no existe en el catalogo o no es
+    una prelude que este jugador ya tenga jugada.
+    """
+    if other_prelude_id == "double_down":
+        raise ValueError("Double Down no puede copiarse a si misma")
+    player = _load_player(player_id)
+    if other_prelude_id not in player["played_cards"]:
+        raise ValueError(f"'{other_prelude_id}' no es una prelude que este jugador ya tenga jugada")
+
+    res = supabase.table("prelude_cards").select("*").eq("id", other_prelude_id).single().execute()
+    other = res.data
+    if other is None:
+        raise ValueError(f"Prelude '{other_prelude_id}' no encontrada en el catalogo")
+    direct_effects = {k: v for k, v in (other.get("effects") or {}).items()
+                       if k not in ("passive", "action", "becomes_active", "active_card_resource_type")}
+
+    globals_ = _load_global_parameters()
+    new_player, new_globals = engine.apply_card_effect(player, globals_, direct_effects)
+
+    board = None
+    oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
+    cities_delta = new_globals["city_tiles_placed"] - globals_["city_tiles_placed"]
+    if oceans_delta > 0 or cities_delta > 0 or direct_effects.get("place_greenery") is not None:
+        board = _load_board()
+    if oceans_delta > 0:
+        chosen = ocean_hex_ids or []
+        if len(chosen) != oceans_delta:
+            raise ValueError(f"Este efecto coloca {oceans_delta} oceano(s); se recibieron {len(chosen)} hex_id(s)")
+        for hid in chosen:
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+    if cities_delta > 0:
+        chosen = city_hex_ids or []
+        if len(chosen) != cities_delta:
+            raise ValueError(f"Este efecto coloca {cities_delta} ciudad(es); se recibieron {len(chosen)} hex_id(s)")
+        for hid in chosen:
+            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id)
+    greenery_spec = direct_effects.get("place_greenery")
+    if greenery_spec is not None:
+        if greenery_hex_id is None:
+            raise ValueError("Este efecto requiere greenery_hex_id")
+        board, new_player = _place_greenery_and_apply_bonus(
+            board, new_player, greenery_hex_id, player_id,
+            ignore_restrictions=greenery_spec.get("ignore_restrictions", False),
+        )
+
+    new_player = engine.register_played_card(new_player, "double_down")
+    _save_player(player_id, new_player)
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
+    if board is not None:
+        _save_board(board)
+    _log_transaction(player_id, "play_double_down", {"other_prelude_id": other_prelude_id})
+
+    return {"player": dict(new_player), "globals": dict(new_globals)}
 
 
 @tool
@@ -2281,6 +2376,45 @@ def _draw_cards_matching_tag(player: dict, tag, n: int) -> dict:
     return {**player, "deck": remaining, "hand": [*player["hand"], *drawn]}
 
 
+def _draw_cards_matching_requirement(player: dict, n: int, party_requirement: bool = False) -> dict:
+    """
+    Hermana de `_draw_cards_matching_tag`, pero filtra por la columna
+    `cards.requirements` en vez de `cards.tags`. Mismo mecanismo de revelar
+    de a una desde el tope y descartar lo que no matchea.
+
+    `party_requirement=False` (default, ej. Nobel Prize: "draw 2 cards with
+    requirements"): matchea cualquier carta con `requirements` no vacio.
+    `party_requirement=True` (ej. High Circles: "draw 1 card with a PARTY
+    requirement"): matchea solo cartas cuyo `requirements` tenga la clave
+    `ruling_or_delegates` -- la forma que usa `check_card_requirements` para
+    los requisitos de partido de Turmoil (rules_engine.py).
+    """
+    deck = list(player["deck"])
+    if not deck:
+        return player
+    res = supabase.table("cards").select("id,requirements").in_("id", deck).execute()
+    if party_requirement:
+        matching = {
+            row["id"] for row in (res.data or [])
+            if "ruling_or_delegates" in (row["requirements"] or {})
+        }
+    else:
+        matching = {row["id"] for row in (res.data or []) if row["requirements"]}
+
+    drawn: list[str] = []
+    revealed_count = 0
+    for cid in deck:
+        revealed_count += 1
+        if cid in matching:
+            drawn.append(cid)
+            if len(drawn) == n:
+                break
+    if not drawn:
+        return player
+    remaining = deck[revealed_count:]
+    return {**player, "deck": remaining, "hand": [*player["hand"], *drawn]}
+
+
 def _count_blue_cards_played(played_card_ids: list[str]) -> int:
     """
     Cuenta cuantas de las cartas ya jugadas por el jugador son AZULES,
@@ -2407,6 +2541,7 @@ def play_prelude(
     ocean_hex_ids: list[str] | None = None, city_hex_ids: list[str] | None = None,
     greenery_hex_id: str | None = None, delegate_party_choices: list[str] | None = None,
     build_colony_id: str | None = None, discard_card_ids: list[str] | None = None,
+    merger_corporation_id: str | None = None,
 ) -> dict:
     """
     Juega una carta PRELUDE (expansion Prelude). A diferencia de play_card:
@@ -2427,6 +2562,9 @@ def play_prelude(
         city_hex_ids: idem para ciudades (ej. Early Settlement: 1).
         greenery_hex_id: OBLIGATORIO si la prelude coloca un greenery (ej.
             Experimental Forest).
+        merger_corporation_id: OBLIGATORIO si `effects.requires_corporation_choice`
+            esta definido (ej. Merger: "draw 4 corporation cards, play one,
+            discard the rest, then pay 42 M€") -- la corporacion elegida.
 
     Returns:
         dict con el estado actualizado del jugador y de los parametros
@@ -2443,6 +2581,29 @@ def play_prelude(
     tags = tuple(prelude.get("tags") or [])
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
+
+    corp_choice_spec = effects.get("requires_corporation_choice")
+    if corp_choice_spec is not None:
+        # Merger: en vez de un `effects` generico, esta prelude dispara el
+        # MISMO flujo de choose_corporation (el sorteo de 4/descarte de 3 no
+        # tiene sentido en un jugador: el usuario elige directo, como en
+        # choose_corporation), con un costo extra en M€ descontado despues
+        # de aplicar el arranque de la corporacion elegida.
+        if merger_corporation_id is None:
+            raise ValueError(f"La prelude '{prelude_id}' requiere merger_corporation_id")
+        result = choose_corporation.func(player_id, merger_corporation_id)  # type: ignore[attr-defined]
+        new_player = _load_player(player_id)
+        extra_cost = corp_choice_spec.get("extra_cost_mc", 0)
+        if new_player["mc"] < extra_cost:
+            raise engine.InsufficientResourcesError(
+                f"Se necesitan {extra_cost} M€ para Merger, hay {new_player['mc']}"
+            )
+        new_player = {**new_player, "mc": new_player["mc"] - extra_cost}
+        new_player = engine.register_played_card(engine.PlayerState(**new_player), prelude_id)  # type: ignore[arg-type]
+        _save_player(player_id, new_player)
+        _log_transaction(player_id, "play_prelude", {"prelude_id": prelude_id, "merger_corporation_id": merger_corporation_id})
+        return {"player": dict(new_player), "globals": result["globals"], "corporation": result["corporation"]}
+
     production_totals_before = engine.snapshot_production_totals(player)
 
     # Una prelude puede quedarse en juego con accion repetible y/o recursos
@@ -2509,6 +2670,12 @@ def play_prelude(
         for spec in specs:
             new_player = _draw_cards_matching_tag(new_player, spec["tag"], spec["n"])
 
+    draw_req_spec = effects.get("draw_cards_matching_requirement")
+    if draw_req_spec is not None:
+        new_player = _draw_cards_matching_requirement(
+            new_player, draw_req_spec["n"], party_requirement=draw_req_spec.get("party", False),
+        )
+
     if effects.get("place_delegates"):
         num = effects["place_delegates"]
         chosen = delegate_party_choices or []
@@ -2520,7 +2687,10 @@ def play_prelude(
             )
         turmoil = _load_turmoil()
         for party in chosen:
+            old_leader = turmoil["parties"][party]["leader"]
             turmoil = turmoillib.place_delegate(turmoil, party, player_id)
+            if turmoil["parties"][party]["leader"] == player_id and old_leader != player_id:
+                new_player = dict(engine.apply_become_party_leader_bonus(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         new_player = {**new_player, "reserve_delegates": new_player["reserve_delegates"] - num}
         _save_turmoil(turmoil)
 
@@ -2539,6 +2709,18 @@ def play_prelude(
         new_player = dict(engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         _save_colonies(new_colonies)
 
+    tracks_spec = effects.get("adjust_all_colony_tracks_in_play")
+    if tracks_spec is not None:
+        # Early Colonization: "raise all colony tracks 2 steps" -- TODAS las
+        # colonias EN JUEGO de esta partida (incluida la que se acaba de
+        # construir arriba, si la carta tambien coloca una), no el catalogo
+        # completo de COLONY_DEFS. adjust_colony_track ya es pura; aca solo
+        # se itera sobre las que estan activas.
+        colonies = _load_colonies()
+        for cid in colonies:
+            colonies = colonieslib.adjust_colony_track(colonies, cid, tracks_spec["delta"])
+        _save_colonies(colonies)
+
     # El pasivo ya quedo registrado mas arriba, ANTES de aplicar el efecto y
     # de disparar los bonus por tag, para que los que se auto-disparan con su
     # propio tag (ej. Albedo Plants: "+3 calor por cada tag plant, incluida
@@ -2549,6 +2731,28 @@ def play_prelude(
     new_player = engine.increment_tags_played(new_player, tags)
     new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
     new_player = engine.apply_card_played_vp_icon_bonus(new_player, prelude_id)
+    # Bug preexistente encontrado en la prueba de humo de este bloque: el
+    # camino normal de play_prelude nunca agregaba la prelude a
+    # `played_cards` (play_card y choose_corporation si lo hacen). No
+    # afectaba nada antes porque ninguna pieza leia played_cards para
+    # preludes -- pero Double Down y New Partner (este bloque) si.
+    new_player = engine.register_played_card(new_player, prelude_id)
+
+    revealed_preludes: list[str] | None = None
+    reveal_spec = effects.get("reveal_random_preludes")
+    if reveal_spec is not None:
+        # New Partner: "draw 2 prelude cards, play 1, discard the other". No
+        # hace falta mazo persistente: se eligen N al azar entre las que este
+        # jugador todavia no jugo y se devuelven como sugerencia -- el
+        # jugador las "juega" despues con una llamada normal a play_prelude
+        # (cualquier id del catalogo ya funciona ahi), y la no elegida
+        # simplemente no se juega nunca (preludes no tienen descarte real en
+        # este motor).
+        already_played = set(new_player["played_cards"]) | {prelude_id}
+        all_res = supabase.table("prelude_cards").select("id").execute()
+        candidates = [row["id"] for row in (all_res.data or []) if row["id"] not in already_played]
+        random.shuffle(candidates)
+        revealed_preludes = candidates[: reveal_spec["n"]]
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -2557,7 +2761,10 @@ def play_prelude(
         _save_board(board)
     _log_transaction(player_id, "play_prelude", {"prelude_id": prelude_id})
 
-    return {"player": dict(new_player), "globals": dict(new_globals)}
+    result = {"player": dict(new_player), "globals": dict(new_globals)}
+    if revealed_preludes is not None:
+        result["revealed_preludes"] = revealed_preludes
+    return result
 
 
 @tool
@@ -2638,5 +2845,5 @@ ALL_TOOLS = [
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
     get_active_cards_state, resolve_ocean_offer, choose_corporation,
-    retire_card_as_event, place_community,
+    retire_card_as_event, place_community, play_double_down,
 ]
