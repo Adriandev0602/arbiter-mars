@@ -147,6 +147,30 @@ def _apply_hex_bonus(player: engine.PlayerState, hex_bonus: list[tuple[str, int]
     return engine.apply_hex_bonus_tile_bonuses(new_player, hex_bonus)  # type: ignore[arg-type]
 
 
+def _apply_community_build_bonus(
+    player: engine.PlayerState, board_before: boardlib.Board, hex_id: str
+) -> engine.PlayerState:
+    """
+    Arcadian Communities: "marked areas are reserved for you. When you place a
+    tile there, gain 3 M€". Se consulta el tablero ANTES de colocar, porque al
+    colocar el tile el marcador desaparece (el HexState se reemplaza entero).
+
+    Se llama desde los tres wrappers de colocacion, al lado de
+    _apply_hex_bonus: mismo criterio que Mining Guild, un solo enganche por
+    cada via de colocacion real en el mapa.
+    """
+    if boardlib.community_owner(board_before, hex_id) is None:
+        return player
+    bonus = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_build_on_own_community")
+        if spec is not None:
+            bonus += spec.get("mc_delta", 0)
+    if not bonus:
+        return player
+    return {**player, "mc": player["mc"] + bonus}  # type: ignore[return-value]
+
+
 def _place_ocean_and_apply_bonus(
     board: boardlib.Board, player: engine.PlayerState, hex_id: str, on_land: bool = False
 ) -> tuple[boardlib.Board, engine.PlayerState]:
@@ -159,6 +183,7 @@ def _place_ocean_and_apply_bonus(
     new_board, hex_bonus, ocean_bonus_mc = place_fn(board, hex_id)
     ocean_bonus_mc = _scale_ocean_adjacency_bonus(player, ocean_bonus_mc)
     new_player = _apply_hex_bonus(player, hex_bonus)
+    new_player = _apply_community_build_bonus(new_player, board, hex_id)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     return new_board, new_player  # type: ignore[return-value]
 
@@ -187,6 +212,7 @@ def _place_city_and_apply_bonus(
         hex_bonus = [(resource, amount * placement_bonus_multiplier) for resource, amount in hex_bonus]
         ocean_bonus_mc *= placement_bonus_multiplier
     new_player = _apply_hex_bonus(player, hex_bonus)
+    new_player = _apply_community_build_bonus(new_player, board, hex_id)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     new_player = engine.apply_city_placed_bonuses(new_player)
     return new_board, new_player  # type: ignore[return-value]
@@ -250,6 +276,7 @@ def _place_greenery_and_apply_bonus(
     )
     ocean_bonus_mc = _scale_ocean_adjacency_bonus(player, ocean_bonus_mc)
     new_player = _apply_hex_bonus(player, hex_bonus)
+    new_player = _apply_community_build_bonus(new_player, board, hex_id)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     new_player = engine.apply_greenery_placed_bonuses(new_player)
     return new_board, new_player  # type: ignore[return-value]
@@ -402,7 +429,10 @@ def use_standard_project(
 
 
 @tool
-def convert_resources(player_id: str, conversion: str, hex_id: str | None = None) -> dict:
+def convert_resources(
+    player_id: str, conversion: str, hex_id: str | None = None,
+    card_resources_as_heat: int = 0,
+) -> dict:
     """
     Ejecuta una conversion de recursos del tablero de jugador (no es un
     proyecto estandar, pero sigue reglas fijas iguales para todos).
@@ -415,6 +445,10 @@ def convert_resources(player_id: str, conversion: str, hex_id: str | None = None
         hex_id: OBLIGATORIO para 'plants_to_greenery' -- el hexagono del mapa
             Tharsis donde se coloca el tile de greenery. Ignorado para
             'heat_to_temperature' (no coloca tile).
+        card_resources_as_heat: cuantos recursos guardados en una carta
+            activa gastar como CALOR antes de la conversion (ej. Stormcraft
+            Incorporated: cada floater vale 2 de calor). Solo tiene sentido
+            con 'heat_to_temperature' y con el pasivo card_resource_as_heat.
 
     Returns:
         dict con el estado actualizado del jugador y los parametros globales.
@@ -432,6 +466,8 @@ def convert_resources(player_id: str, conversion: str, hex_id: str | None = None
         new_player, new_globals = engine.convert_plants_to_greenery(player, globals_)
         board, new_player = _place_greenery_and_apply_bonus(board, new_player, hex_id, player_id)
     elif conversion == "heat_to_temperature":
+        if card_resources_as_heat:
+            player = engine.spend_card_resource_as_heat(player, card_resources_as_heat)
         new_player, new_globals = engine.convert_heat_to_temperature(player, globals_)
     else:
         raise ValueError(
@@ -1249,6 +1285,7 @@ def use_card_action(
     steel_to_pay: int = 0,
     nomad_hex_id: str | None = None,
     city_hex_id: str | None = None,
+    card_resources_as_heat: int = 0,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -1327,6 +1364,11 @@ def use_card_action(
 
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
+    # Stormcraft Incorporated: gastar floaters como calor ANTES de que el
+    # motor cobre el `cost.heat` de la accion -- el calor acreditado se gasta
+    # despues por el camino de siempre (ver engine.spend_card_resource_as_heat).
+    if card_resources_as_heat:
+        player = engine.spend_card_resource_as_heat(player, card_resources_as_heat)
     # Ver el mismo snapshot en play_card: pasivo "on_card_resource_gained".
     card_resource_totals_before = engine.snapshot_card_resource_totals(player)
     active_cards_before = dict(player["active_cards"])
@@ -2096,6 +2138,82 @@ def resolve_ocean_offer(player_id: str, card_id: str, steel_to_pay: int = 0) -> 
 
 
 @tool
+def place_community(player_id: str, hex_id: str, first_action: bool = False) -> dict:
+    """
+    Coloca un marcador de "community" de Arcadian Communities en el mapa.
+
+    El marcador NO es un tile: ningun conteo lo encuentra y no impide
+    construir ahi. Reserva el hexagono para el jugador, y cuando despues
+    coloque cualquier tile encima gana 3 M€ (ver el pasivo
+    on_build_on_own_community, aplicado en las tres vias de colocacion).
+
+    Args:
+        player_id: id del jugador.
+        hex_id: hexagono del mapa Tharsis donde poner el marcador. Tiene que
+            estar vacio, no ser de oceano y no estar reservado por el mapa
+            (Noctis City).
+        first_action: True SOLO para el marcador del setup ("as your first
+            action, place a community on a non-reserved area"), que no exige
+            adyacencia. La accion repetible de la carta exige que el hexagono
+            toque un tile propio o un community propio, asi que va en False.
+
+    Returns:
+        dict con el estado del tablero actualizado.
+
+    Lanza HexOccupiedError / InvalidPlacementError segun el caso.
+    """
+    board = _load_board()
+    new_board = boardlib.place_community(board, hex_id, player_id, require_adjacency=not first_action)
+    _save_board(new_board)
+    _log_transaction(player_id, "place_community", {"hex_id": hex_id, "first_action": first_action})
+    return {"board": {k: dict(v) for k, v in new_board.items()}}
+
+
+@tool
+def retire_card_as_event(player_id: str, card_id: str) -> dict:
+    """
+    Retira una carta activa "a la pila de eventos", cobrando el TR que ofrece
+    esa rama. Es la mitad OPCIONAL del efecto de Pharmacy Union: *"when you
+    play a science tag, remove 1 disease from here and raise your TR 1 step,
+    OR, if there are no diseases here, you MAY raise your TR 3 steps and place
+    this card in your event pile"*.
+
+    La primera mitad (sacar un disease y +1 TR) se aplica sola al jugar un tag
+    science. Esta es la otra: solo se puede usar cuando la carta ya no guarda
+    recursos, y el jugador decide si le conviene -- por eso es una tool aparte
+    y no un automatismo (mismo criterio que resolve_ocean_offer).
+
+    La carta sale de juego (no vuelve a dar su pasivo) y pasa a contar como un
+    evento jugado, que es lo que miran los pasivos "on_event_played" y el
+    contador global `events_played`.
+
+    Args:
+        player_id: id del jugador.
+        card_id: la carta activa a retirar (ej. "pharmacy_union").
+
+    Returns:
+        dict con el estado actualizado del jugador y los parametros globales.
+
+    Lanza CardEffectError si la carta no esta activa, no admite este retiro,
+    o todavia guarda recursos.
+    """
+    player = _load_player(player_id)
+    globals_ = _load_global_parameters()
+
+    new_player = engine.retire_card_as_event(player, card_id)
+    # Ahora cuenta como evento jugado: contador global + los pasivos que
+    # premian jugar eventos (ej. Media Group).
+    new_globals = engine.increment_events_played(globals_)
+    new_player = engine.apply_event_played_bonuses(new_player)
+
+    _save_player(player_id, new_player)
+    _save_global_parameters(new_globals)
+    _log_transaction(player_id, "retire_card_as_event", {"card_id": card_id})
+
+    return {"player": dict(new_player), "globals": dict(new_globals)}
+
+
+@tool
 def get_active_cards_state(player_id: str) -> dict:
     """
     Devuelve `player.active_cards` tal cual (card_id -> {resources,
@@ -2112,7 +2230,9 @@ def get_active_cards_state(player_id: str) -> dict:
 def _draw_cards_matching_tag(player: dict, tag, n: int) -> dict:
     """
     Roba las primeras `n` cartas del mazo que tengan `tag` (un tag suelto o
-    una LISTA de tags, en cuyo caso vale cualquiera de ellos), salteando (sin
+    una LISTA de tags, en cuyo caso vale cualquiera de ellos). `tag` None
+    significa lo INVERSO: cartas SIN NINGUN tag (ej. Sagitta Frontier
+    Services: "draw a card that has no tag"), salteando (sin
     descartar ni reordenar) las que no matcheen -- las no elegidas quedan en
     el mazo, en su orden original. Necesita el catalogo `cards` para conocer
     los tags, por eso vive en tools.py y no en el motor puro (mismo criterio
@@ -2125,11 +2245,14 @@ def _draw_cards_matching_tag(player: dict, tag, n: int) -> dict:
     if not deck:
         return player
     res = supabase.table("cards").select("id,tags").in_("id", deck).execute()
-    wanted = tag if isinstance(tag, list) else [tag]
-    tagged = {
-        row["id"] for row in (res.data or [])
-        if any(t in (row["tags"] or []) for t in wanted)
-    }
+    if tag is None:
+        tagged = {row["id"] for row in (res.data or []) if not (row["tags"] or [])}
+    else:
+        wanted = tag if isinstance(tag, list) else [tag]
+        tagged = {
+            row["id"] for row in (res.data or [])
+            if any(t in (row["tags"] or []) for t in wanted)
+        }
 
     # Se revela DE A UNA desde el tope hasta juntar N con el tag. Las
     # reveladas que no matchean se DESCARTAN (no vuelven al mazo): FAQ
@@ -2504,4 +2627,5 @@ ALL_TOOLS = [
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
     get_active_cards_state, resolve_ocean_offer, choose_corporation,
+    retire_card_as_event, place_community,
 ]

@@ -70,6 +70,8 @@ from app.agent.rules_engine import (
     increment_events_played,
     apply_tag_played_resource_bonuses,
     apply_colony_placed_bonuses,
+    retire_card_as_event,
+    spend_card_resource_as_heat,
     compute_research_cost_per_card,
     compute_standard_project_discount,
     apply_greenery_placed_bonuses,
@@ -4986,6 +4988,149 @@ def test_apply_corporation_start_pone_produccion_en_cero():
     assert all(corp_player[f"{r}_production"] == 0
                for r in ("mc", "steel", "titanium", "plant", "energy", "heat"))
     assert corp_player["tr"] == player["tr"]     # el TR no lo toca
+
+
+def test_raise_tr_marca_el_flag_de_la_generacion():
+    # _raise_tr es el punto unico de todo cambio de TR. Un AUMENTO marca el
+    # flag que miran UNMI/Pristar/las 3 preludes; una BAJA no.
+    player = new_player_state()
+    assert player["tr_raised_this_generation"] is False
+
+    subido, _ = raise_temperature(player, new_global_parameters(), steps=1)
+    assert subido["tr"] == player["tr"] + 1
+    assert subido["tr_raised_this_generation"] is True
+
+    # Un tr_delta negativo no marca el flag.
+    bajado, _ = apply_card_effect(player, new_global_parameters(), {"tr_delta": -2})
+    assert bajado["tr"] == player["tr"] - 2
+    assert bajado["tr_raised_this_generation"] is False
+
+    # Un oceano tambien lo marca (otro camino distinto).
+    con_oceano, _ = place_ocean(player, new_global_parameters())
+    assert con_oceano["tr_raised_this_generation"] is True
+
+
+def test_la_fase_de_produccion_limpia_el_flag_de_tr():
+    subido, _ = raise_oxygen(new_player_state(), new_global_parameters(), steps=1)
+    assert subido["tr_raised_this_generation"] is True
+    assert run_production_phase(subido)["tr_raised_this_generation"] is False
+
+
+def test_pristar_paga_solo_si_no_subio_el_tr_esta_generacion():
+    # Pristar: "during production phase, if you did not get TR so far this
+    # generation, add 1 preservation resource here and gain 6 M€".
+    base = register_active_card(new_player_state(), "pristar", initial_resources=0, resource_type="preservation")
+    base = register_passive_effect(base, "pristar", {
+        "on_production_phase_if_tr_not_raised": {"mc_delta": 6, "card_resource_delta": 1}
+    })
+
+    sin_tr = run_production_phase(base)
+    esperado_sin_pristar = run_production_phase(new_player_state())["mc"]
+    assert sin_tr["mc"] == esperado_sin_pristar + 6
+    assert sin_tr["active_cards"]["pristar"]["resources"] == 1
+
+    # Si subio el TR en la generacion, no paga nada (y el TR mas alto sube el
+    # ingreso base, asi que se compara contra el mismo jugador sin el pasivo).
+    con_tr, _ = raise_temperature(base, new_global_parameters(), steps=1)
+    resultado = run_production_phase(con_tr)
+    assert resultado["mc"] == run_production_phase({**con_tr, "passive_effects": []})["mc"]
+    assert resultado["active_cards"]["pristar"]["resources"] == 0
+
+
+def test_unmi_exige_haber_subido_el_tr_esta_generacion():
+    # United Nations Mars Initiative: "if your TR was raised this generation,
+    # you may pay 3 M€ to raise it 1 step more".
+    req = {"requires_tr_raised_this_generation": True}
+    sin_subir = new_player_state()
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player=sin_subir)
+
+    subido, _ = raise_temperature(sin_subir, new_global_parameters(), steps=1)
+    check_card_requirements(req, new_global_parameters(), player=subido)  # no lanza
+
+    # Y la forma negada (por si alguna carta la necesita) funciona al reves.
+    check_card_requirements({"requires_tr_raised_this_generation": False},
+                            new_global_parameters(), player=sin_subir)
+
+
+def test_sagitta_paga_segun_la_cantidad_exacta_de_tags():
+    # Sagitta Frontier Services: 4 M€ por carta SIN tags, 1 M€ por carta con
+    # EXACTAMENTE 1 tag. Dos tags no pagan nada.
+    player = register_passive_effect(new_player_state(), "sagitta_frontier_services", {
+        "on_card_played_tag_count_resource_delta": [
+            {"count": 0, "resource": "mc", "resource_delta": 4},
+            {"count": 1, "resource": "mc", "resource_delta": 1},
+        ]
+    })
+    assert apply_tag_played_resource_bonuses(player, ())["mc"] == player["mc"] + 4
+    assert apply_tag_played_resource_bonuses(player, ("space",))["mc"] == player["mc"] + 1
+    assert apply_tag_played_resource_bonuses(player, ("space", "earth"))["mc"] == player["mc"]
+
+
+def test_pharmacy_union_gasta_disease_y_sube_tr_con_tag_science():
+    # Pharmacy Union, rama automatica: "when you play a science tag, remove 1
+    # disease from here and raise your TR 1 step".
+    player = register_active_card(new_player_state(), "pharmacy_union", initial_resources=2, resource_type="disease")
+    player = register_passive_effect(player, "pharmacy_union", {
+        "on_tag_played_conditional_by_own_resource": {
+            "matching_tags": ["science"], "resource_threshold": 1,
+            "if_at_least": {"card_resource_delta": -1, "tr_delta": 1},
+            "if_below": {"tr_delta": 3},
+        }
+    })
+    new_player = apply_tag_played_resource_bonuses(player, ("science",))
+    assert new_player["active_cards"]["pharmacy_union"]["resources"] == 1
+    assert new_player["tr"] == player["tr"] + 1
+    assert new_player["tr_raised_this_generation"] is True
+
+    # Sin diseases, la rama automatica no hace nada (la otra es opcional).
+    vacia = {**player, "active_cards": {"pharmacy_union": {**player["active_cards"]["pharmacy_union"], "resources": 0}}}
+    assert apply_tag_played_resource_bonuses(vacia, ("science",))["tr"] == player["tr"]
+
+
+def test_pharmacy_union_se_retira_a_la_pila_de_eventos():
+    # La rama OPCIONAL: sin diseases, +3 TR y la carta sale de juego.
+    player = register_active_card(new_player_state(), "pharmacy_union", initial_resources=0, resource_type="disease")
+    player = register_passive_effect(player, "pharmacy_union", {
+        "on_tag_played_conditional_by_own_resource": {
+            "matching_tags": ["science"], "resource_threshold": 1,
+            "if_at_least": {"card_resource_delta": -1, "tr_delta": 1},
+            "if_below": {"tr_delta": 3},
+        }
+    })
+    retirada = retire_card_as_event(player, "pharmacy_union")
+    assert retirada["tr"] == player["tr"] + 3
+    assert "pharmacy_union" not in retirada["active_cards"]
+    assert all(e["card_id"] != "pharmacy_union" for e in retirada["passive_effects"])
+
+    # Con un disease encima no se puede retirar.
+    con_disease = register_active_card(player, "otra", initial_resources=0)
+    con_disease = {**con_disease, "active_cards": {
+        **con_disease["active_cards"],
+        "pharmacy_union": {**con_disease["active_cards"]["pharmacy_union"], "resources": 1},
+    }}
+    with pytest.raises(CardEffectError):
+        retire_card_as_event(con_disease, "pharmacy_union")
+
+
+def test_stormcraft_gasta_floaters_como_calor():
+    # Stormcraft Incorporated: "floaters on this card may be used as 2 heat each".
+    player = register_active_card(new_player_state(), "stormcraft_incorporated",
+                                  initial_resources=3, resource_type="floater")
+    player = register_passive_effect(player, "stormcraft_incorporated", {
+        "card_resource_as_heat": {"resource_type": "floater", "heat_value": 2}
+    })
+    new_player = spend_card_resource_as_heat(player, 2)
+    assert new_player["heat"] == player["heat"] + 4
+    assert new_player["active_cards"]["stormcraft_incorporated"]["resources"] == 1
+
+    # No alcanza con los floaters que tiene.
+    with pytest.raises(InsufficientResourcesError):
+        spend_card_resource_as_heat(player, 5)
+
+    # Sin el pasivo, no se puede.
+    with pytest.raises(CardEffectError):
+        spend_card_resource_as_heat(new_player_state(), 1)
 
 
 def test_tharsis_republic_gana_mc_al_colocarse_una_ciudad():

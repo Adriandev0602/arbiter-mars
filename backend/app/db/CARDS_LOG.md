@@ -802,9 +802,13 @@ tres tags); `draw_cards_matching_tag` acepta lista de specs y lista de tags (Pla
   efectos inmediatos; no hay registro en `active_cards` ni `use_card_action` para preludes.
 - **Robar filtrando por propiedad del catálogo que no es un tag** (3): Atmospheric Enhancers
   (ícono de floater), High Circles (requisito de partido), Nobel Prize (que tenga requisitos).
-- **Hook genérico "subió el TR" / "subió producción"** (3): Preservation Program, Suitable
-  Infrastructure, Terraforming Deal. No hay un punto único donde el motor otorgue TR.
-- **Pasivos de eventos nuevos** (3): Colony Trade Hub (al colocarse cualquier colonia), Corridors
+- ~~**Hook genérico "subió el TR" / "subió producción"** (3): Preservation Program, Suitable
+  Infrastructure, Terraforming Deal.~~ **DESTRABADAS el 2026-09-09**: "subió producción" se
+  resolvió con `_increase_production` (Manutech) y "subió el TR" con `_raise_tr` +
+  `tr_raised_this_generation` (Pristar / UNMI). Las tres se pueden cargar ya; solo falta bajar
+  sus scans y verificarlas, que es trabajo de catálogo, no de motor.
+- **Pasivos de eventos nuevos** (3): ~~Colony Trade Hub (al colocarse cualquier colonia)~~
+  — **destrabada** por el pasivo `on_colony_placed` (Poseidon, bloque 3); Corridors
   of Power (al volverse party leader), Venus Contract (por cada paso de Venus).
 - **Elección de recurso estándar como costo/destino** (2): Focused Organization, Industrial
   Complex (esta además necesita "subir a 1 todas las producciones que estén por debajo").
@@ -990,6 +994,88 @@ cathedral): el tablero solo sabe de tiles permanentes que ocupan un hex vacío. 
 diseñarlo junto con las otras corporaciones de tablero que aparezcan en los próximos bloques.
 
 **38 corporaciones sin revisar** en `corporation_review_queue`.
+
+#### Corporaciones: mecánicas pendientes resueltas — 47 de 48 (solo queda Vitor)
+
+**2026-09-09.** Se atacaron las 7 corporaciones que estaban trabadas por falta de mecánica, con la
+misma orquestación multi-agente pero cambiando el encargo: en vez de *leer un scan y mapearlo*,
+cada subagente **diseñó una mecánica contra el código** (dónde engancha, qué funciones toca, qué
+riesgos) sin tocar el repo. La implementación y la verificación, centralizadas. **6 cargadas, 1
+pospuesta.**
+
+**La pieza grande: el hook "subió el TR en esta generación".** Era la pendiente con más demanda
+acumulada — cinco cartas la esperaban. Se resolvió igual que Manutech en su momento: con un
+**punto único de paso**, `rules_engine._raise_tr(new_player, delta)`, por el que ahora pasan los
+**11 sitios** que antes escribían `new_player["tr"] = ...` sueltos (`raise_temperature`,
+`raise_oxygen`, `raise_venus` ×2, `place_ocean`, `tr_delta`, `tr_delta_per_tag`,
+`tr_delta_by_threshold`, `tr_delta_reduced_by_influence`, la reversión de oferta de océano, y el
+`tr_delta` de `use_card_action`). El reemplazo fue mecánico: **los 622 tests previos siguieron
+pasando sin tocar ninguno.**
+
+Sobre ese punto único vive el campo nuevo `tr_raised_this_generation` (columna nueva en
+`players`, migración idempotente en `schema.sql`). Un delta **negativo** pasa por la misma función
+pero NO marca el flag: bajar el TR no es haberlo subido.
+
+**El detalle delicado — el orden dentro de `run_production_phase`:** Pristar se evalúa *durante*
+la fase de producción, y el reset del flag ocurre en esa misma función. El pasivo se cobra
+leyendo el flag de ENTRADA (`player`, todavía sin resetear) y el reset va al final, en el dict de
+retorno, junto a `pending_mc_discount` y `pending_ocean_offers`. **Si se leyera después del reset,
+Pristar vería siempre `False` y no pagaría nunca, en silencio** — sin error, sin test roto. Hay un
+test dedicado que fija ese comportamiento en las dos direcciones.
+
+**Las otras cuatro piezas:**
+- `on_tag_played_conditional_by_own_resource` + tool `retire_card_as_event` (**Pharmacy Union**).
+  La rama automática (hay diseases → −1 disease, +1 TR) se aplica sola; la rama sin diseases es
+  OPCIONAL y además retira la carta, así que se cobra con su propia tool — mismo criterio que
+  `on_ocean_placed_offer` del bloque 37: *una decisión opcional no se resuelve dentro de un camino
+  que corre sin interacción*. **La pérdida de M€ "o lo máximo posible" no necesitó pieza nueva**:
+  `on_tag_played_resource_delta` ya cappea en 0 con `max(0, ...)` en vez de lanzar error, a
+  diferencia de `resource_deltas`, que sí explota.
+- `on_card_played_tag_count_resource_delta` + `draw_cards_matching_tag` con `tag: null` =
+  "carta SIN ningún tag" (**Sagitta Frontier Services**). Se generalizó la función de robo
+  existente en vez de escribir una paralela casi idéntica. Es hermana de
+  `on_card_played_min_tags_add_resource` (Spire): una usa cantidad exacta, la otra un mínimo.
+- `card_resource_as_heat` (**Stormcraft Incorporated**). **No es una sexta vía de pago.** El calor
+  no compra nada: se gasta en exactamente **dos sumideros** (convertir 8 en un paso de
+  temperatura, y las acciones de carta con `cost.heat` — verificado con grep sobre el catálogo).
+  Alcanza con acreditar el calor ANTES de que esos dos cobren, vía el parámetro
+  `card_resources_as_heat` de `convert_resources` y `use_card_action`. El calor acreditado se
+  gasta después por el camino de siempre.
+- `TileType "community"` + `place_community` + `on_build_on_own_community` (**Arcadian
+  Communities**, la pendiente más vieja del catálogo, del bloque 1). Ver abajo.
+
+**Arcadian Communities: por qué no encajó en los moldes del bloque 37.** El marcador "community"
+se comparó contra las dos piezas de "Marcadores en el tablero" ya construidas: no es `cathedral`
+(que se superpone a un tile YA colocado; community va en un hex vacío), y no es `nomad` — que es
+el molde más parecido, pero **opuesto en lo esencial**: `nomad` BLOQUEA la colocación mientras
+está parado ahí, y community debe PERMITIRLA, porque construir encima es justamente su objetivo.
+La solución fue un `TileType` propio que `is_hex_empty` trata como **vacío**: el marcador persiste
+en el tablero para saber quién reservó el hex, pero ningún conteo lo encuentra y ninguna
+colocación lo estorba. El bonus (+3 M€) se cobra en `tools._apply_community_build_bonus`,
+enganchado en las tres vías de colocación real, y el marcador desaparece solo cuando el
+`HexState` se reemplaza por el tile.
+
+**Nota de alcance sobre la acción de Arcadian:** su `effects` NO lleva `action`. Colocar el
+marcador necesita un `hex_id`, y en este repo las colocaciones en el mapa se piden siempre con su
+propia tool (`place_community`), igual que el greenery de Philares o la ciudad de Tharsis
+Republic. Se cargó primero con un `gains.place_community` que **no estaba cableado en
+`use_card_action`** — una vía muerta que se detectó al verificar el JSON contra Supabase y se
+corrigió antes de commitear.
+
+**La única que queda: Vitor.** *"When you play a card with a NON-NEGATIVE VP icon, gain 3 M€."* No
+es vocabulario faltante: **ninguna de las 408 cartas del catálogo tiene cargado su VP impreso**,
+así que el pasivo no tendría de dónde leerlo. El análisis encontró una vía razonable —
+"no-negativo" incluye a las que no tienen ícono, y las de VP **negativo** son ~10 en todo el
+juego, así que alcanzaría con cargar a mano esa lista corta verificada y asumir el resto como
+no-negativo, sin re-verificar 408 scans. Se pospuso igual: destraba **una sola carta**, y ninguna
+otra del catálogo necesita el dato. Se desbloquea el día que aparezca una segunda carta que lo
+use, o en una sesión dedicada a esa lista corta.
+
+**Las 3 preludes que esperaban el mismo hook** (Preservation Program, Suitable Infrastructure,
+Terraforming Deal) quedan **destrabadas pero sin cargar**: sus scans no están en el cache y el
+criterio del repo es no cargar nada sin verificar el scan. Es el próximo paso natural, y ahora es
+trabajo de catálogo, no de motor. Lo mismo vale para **Colony Trade Hub** ("al colocarse cualquier
+colonia"), que quedó destrabada por el `on_colony_placed` del bloque anterior.
 
 #### Corporaciones, bloques 3-5: la cola quedó VACÍA (41 de 48 cargadas)
 
