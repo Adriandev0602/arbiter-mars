@@ -796,6 +796,47 @@ plantas); `tag_filter` acepta LISTA en `card_cost_discount_mc` (Space Lanes: "pl
 tres tags); `draw_cards_matching_tag` acepta lista de specs y lista de tags (Planetary Alliance:
 1 jovian + 1 venus); y `play_prelude` ahora resuelve delegados, colonias, descartes y pasivos.
 
+**Ecology Experts y Board of Directors, cargadas (2026-09-10): CATÁLOGO DE PRELUDES COMPLETO, 70
+de 70.** Las dos últimas pendientes, ambas resueltas con la misma pieza de infraestructura:
+"jugar una carta dentro de otra jugada/acción".
+
+- **`play_card` suma dos parámetros**: `ignore_global_requirements` (salta los 8 requisitos de
+  parámetro global — temperatura/oxígeno/océanos/Venus, min y max de cada uno — el resto se sigue
+  exigiendo, según el FAQ oficial) y `cost_reduction_mc` (descuento extra antes de calcular el
+  pago, mismo mecanismo que `next_card_discount_mc`).
+- **`play_prelude` suma `nested_card_id`** + los parámetros de pago/elección de esa carta
+  (Ecology Experts: "play a card from hand, ignoring global requirements"). Aplica el resto de
+  `effects` de la prelude y lo guarda primero; después juega la carta anidada con el camino
+  normal de `play_card` y devuelve ESA respuesta, no la de la prelude.
+- **`use_card_action` suma `reveal_prelude` y `play_revealed_prelude`** (Board of Directors:
+  "draw 1 prelude card: either discard it, or pay 12 M€ and remove 1 director resource from here
+  to play it"). La revelación es una rama del `choice` sin costo; la otra rama cobra el costo
+  genérico (`cost.mc` + `cost.card_resource`, vocabulario ya existente) y después, en `tools.py`,
+  llama a `play_prelude.func` de verdad sobre el `target_card_id` revelado — Board of Directors
+  **juega** la prelude robada, no copia su efecto directo como Double Down.
+
+**El detalle que casi rompe el diseño: la acción se usa UNA vez por generación.** El primer
+intento separaba "revelar" y "pagar y jugar" en dos llamadas normales a `use_card_action`, pero
+la primera llamada marcaba `action_used = True` y la segunda se rechazaba ("la acción ya se usó
+esta generación") — lo agarró la prueba de humo, no los tests unitarios. Se corrigió reseteando
+`action_used` a `False` específicamente después de la rama `reveal_prelude`, para que la
+resolución (discard o pagar+jugar) siga disponible en la misma generación.
+
+**Dos bugs preexistentes más, encontrados por la misma prueba de humo:**
+- `tools.use_card_action` nunca declaraba el parámetro `discard_card_id` ni lo pasaba al motor —
+  la pieza `cost.discard_card` (agregada para Focused Organization en el bloque anterior) estaba
+  inalcanzable desde la capa de tools pese a existir en `rules_engine.py`.
+- `tools.play_prelude` nunca aceptaba `effect_choice` (ni `effect_amount`), así que **ninguna
+  prelude con un `choice` en su efecto inmediato era jugable** — afectaba a Atmospheric Enhancers
+  y Focused Organization, ambas cargadas en el bloque anterior sin que nadie lo notara porque no
+  se habían probado con Supabase real hasta ahora.
+
+Los dos son del mismo tipo que el de `played_cards` encontrado en el bloque anterior: piezas del
+motor puro correctas, pero con un hueco en el cableado de `tools.py` que ningún test unitario
+podía atrapar (los tests prueban `rules_engine.py` directo, no la capa de Supabase) — solo la
+prueba de humo contra Supabase real los encuentra. Refuerza por qué esa prueba es obligatoria
+antes de dar un bloque por cerrado.
+
 **10 de las 12 preludes pendientes, cargadas (2026-09-09): 68 preludes en total.** La misma
 orquestación multi-agente, pero re-verificando el hueco de cada una contra el estado ACTUAL del
 motor (mucho más grande que cuando se diagnosticaron originalmente: `play_prelude` ya soporta
@@ -917,15 +958,9 @@ pendientes, agrupadas por la pieza que les falta:**
 - ~~**Subir todos los tracks de colonia a la vez** (1): Early Colonization.~~ **Cargada el
   2026-09-09** — pieza nueva `adjust_all_colony_tracks_in_play`, itera las colonias EN JUEGO.
 
-**Quedan 2 pendientes**, ambas necesitan "jugar una carta dentro de otra jugada/acción" — la
-misma pieza de infraestructura, más grande, sin resolver todavía:
-- **Ecology Experts** (P10): "play a card from hand, ignoring global requirements". Necesita
-  extender `play_card` con `ignore_global_requirements` + `cost_reduction_mc`, invocado
-  encadenado desde `play_prelude`.
-- **Board of Directors** (P45): pide robar una prelude de un pool que no repita descartes
-  anteriores (a diferencia de New Partner, que es un robo único sin estado) — necesita un "mazo
-  de preludes vistas" persistente, más la misma pieza de "jugar una carta dentro de una acción"
-  que Ecology Experts. Candidata a resolverse junto con esa, cuando se retome.
+~~**Quedan 2 pendientes**: Ecology Experts (P10) y Board of Directors (P45).~~ **Las dos cargadas
+el 2026-09-10 — ver "Ecology Experts y Board of Directors" arriba. Catálogo de preludes
+COMPLETO: 70 de 70.**
 
 ### Prelude: mazo propio (categoría que faltaba entera)
 

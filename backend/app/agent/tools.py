@@ -553,6 +553,8 @@ def play_card(
     delegate_party_choices: list[str] | None = None,
     removal_party: str | None = None,
     target_card_id_3: str | None = None,
+    ignore_global_requirements: bool = False,
+    cost_reduction_mc: int = 0,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -688,6 +690,15 @@ def play_card(
             por colonia propia), pueden repetirse. Sale de la Reserva del
             jugador (`player.reserve_delegates`), no del Lobby. None si la
             carta no tiene esta mecanica.
+        ignore_global_requirements: True salta los 8 requisitos de PARAMETRO
+            GLOBAL (min/max de temperatura, oxigeno, oceanos, Venus) -- el
+            resto (min_tag_count, min_tr, etc.) se sigue exigiendo. Solo lo
+            usa play_prelude al jugar esta carta "anidada" desde una prelude
+            como Ecology Experts ("play a card from hand, ignoring global
+            requirements"); False en cualquier otro caso.
+        cost_reduction_mc: descuento extra en M€ sobre el costo de lista,
+            antes de calcular el pago -- mismo mecanismo que
+            `next_card_discount_mc`, pero para el caso "anidado" de arriba.
 
     Returns:
         dict con is_legal, el cambio (MC que sobraron, sin reembolso segun
@@ -716,6 +727,19 @@ def play_card(
     if not played_from_reserve and card_id not in player["hand"]:
         raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano ni reservada")
     requirements = card.get("requirements") or {}
+    if ignore_global_requirements:
+        # Ecology Experts: "play a card from hand, ignoring global
+        # requirements". Solo se saltan los 8 requisitos de PARAMETRO GLOBAL
+        # (temperatura/oxigeno/oceanos/Venus, min y max de cada uno) -- el
+        # resto (min_tag_count, min_tr, requisitos de partido, etc.) se
+        # sigue exigiendo igual, segun el FAQ oficial citado en CARDS_LOG.md.
+        requirements = {
+            k: v for k, v in requirements.items()
+            if k not in (
+                "min_temperature", "max_temperature", "min_oxygen", "max_oxygen",
+                "min_oceans", "max_oceans", "min_venus", "max_venus",
+            )
+        }
     turmoil = (
         _load_turmoil()
         if "ruling_or_delegates" in requirements
@@ -837,6 +861,7 @@ def play_card(
         + engine.compute_reserved_card_discount(player, card_id)
         + card_resource_discount
         + stock_resource_discount
+        + cost_reduction_mc
     )
     effective_cost = max(0, card["cost"] - discount)
     change = engine.calculate_card_payment(
@@ -1296,6 +1321,7 @@ def use_card_action(
     nomad_hex_id: str | None = None,
     city_hex_id: str | None = None,
     card_resources_as_heat: int = 0,
+    discard_card_id: str | None = None,
 ) -> dict:
     """
     Ejecuta la accion repetible de una carta que el jugador ya tiene activa
@@ -1471,6 +1497,39 @@ def use_card_action(
                       if k != "draw_cards_matching_tag"},
         }
 
+    # Board of Directors: "draw 1 prelude card: either discard it, or pay 12
+    # M€ and remove 1 director resource from here to play it". El robo es
+    # UNA sola mitad de la accion (analoga a reveal_random_preludes de New
+    # Partner, pero n=1 y SIN cobrar nada); "discard" simplemente no hacer
+    # nada mas con el id revelado. La otra mitad ("play it") es otra rama
+    # del mismo choice, ver play_revealed_prelude abajo.
+    reveal_prelude_spec = resolved_spec.get("gains", {}).get("reveal_prelude")
+    revealed_preludes: list[str] | None = None
+    if reveal_prelude_spec is not None:
+        already_played = set(player["played_cards"])
+        all_res = supabase.table("prelude_cards").select("id").execute()
+        candidates = [row["id"] for row in (all_res.data or []) if row["id"] not in already_played]
+        random.shuffle(candidates)
+        revealed_preludes = candidates[: reveal_prelude_spec.get("n", 1)]
+        spec_for_engine = {
+            **spec_for_engine,
+            "gains": {k: v for k, v in spec_for_engine.get("gains", {}).items() if k != "reveal_prelude"},
+        }
+
+    # La rama "pagar y jugarla": el motor cobra cost.mc/cost.card_resource
+    # como siempre (vocabulario generico, sin pieza nueva); aca, DESPUES de
+    # cobrado, se juega de verdad la prelude que el jugador ya vio en una
+    # llamada anterior a la rama de arriba -- target_card_id lleva su id
+    # (mismo parametro que ya existe, reusado en vez de agregar uno nuevo).
+    play_revealed = resolved_spec.get("gains", {}).get("play_revealed_prelude")
+    if play_revealed:
+        if target_card_id is None:
+            raise ValueError(f"La accion de '{card_id}' requiere target_card_id (la prelude a jugar)")
+        spec_for_engine = {
+            **spec_for_engine,
+            "gains": {k: v for k, v in spec_for_engine.get("gains", {}).items() if k != "play_revealed_prelude"},
+        }
+
     # Mismo criterio: contar delegados propios por partido necesita el
     # player_id, que el motor puro no recibe (ej. Septem Tribus).
     if resolved_spec.get("gains", {}).get("mc_per_party_with_delegate") is not None:
@@ -1536,8 +1595,21 @@ def use_card_action(
         player, globals_, card_id, spec_for_engine,
         None if remove_delegates_count else effect_choice, target_card_id=target_card_id,
         effect_amount=effect_amount, reserved_card_id=reserved_card_id, titanium_to_pay=titanium_to_pay,
-        steel_to_pay=steel_to_pay,
+        steel_to_pay=steel_to_pay, discard_card_id=discard_card_id,
     )
+    if reveal_prelude_spec is not None:
+        # La revelacion NO consume la accion de la generacion: Board of
+        # Directors necesita una SEGUNDA llamada (discard o pagar+jugar) en
+        # la MISMA generacion para resolver lo que revelo esta. Sin este
+        # reset, esa segunda llamada chocaria con "la accion ya se uso esta
+        # generacion" -- lo agarro la prueba de humo, no los tests.
+        new_player = {
+            **new_player,
+            "active_cards": {
+                **new_player["active_cards"],
+                card_id: {**new_player["active_cards"][card_id], "action_used": False},
+            },
+        }
     if remove_delegates_count:
         new_player = {
             **new_player,
@@ -1641,15 +1713,29 @@ def use_card_action(
         # Movimiento de Nomads / colocacion de catedral: tocaron el tablero
         # antes de que el motor resolviera la accion (ver arriba).
         _save_board(marker_board)
+
+    prelude_play_result = None
+    if play_revealed:
+        # El costo (12 M€ + 1 director resource) ya se cobro y guardo arriba;
+        # ahora se juega la prelude de verdad, con el mismo camino de
+        # siempre (tags, tiles, pasivos, todo) -- Board of Directors no
+        # "copia el efecto", la JUEGA, a diferencia de Double Down.
+        prelude_play_result = play_prelude.func(player_id, target_card_id)  # type: ignore[attr-defined]
+
     _log_transaction(
         player_id, "use_card_action",
         {"card_id": card_id, "effect_choice": effect_choice, "ocean_hex_ids": ocean_hex_ids,
          "target_card_id": target_card_id, "effect_amount": effect_amount, "trade_colony_id": trade_colony_id},
     )
 
+    if prelude_play_result is not None:
+        return prelude_play_result
+
     result = {"player": dict(new_player), "global_parameters": dict(new_globals)}
     if trade_result is not None:
         result.update(trade_result)
+    if revealed_preludes is not None:
+        result["revealed_preludes"] = revealed_preludes
     return result
 
 
@@ -2542,6 +2628,17 @@ def play_prelude(
     greenery_hex_id: str | None = None, delegate_party_choices: list[str] | None = None,
     build_colony_id: str | None = None, discard_card_ids: list[str] | None = None,
     merger_corporation_id: str | None = None,
+    nested_card_id: str | None = None,
+    nested_mc_to_pay: int = 0,
+    nested_steel_to_pay: int = 0,
+    nested_titanium_to_pay: int = 0,
+    nested_effect_choice: int | None = None,
+    nested_target_card_id: str | None = None,
+    nested_ocean_hex_ids: list[str] | None = None,
+    nested_city_hex_ids: list[str] | None = None,
+    nested_greenery_hex_id: str | None = None,
+    effect_choice: int | None = None,
+    effect_amount: int | None = None,
 ) -> dict:
     """
     Juega una carta PRELUDE (expansion Prelude). A diferencia de play_card:
@@ -2565,6 +2662,22 @@ def play_prelude(
         merger_corporation_id: OBLIGATORIO si `effects.requires_corporation_choice`
             esta definido (ej. Merger: "draw 4 corporation cards, play one,
             discard the rest, then pay 42 M€") -- la corporacion elegida.
+        nested_card_id / nested_mc_to_pay / ...: OBLIGATORIOS (el primero) si
+            `effects.play_card_from_hand` esta definido (ej. Ecology Experts:
+            "play a card from hand, ignoring global requirements") -- la
+            carta de la MANO a jugar como parte de este efecto, y sus
+            parametros de pago/eleccion (mismo significado que en play_card).
+            El resto de `effects` de la prelude se aplica y guarda primero;
+            despues se juega esta carta con el camino normal de play_card
+            (sale de la mano, paga su costo real con el descuento que
+            declare la prelude, coloca sus tiles) y la respuesta de esta
+            tool pasa a ser la de esa jugada, no la de la prelude.
+        effect_choice: indice (0-based) de la opcion elegida, si
+            `effects.choice` de la PROPIA prelude lo pide (ej. Atmospheric
+            Enhancers: elegir subir temperatura, oxigeno o Venus). None si
+            la prelude no tiene eleccion.
+        effect_amount: parametro X que algunas preludes piden. None si no
+            aplica.
 
     Returns:
         dict con el estado actualizado del jugador y de los parametros
@@ -2622,6 +2735,7 @@ def play_prelude(
 
     new_player, new_globals = engine.apply_card_effect(
         player, globals_, effects, discard_card_ids=discard_card_ids,
+        effect_choice=effect_choice, effect_amount=effect_amount,
     )
 
     # Colocacion de tiles: mismo patron de diff de contadores que play_card
@@ -2760,6 +2874,28 @@ def play_prelude(
     if board is not None:
         _save_board(board)
     _log_transaction(player_id, "play_prelude", {"prelude_id": prelude_id})
+
+    nested_spec = effects.get("play_card_from_hand")
+    if nested_spec is not None:
+        # Ecology Experts: "play a card from hand, ignoring global
+        # requirements". El resto de effects de la prelude (production_deltas,
+        # etc.) ya se aplico y guardo arriba; ahora se juega de verdad la
+        # segunda carta con el camino normal de siempre (play_card), solo que
+        # sin los 8 requisitos de parametro global y con el descuento que
+        # declare la prelude (0 para Ecology Experts, pero la pieza queda
+        # lista para otra carta que si descuente, ej. si se cargara Eccentric
+        # Sponsor con este mismo mecanismo en vez de next_card_discount_mc).
+        if nested_card_id is None:
+            raise ValueError(f"La prelude '{prelude_id}' requiere nested_card_id")
+        return play_card.func(  # type: ignore[attr-defined]
+            player_id, nested_card_id, nested_mc_to_pay,
+            steel_to_pay=nested_steel_to_pay, titanium_to_pay=nested_titanium_to_pay,
+            effect_choice=nested_effect_choice, target_card_id=nested_target_card_id,
+            ocean_hex_ids=nested_ocean_hex_ids, city_hex_ids=nested_city_hex_ids,
+            greenery_hex_id=nested_greenery_hex_id,
+            ignore_global_requirements=nested_spec.get("ignore_global_requirements", False),
+            cost_reduction_mc=nested_spec.get("reduce_cost_mc", 0),
+        )
 
     result = {"player": dict(new_player), "globals": dict(new_globals)}
     if revealed_preludes is not None:
