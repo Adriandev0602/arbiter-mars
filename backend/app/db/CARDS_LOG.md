@@ -796,7 +796,12 @@ plantas); `tag_filter` acepta LISTA en `card_cost_discount_mc` (Space Lanes: "pl
 tres tags); `draw_cards_matching_tag` acepta lista de specs y lista de tags (Planetary Alliance:
 1 jovian + 1 venus); y `play_prelude` ahora resuelve delegados, colonias, descartes y pasivos.
 
-**20 pendientes, agrupadas por la pieza que les falta:**
+**Preservation Program / Suitable Infrastructure / Terraforming Deal / Colony Trade Hub,
+cargadas (2026-09-09).** Destrabadas por el refactor de corporaciones del mismo día — ver
+"Corporaciones: mecánicas pendientes resueltas" arriba. Colony Trade Hub no necesitó pieza nueva
+(`on_colony_placed` ya existía); las otras tres sumaron `on_tr_increased`, `on_action_production_
+increased_bonus` y `skip_first_tr_gain_per_generation` al mismo punto único `_raise_tr`. **16
+pendientes, agrupadas por la pieza que les falta:**
 - **Cartas activas / acciones repetibles en preludes** (4): Applied Science, Board of Directors,
   Floating Trade Hub, Main Belt Asteroids, World Government Advisor. `prelude_cards` solo modela
   efectos inmediatos; no hay registro en `active_cards` ni `use_card_action` para preludes.
@@ -1071,11 +1076,16 @@ no-negativo, sin re-verificar 408 scans. Se pospuso igual: destraba **una sola c
 otra del catálogo necesita el dato. Se desbloquea el día que aparezca una segunda carta que lo
 use, o en una sesión dedicada a esa lista corta.
 
-**Las 3 preludes que esperaban el mismo hook** (Preservation Program, Suitable Infrastructure,
-Terraforming Deal) quedan **destrabadas pero sin cargar**: sus scans no están en el cache y el
-criterio del repo es no cargar nada sin verificar el scan. Es el próximo paso natural, y ahora es
-trabajo de catálogo, no de motor. Lo mismo vale para **Colony Trade Hub** ("al colocarse cualquier
-colonia"), que quedó destrabada por el `on_colony_placed` del bloque anterior.
+**Las 3 preludes + Colony Trade Hub, cargadas (2026-09-09).** Se bajaron sus 4 scans y se
+verificaron contra el texto oficial — ver "Preservation Program / Suitable Infrastructure /
+Terraforming Deal / Colony Trade Hub" en la sección de Preludes, arriba. Un matiz que solo
+apareció al leer el scan real: **Preservation Program NO usa `tr_raised_this_generation`** como
+se pensaba al diseñar el hook — su texto es "skip the first TR you gain", así que necesitó una
+pieza hermana (`skip_first_tr_gain_per_generation`) que anula el primer paso en vez de solo
+leerlo. Terraforming Deal sí usa el punto único `_raise_tr` directo (`on_tr_increased`), y
+Suitable Infrastructure resultó ser una mecánica distinta a las dos: "una vez por acción", no por
+paso — se resolvió con snapshot/diff de producción antes/después, mismo patrón que
+`on_card_resource_gained`, en las 4 vías de acción del motor.
 
 #### Corporaciones, bloques 3-5: la cola quedó VACÍA (41 de 48 cargadas)
 

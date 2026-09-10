@@ -138,7 +138,35 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-09, corporaciones 47/48)
+### 📍 Punto de retoma (última sesión: 2026-09-09, las 4 preludes destrabadas ya están cargadas)
+
+**Preservation Program, Suitable Infrastructure, Terraforming Deal y Colony Trade Hub, cargadas
+(2026-09-09).** Las 4 preludes que el hook de TR/producción del bloque anterior destrabó. Bajados
+y verificados sus scans. **Catálogo de preludes: 52 → 56.**
+
+**Sorpresa al leer los scans reales:** Preservation Program NO usaba `tr_raised_this_generation`
+como se había asumido al diseñar el hook — su texto es "skip the first TR you gain in each
+generation's action phase", así que necesitó una pieza hermana nueva:
+`skip_first_tr_gain_per_generation`, que anula (no solo lee) el primer paso de TR de la
+generación. Terraforming Deal sí usa el punto único directo con `on_tr_increased` ("each step
+your TR is raised, gain 2 M€"). Y Suitable Infrastructure resultó otra familia: "once per action
+you take, gain 2 M€ if you increase any production(s)" — no es por paso (eso ya es Manutech), es
+una vez por ACCIÓN, sin importar cuántas producciones subieron. Se resolvió con
+`snapshot_production_totals` + `apply_production_increased_bonus`, mismo patrón "diff antes/
+después" que `on_card_resource_gained`, enganchado en las 4 vías de acción del motor (`play_card`,
+`use_card_action`, `use_standard_project`, `play_prelude`).
+
+**Las tres piezas viven en `_raise_tr`, en este orden:** (1) el skip de Preservation Program
+consume como mucho 1 paso, (2) se aplica el resto y se marca `tr_raised_this_generation`, (3)
+`on_tr_increased` paga por los pasos que sobrevivieron al skip. Colony Trade Hub no necesitó
+nada nuevo: reusó `on_colony_placed` (Poseidon, bloque 3).
+
+**Aprendizaje repetido de esta sesión:** diseñar una mecánica "contra el nombre" antes de ver el
+scan es arriesgado — el diseño previo de `_raise_tr` asumía que las 3 preludes leerían el mismo
+flag que Pristar/UNMI, y dos de las tres necesitaban algo distinto. **Verificar el scan sigue
+siendo obligatorio incluso cuando ya existe un plan de diseño.**
+
+### 📍 Punto de retoma anterior (2026-09-09, corporaciones 47/48)
 
 **Se resolvieron 6 de las 7 corporaciones trabadas por mecánica (2026-09-09). Solo queda Vitor.**
 Misma orquestación multi-agente, pero con otro encargo: cada subagente **diseñó una mecánica

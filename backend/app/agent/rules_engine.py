@@ -158,6 +158,9 @@ class PlayerState(TypedDict):
     # True si el jugador subio su TR en lo que va de esta generacion.
     # Lo marca _raise_tr y lo limpia run_production_phase (ver ambas).
     tr_raised_this_generation: bool
+    # True si Preservation Program ya anulo su primer paso de TR de la
+    # generacion. Limpiado junto con tr_raised_this_generation.
+    tr_skip_used_this_generation: bool
 
     # Igual que pending_mc_discount pero para relajar/endurecer (puede ser
     # negativo) los requisitos de temperatura/oxigeno/oceanos de la
@@ -243,7 +246,7 @@ def new_player_state() -> PlayerState:
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0, pending_ocean_offers=0,
-        tr_raised_this_generation=False,
+        tr_raised_this_generation=False, tr_skip_used_this_generation=False,
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
         lobby_delegates=1, reserve_delegates=6,
@@ -672,6 +675,7 @@ def run_production_phase(player: PlayerState, energy_to_convert: int | None = No
         "pending_ocean_offers": 0,
         # Arranca la generacion nueva sin TR subido (ver _raise_tr).
         "tr_raised_this_generation": False,
+        "tr_skip_used_this_generation": False,
     }
 
 
@@ -751,25 +755,45 @@ _PRODUCTION_STOCK_KEY = {
 def _raise_tr(new_player: dict, delta: int) -> dict:
     """
     Punto UNICO por el que pasa todo cambio de Terraform Rating del motor.
-    Ademas de aplicar el delta, marca `tr_raised_this_generation` cuando el
-    cambio es un AUMENTO real -- el flag que necesitan las cartas que
-    preguntan "¿subiste el TR en esta generacion?".
+    Tres cosas pasan aca, en orden, solo cuando `delta` es un AUMENTO real:
 
-    Cinco cartas dependen de este flag: United Nations Mars Initiative
-    ("if your TR was raised this generation, pay 3 M€ to raise it 1 more"),
-    Pristar (al reves: paga solo si NO subiste TR) y las tres preludes
-    Preservation Program / Suitable Infrastructure / Terraforming Deal.
+    1. "skip_first_tr_gain_per_generation" (Preservation Program): el
+       PRIMER paso de TR que el jugador ganaria en la generacion se anula
+       -- no 1 M€ ni nada, directamente ese paso no cuenta. Se consume 1 del
+       `delta` (nunca mas de un paso, aunque el aumento sea de varios) y se
+       marca `tr_skip_used_this_generation` para no volver a aplicarlo hasta
+       la proxima generacion.
+    2. Se aplica el `delta` restante a `player["tr"]`, y si quedo algo (no
+       se anulo entero), se marca `tr_raised_this_generation` -- el flag que
+       leen United Nations Mars Initiative ("if your TR was raised this
+       generation...") y Pristar (al reves: paga solo si NO subiste TR).
+    3. "on_tr_increased" (Terraforming Deal: "each step your TR is raised,
+       gain 2 M€") paga por cada paso que efectivamente se aplico (despues
+       del posible descuento de Preservation Program).
 
     Un delta negativo (ej. tr_delta_reduced_by_influence, o la reversion de
-    una oferta de oceano no aceptada) pasa igual por aca pero NO marca el
-    flag: bajar el TR no es haberlo subido. Mismo criterio y misma forma que
-    _increase_production, que centraliza los aumentos de produccion.
+    una oferta de oceano no aceptada) pasa igual por aca pero no dispara
+    ninguna de las tres piezas: bajar el TR no es haberlo subido. Mismo
+    criterio y misma forma que _increase_production, que centraliza los
+    aumentos de produccion.
 
-    El flag se limpia en run_production_phase, al cerrar la generacion.
+    tr_raised_this_generation Y tr_skip_used_this_generation se limpian
+    juntos en run_production_phase, al cerrar la generacion.
     """
+    if delta > 0 and not new_player.get("tr_skip_used_this_generation", False):
+        for effect in new_player["passive_effects"]:
+            if effect.get("skip_first_tr_gain_per_generation"):
+                new_player = {**new_player, "tr_skip_used_this_generation": True}
+                delta -= 1
+                break
+
     new_player = {**new_player, "tr": new_player["tr"] + delta}
     if delta > 0:
         new_player["tr_raised_this_generation"] = True
+        for effect in new_player["passive_effects"]:
+            spec = effect.get("on_tr_increased")
+            if spec is not None:
+                new_player["mc"] = new_player["mc"] + delta * spec.get("mc_delta", 0)
     return new_player
 
 
@@ -2094,6 +2118,45 @@ def snapshot_card_resource_totals(player: PlayerState) -> dict[str, int]:
     return totals
 
 
+_PRODUCTION_KEYS = (
+    "mc_production", "steel_production", "titanium_production",
+    "plant_production", "energy_production", "heat_production",
+)
+
+
+def snapshot_production_totals(player: PlayerState) -> dict[str, int]:
+    """
+    Las seis producciones del jugador en este instante. Se usa junto con
+    apply_production_increased_bonus para detectar si CUALQUIERA subio
+    durante una jugada -- mismo patron de "diff de antes/despues" que
+    snapshot_card_resource_totals, necesario porque el bono de Suitable
+    Infrastructure es "una vez por accion", no una vez por paso de
+    produccion (eso ya lo cubre on_production_increased/Manutech).
+    """
+    return {key: player[key] for key in _PRODUCTION_KEYS}
+
+
+def apply_production_increased_bonus(player: PlayerState, totals_before: dict[str, int]) -> PlayerState:
+    """
+    Aplica el pasivo "on_action_production_increased_bonus": {"mc_delta": N}
+    -- paga N M€ UNA SOLA VEZ por accion si CUALQUIER produccion subio desde
+    `totals_before`, sin importar cuantas subieron ni cuantos pasos (ej.
+    Suitable Infrastructure: "once per action you take, gain 2 M€ if you
+    increase any production(s)"). Distinto de Manutech
+    (on_production_increased), que paga por CADA paso de CADA produccion.
+    """
+    if not any(player[key] > totals_before[key] for key in _PRODUCTION_KEYS):
+        return player
+    bonus = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_action_production_increased_bonus")
+        if spec is not None:
+            bonus += spec.get("mc_delta", 0)
+    if not bonus:
+        return player
+    return {**player, "mc": player["mc"] + bonus}  # type: ignore[return-value]
+
+
 def apply_card_resource_gained_bonuses(
     player: PlayerState, totals_before: dict[str, int],
     active_cards_before: dict | None = None,
@@ -3041,6 +3104,30 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         _increase_production, el unico punto por el que pasan todos los
         aumentos de produccion del motor -- no hace falta cablearlo en cada
         efecto.
+      - "on_action_production_increased_bonus": {"mc_delta": N} -- paga N M€
+        UNA SOLA VEZ por accion (jugar una carta, usar una accion repetible,
+        un proyecto estandar, jugar una prelude) si CUALQUIER produccion subio
+        durante esa accion, sin importar cuantas ni cuantos pasos (ej.
+        Suitable Infrastructure: "once per action you take, gain 2 M€ if you
+        increase any production(s)"). Distinto de on_production_increased
+        (Manutech), que paga por CADA paso. Ver
+        snapshot_production_totals + apply_production_increased_bonus,
+        enganchados con el mismo patron "diff de antes/despues" que
+        on_card_resource_gained en tools.play_card, use_card_action,
+        use_standard_project y play_prelude.
+      - "on_tr_increased": {"mc_delta": N} -- paga N M€ por cada paso que
+        efectivamente sube el TR del jugador, sin importar la fuente (ej.
+        Terraforming Deal: "each step your TR is raised, gain 2 M€").
+        Aplicado dentro de _raise_tr, el mismo punto unico que centraliza
+        todo cambio de TR -- no hace falta cablearlo en cada efecto.
+      - "skip_first_tr_gain_per_generation": true -- el PRIMER paso de TR que
+        el jugador ganaria en la generacion NO CUENTA (ni sube el TR ni paga
+        on_tr_increased) (ej. Preservation Program: "skip the first TR you
+        gain in each generation's action phase"). Se consume como mucho un
+        paso por generacion -- si el aumento es de varios pasos de una vez,
+        solo se anula el primero. Aplicado dentro de _raise_tr; el flag que
+        lo controla (`tr_skip_used_this_generation`) se limpia junto con
+        `tr_raised_this_generation` en run_production_phase.
 
     No revisa duplicados: cada carta se juega una sola vez en este motor.
     """

@@ -322,6 +322,7 @@ def use_standard_project(
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
     board = None
+    production_totals_before = engine.snapshot_production_totals(player)
 
     # Kuiper Cooperative: "when paying for the ASTEROID or AQUIFER standard
     # projects, each asteroid here may be used as 1 M€". El motor cobra el
@@ -417,6 +418,7 @@ def use_standard_project(
     basic_cost = STANDARD_PROJECT_BASIC_COSTS.get(project_name)
     if basic_cost is not None:
         new_player = engine.apply_cost_threshold_mc_bonuses(new_player, basic_cost)
+    new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -769,6 +771,7 @@ def play_card(
     # el estado final de la jugada, ver engine.apply_card_resource_gained_bonuses.
     card_resource_totals_before = engine.snapshot_card_resource_totals(player)
     active_cards_before = dict(player["active_cards"])
+    production_totals_before = engine.snapshot_production_totals(player)
 
     card_tags = tuple(card.get("tags", []))
     steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
@@ -1242,6 +1245,7 @@ def play_card(
         new_player, card_id, card_tags, any_tag_played_choice, target_card_id=target_card_id,
     )
     new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
+    new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -1372,6 +1376,7 @@ def use_card_action(
     # Ver el mismo snapshot en play_card: pasivo "on_card_resource_gained".
     card_resource_totals_before = engine.snapshot_card_resource_totals(player)
     active_cards_before = dict(player["active_cards"])
+    production_totals_before = engine.snapshot_production_totals(player)
 
     resolved_spec = action_spec
     if effect_choice is not None and "choice" in (action_spec or {}):
@@ -1616,6 +1621,7 @@ def use_card_action(
         trade_result = {"income_type": income_type, "income_amount": income_amount, "colony_bonus": colony_bonus}
 
     new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
+    new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -2436,6 +2442,7 @@ def play_prelude(
     tags = tuple(prelude.get("tags") or [])
     player = _load_player(player_id)
     globals_ = _load_global_parameters()
+    production_totals_before = engine.snapshot_production_totals(player)
 
     # Una prelude puede quedarse en juego con accion repetible y/o recursos
     # propios, igual que una carta de proyecto azul (ej. Applied Science:
@@ -2539,6 +2546,7 @@ def play_prelude(
     # prueba de humo con Main Belt Asteroids: +2 titanio por 1 asteroide).
     new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
     new_player = engine.increment_tags_played(new_player, tags)
+    new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:

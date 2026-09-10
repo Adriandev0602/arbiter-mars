@@ -70,6 +70,8 @@ from app.agent.rules_engine import (
     increment_events_played,
     apply_tag_played_resource_bonuses,
     apply_colony_placed_bonuses,
+    snapshot_production_totals,
+    apply_production_increased_bonus,
     retire_card_as_event,
     spend_card_resource_as_heat,
     compute_research_cost_per_card,
@@ -4988,6 +4990,73 @@ def test_apply_corporation_start_pone_produccion_en_cero():
     assert all(corp_player[f"{r}_production"] == 0
                for r in ("mc", "steel", "titanium", "plant", "energy", "heat"))
     assert corp_player["tr"] == player["tr"]     # el TR no lo toca
+
+
+def test_preservation_program_anula_el_primer_paso_de_tr_de_la_generacion():
+    # Preservation Program: "skip the first TR you gain in each generation's
+    # action phase". Solo un paso, aunque el aumento sea de varios.
+    player = register_passive_effect(new_player_state(), "preservation_program",
+                                     {"skip_first_tr_gain_per_generation": True})
+    anulado, _ = raise_temperature(player, new_global_parameters(), steps=1)
+    assert anulado["tr"] == player["tr"]                       # no subio nada
+    assert anulado["tr_raised_this_generation"] is False        # y no cuenta como "subido"
+    assert anulado["tr_skip_used_this_generation"] is True
+
+    # La proxima subida de la MISMA generacion ya no se anula.
+    de_nuevo, _ = raise_temperature(anulado, new_global_parameters(), steps=1)
+    assert de_nuevo["tr"] == anulado["tr"] + 1
+    assert de_nuevo["tr_raised_this_generation"] is True
+
+    # Un aumento de VARIOS pasos de una sola vez pierde solo el primero.
+    varios, _ = apply_card_effect(player, new_global_parameters(), {"tr_delta": 3})
+    assert varios["tr"] == player["tr"] + 2
+
+    # run_production_phase limpia el flag para la generacion siguiente.
+    assert run_production_phase(anulado)["tr_skip_used_this_generation"] is False
+
+
+def test_terraforming_deal_paga_por_cada_paso_de_tr():
+    # Terraforming Deal: "each step your TR is raised, gain 2 M€".
+    player = register_passive_effect(new_player_state(), "terraforming_deal",
+                                     {"on_tr_increased": {"mc_delta": 2}})
+    subido, _ = raise_oxygen(player, new_global_parameters(), steps=2)
+    assert subido["mc"] == player["mc"] + 4     # 2 pasos x 2 M€
+
+    # Bajar el TR no paga nada.
+    bajado, _ = apply_card_effect(player, new_global_parameters(), {"tr_delta": -3})
+    assert bajado["mc"] == player["mc"]
+
+
+def test_terraforming_deal_con_preservation_program_paga_solo_lo_no_anulado():
+    # Combinacion: si ambos pasivos coexistieran, Terraforming Deal solo
+    # paga por los pasos que sobrevivieron al descuento de Preservation
+    # Program -- ambos viven en el mismo punto unico (_raise_tr).
+    player = register_passive_effect(new_player_state(), "a", {"skip_first_tr_gain_per_generation": True})
+    player = register_passive_effect(player, "b", {"on_tr_increased": {"mc_delta": 2}})
+    subido, _ = raise_temperature(player, new_global_parameters(), steps=1)
+    assert subido["tr"] == player["tr"]          # el unico paso se anulo
+    assert subido["mc"] == player["mc"]          # y por eso no paga nada
+
+
+def test_suitable_infrastructure_paga_una_vez_por_accion_no_por_paso():
+    # Suitable Infrastructure: "once per action you take, gain 2 M€ if you
+    # increase any production(s)" -- una sola vez, sin importar cuantas
+    # producciones subieron ni cuantos pasos.
+    player = register_passive_effect(new_player_state(), "suitable_infrastructure",
+                                     {"on_action_production_increased_bonus": {"mc_delta": 2}})
+    antes = snapshot_production_totals(player)
+
+    una_produccion, _ = apply_card_effect(player, new_global_parameters(),
+                                          {"production_deltas": {"steel_production": 1}})
+    assert apply_production_increased_bonus(una_produccion, antes)["mc"] == una_produccion["mc"] + 2
+
+    dos_producciones, _ = apply_card_effect(player, new_global_parameters(),
+                                            {"production_deltas": {"steel_production": 3, "titanium_production": 2}})
+    assert apply_production_increased_bonus(dos_producciones, antes)["mc"] == dos_producciones["mc"] + 2
+
+    # Sin ningun aumento de produccion, no paga.
+    sin_cambio, _ = apply_card_effect(player, new_global_parameters(), {"mc_delta": 5})
+    assert apply_production_increased_bonus(sin_cambio, antes)["mc"] == sin_cambio["mc"]
 
 
 def test_raise_tr_marca_el_flag_de_la_generacion():

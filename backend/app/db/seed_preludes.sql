@@ -223,3 +223,50 @@ from (values
     ('P53','main_belt_asteroids'),('P67','world_government_advisor')
 ) as m(scan, pid)
 where q.scan_number = m.scan;
+
+-- ---------------------------------------------------------------------------
+-- Las 4 preludes que esperaban el hook "subio el TR" / "subio produccion"
+-- (2026-09-09), destrabadas por el refactor de corporaciones del mismo dia.
+-- Tres piezas nuevas en rules_engine.py, todas centralizadas en los puntos
+-- unicos ya existentes (_raise_tr / _increase_production), sin cablear nada
+-- carta por carta: `on_tr_increased`, `skip_first_tr_gain_per_generation` y
+-- `on_action_production_increased_bonus` (esta ultima con snapshot/diff de
+-- produccion "antes/despues" en las cuatro vias de accion, mismo patron que
+-- on_card_resource_gained). Ver "Corporaciones: mecanicas pendientes
+-- resueltas" en CARDS_LOG.md para el detalle de diseño.
+insert into prelude_cards (id, name, tags, effects) values
+    -- P46: +1 produccion de energia, +2 titanio. Effect: +2 M€ cada vez que
+    -- se coloca CUALQUIER colonia (pasivo ya existente desde Poseidon,
+    -- bloque 3 de corporaciones -- no hizo falta pieza nueva).
+    ('colony_trade_hub', 'Colony Trade Hub', '{space}',
+     '{"production_deltas": {"energy_production": 1}, "resource_deltas": {"titanium": 2},
+       "passive": {"on_colony_placed": {"resource_deltas": {"mc": 2}}}}'::jsonb),
+
+    -- P57: +5 TR de entrada. Effect: el PRIMER paso de TR que el jugador
+    -- ganaria en cada generacion se anula -- no sube, no paga nada de lo que
+    -- dependa de subir TR (pieza nueva `skip_first_tr_gain_per_generation`).
+    -- Sin tag propio (esquina vacia en el scan).
+    ('preservation_program', 'Preservation Program', '{}',
+     '{"tr_delta": 5, "passive": {"skip_first_tr_gain_per_generation": true}}'::jsonb),
+
+    -- P63: +5 acero de entrada. Effect: una vez por accion, +2 M€ si subio
+    -- CUALQUIER produccion (pieza nueva `on_action_production_increased_bonus`
+    -- -- distinta de Manutech, que paga por cada paso, no una vez por accion).
+    ('suitable_infrastructure', 'Suitable Infrastructure', '{building}',
+     '{"resource_deltas": {"steel": 5},
+       "passive": {"on_action_production_increased_bonus": {"mc_delta": 2}}}'::jsonb),
+
+    -- P64: sin bonus de entrada. Effect: +2 M€ por cada paso que sube el TR,
+    -- sin importar la fuente (pieza nueva `on_tr_increased`, centralizada en
+    -- _raise_tr igual que el resto de las piezas de esta tanda).
+    ('terraforming_deal', 'Terraforming Deal', '{earth}',
+     '{"passive": {"on_tr_increased": {"mc_delta": 2}}}'::jsonb)
+on conflict (id) do update set
+    name = excluded.name, tags = excluded.tags, effects = excluded.effects;
+
+update prelude_review_queue q set reviewed = true, prelude_id = m.pid
+from (values
+    ('P46','colony_trade_hub'),('P57','preservation_program'),
+    ('P63','suitable_infrastructure'),('P64','terraforming_deal')
+) as m(scan, pid)
+where q.scan_number = m.scan;
