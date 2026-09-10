@@ -223,3 +223,219 @@ from (values
     ('P53','main_belt_asteroids'),('P67','world_government_advisor')
 ) as m(scan, pid)
 where q.scan_number = m.scan;
+
+-- ---------------------------------------------------------------------------
+-- Las 4 preludes que esperaban el hook "subio el TR" / "subio produccion"
+-- (2026-09-09), destrabadas por el refactor de corporaciones del mismo dia.
+-- Tres piezas nuevas en rules_engine.py, todas centralizadas en los puntos
+-- unicos ya existentes (_raise_tr / _increase_production), sin cablear nada
+-- carta por carta: `on_tr_increased`, `skip_first_tr_gain_per_generation` y
+-- `on_action_production_increased_bonus` (esta ultima con snapshot/diff de
+-- produccion "antes/despues" en las cuatro vias de accion, mismo patron que
+-- on_card_resource_gained). Ver "Corporaciones: mecanicas pendientes
+-- resueltas" en CARDS_LOG.md para el detalle de diseño.
+insert into prelude_cards (id, name, tags, effects) values
+    -- P46: +1 produccion de energia, +2 titanio. Effect: +2 M€ cada vez que
+    -- se coloca CUALQUIER colonia (pasivo ya existente desde Poseidon,
+    -- bloque 3 de corporaciones -- no hizo falta pieza nueva).
+    ('colony_trade_hub', 'Colony Trade Hub', '{space}',
+     '{"production_deltas": {"energy_production": 1}, "resource_deltas": {"titanium": 2},
+       "passive": {"on_colony_placed": {"resource_deltas": {"mc": 2}}}}'::jsonb),
+
+    -- P57: +5 TR de entrada. Effect: el PRIMER paso de TR que el jugador
+    -- ganaria en cada generacion se anula -- no sube, no paga nada de lo que
+    -- dependa de subir TR (pieza nueva `skip_first_tr_gain_per_generation`).
+    -- Sin tag propio (esquina vacia en el scan).
+    ('preservation_program', 'Preservation Program', '{}',
+     '{"tr_delta": 5, "passive": {"skip_first_tr_gain_per_generation": true}}'::jsonb),
+
+    -- P63: +5 acero de entrada. Effect: una vez por accion, +2 M€ si subio
+    -- CUALQUIER produccion (pieza nueva `on_action_production_increased_bonus`
+    -- -- distinta de Manutech, que paga por cada paso, no una vez por accion).
+    ('suitable_infrastructure', 'Suitable Infrastructure', '{building}',
+     '{"resource_deltas": {"steel": 5},
+       "passive": {"on_action_production_increased_bonus": {"mc_delta": 2}}}'::jsonb),
+
+    -- P64: sin bonus de entrada. Effect: +2 M€ por cada paso que sube el TR,
+    -- sin importar la fuente (pieza nueva `on_tr_increased`, centralizada en
+    -- _raise_tr igual que el resto de las piezas de esta tanda).
+    ('terraforming_deal', 'Terraforming Deal', '{earth}',
+     '{"passive": {"on_tr_increased": {"mc_delta": 2}}}'::jsonb)
+on conflict (id) do update set
+    name = excluded.name, tags = excluded.tags, effects = excluded.effects;
+
+update prelude_review_queue q set reviewed = true, prelude_id = m.pid
+from (values
+    ('P46','colony_trade_hub'),('P57','preservation_program'),
+    ('P63','suitable_infrastructure'),('P64','terraforming_deal')
+) as m(scan, pid)
+where q.scan_number = m.scan;
+
+-- ---------------------------------------------------------------------------
+-- Bloque de preludes pendientes (2026-09-09): 10 de 12 cargadas. Quedan
+-- Ecology Experts (P10) y Board of Directors (P45) pospuestas -- ver el
+-- final de este archivo. Diseñadas con subagentes que verificaron cada scan
+-- contra el codigo actual del motor (mucho mas grande que en bloques
+-- anteriores: play_prelude ya soporta becomes_active/action, hooks de TR/
+-- produccion, colonias, tablero...).
+--
+-- TAGS: la hoja de contacto atrapo 3 errores en 14 informes -- Atmospheric
+-- Enhancers (venus), High Circles (earth) y Nobel Prize (wild, el mismo
+-- circulo "?" que ya se habia identificado en Septem Tribus) reportadas
+-- como "sin tags" por leer el circulo de expansion en vez del tag real.
+--
+-- Piezas nuevas, todas chicas:
+--   * cost.discard_card + parametro discard_card_id en use_card_action
+--     (Focused Organization: descartar 1 carta de la mano como parte del
+--     costo de una accion -- motor puro, no necesita catalogo).
+--   * raise_production_floor: {"min": N} en apply_card_effect (Industrial
+--     Complex: sube cada produccion por debajo de N hasta N, via
+--     _increase_production para combinarse con Manutech).
+--   * on_become_party_leader + apply_become_party_leader_bonus (Corridors
+--     of Power): turmoil.place_delegate es pura y no conoce pasivos, asi
+--     que el disparo se detecta en tools.py comparando el leader de antes
+--     y despues, en los 4 puntos donde se llama esa funcion.
+--   * adjust_all_colony_tracks_in_play: {"delta": N} en play_prelude
+--     (Early Colonization: sube TODAS las colonias EN JUEGO, no el
+--     catalogo completo de COLONY_DEFS).
+--   * _draw_cards_matching_requirement (tools.py), hermana de
+--     _draw_cards_matching_tag pero filtrando por `cards.requirements` no
+--     vacio, con un modo `party_requirement` para requisitos de partido
+--     especificamente (`ruling_or_delegates`) -- compartida por High
+--     Circles y Nobel Prize.
+--   * reveal_random_preludes: {"n": N} en play_prelude (New Partner):
+--     revela N preludes al azar entre las no jugadas, SIN mazo persistente
+--     -- el jugador juega la elegida con una llamada normal a play_prelude.
+--   * requires_corporation_choice: {"extra_cost_mc": N} en play_prelude
+--     (Merger): dispara el MISMO flujo de choose_corporation con un costo
+--     extra, en vez de effects genericos -- no rompe "una corporacion por
+--     partida", solo cambia el costo de elegirla.
+--   * tool nueva play_double_down: copia el efecto DIRECTO (sin passive/
+--     action) de otra prelude ya jugada por este jugador y lo reaplica con
+--     apply_card_effect -- no hace falta sub-mazo drafteable, el texto real
+--     dice "your OTHER prelude", no "the prelude deck".
+insert into prelude_cards (id, name, tags, effects) values
+    -- P11: descuento de 25 M€ para la proxima carta. Identico patron a
+    -- Indentured Workers, sin nada nuevo -- el analisis viejo que pedia la
+    -- mecanica de "jugar carta anidada" estaba mal para esta carta puntual.
+    ('eccentric_sponsor', 'Eccentric Sponsor', '{}',
+     '{"next_card_discount_mc": 25}'::jsonb),
+
+    -- P44: elegis subir temperatura, oxigeno o Venus 2 pasos, y robas 2
+    -- cartas con tag venus (ya existe draw_cards_matching_tag, mismo
+    -- patron que Stratospheric Expedition).
+    ('atmospheric_enhancers', 'Atmospheric Enhancers', '{venus}',
+     '{"choice": [
+         {"raise_temperature_steps": 2},
+         {"raise_oxygen_steps": 2},
+         {"raise_venus_steps": 2}],
+       "draw_cards_matching_tag": {"tag": "venus", "n": 2}}'::jsonb),
+
+    -- P65: +1 TR y roba 1 carta al jugarla. Effect: +3 M€ por cada paso que
+    -- suba Venus, de donde sea (on_venus_raised ya existia, Aphrodite paga
+    -- 2 en vez de 3).
+    ('venus_contract', 'Venus Contract', '{venus}',
+     '{"draw_cards": 1, "tr_delta": 1,
+       "passive": {"on_venus_raised": {"mc_delta": 3}}}'::jsonb),
+
+    -- P50: al jugarla, elegis un recurso estandar: roba 1 carta y ganalo (6
+    -- opciones). Accion repetible: descartar 1 carta + gastar 1 de un
+    -- recurso estandar (elegido) para robar 1 carta y ganar 1 de ESE mismo
+    -- recurso -- pieza nueva cost.discard_card.
+    ('focused_organization', 'Focused Organization', '{}',
+     '{"choice": [
+         {"draw_cards": 1, "resource_deltas": {"mc": 1}},
+         {"draw_cards": 1, "resource_deltas": {"steel": 1}},
+         {"draw_cards": 1, "resource_deltas": {"titanium": 1}},
+         {"draw_cards": 1, "resource_deltas": {"plants": 1}},
+         {"draw_cards": 1, "resource_deltas": {"energy": 1}},
+         {"draw_cards": 1, "resource_deltas": {"heat": 1}}],
+       "becomes_active": true,
+       "action": {"choice": [
+         {"cost": {"discard_card": 1, "mc": 1}, "gains": {"draw_cards": 1, "resource_deltas": {"mc": 1}}},
+         {"cost": {"discard_card": 1, "steel": 1}, "gains": {"draw_cards": 1, "resource_deltas": {"steel": 1}}},
+         {"cost": {"discard_card": 1, "titanium": 1}, "gains": {"draw_cards": 1, "resource_deltas": {"titanium": 1}}},
+         {"cost": {"discard_card": 1, "plants": 1}, "gains": {"draw_cards": 1, "resource_deltas": {"plants": 1}}},
+         {"cost": {"discard_card": 1, "energy": 1}, "gains": {"draw_cards": 1, "resource_deltas": {"energy": 1}}},
+         {"cost": {"discard_card": 1, "heat": 1}, "gains": {"draw_cards": 1, "resource_deltas": {"heat": 1}}}]}}'::jsonb),
+
+    -- P52: pierde 18 M€, sube a 1 cada produccion que este por debajo
+    -- (pieza nueva raise_production_floor).
+    ('industrial_complex', 'Industrial Complex', '{building}',
+     '{"resource_deltas": {"mc": -18}, "raise_production_floor": {"min": 1}}'::jsonb),
+
+    -- P47: +1 TR y 4 M€ al jugarla. Effect: +1 carta cada vez que el
+    -- jugador se vuelve Party Leader de un partido (pieza nueva
+    -- on_become_party_leader).
+    ('corridors_of_power', 'Corridors of Power', '{earth}',
+     '{"tr_delta": 1, "resource_deltas": {"mc": 4},
+       "passive": {"on_become_party_leader": {"draw": 1}}}'::jsonb),
+
+    -- P48: +3 energia, coloca 1 colonia (build_colony_id, sin bonus
+    -- duplicado) y sube 2 pasos TODAS las colonias en juego (pieza nueva
+    -- adjust_all_colony_tracks_in_play, incluye la recien construida).
+    ('early_colonization', 'Early Colonization', '{space}',
+     '{"resource_deltas": {"energy": 3}, "build_colony": true,
+       "adjust_all_colony_tracks_in_play": {"delta": 2}}'::jsonb),
+
+    -- P51: +1 TR, roba 1 carta CON REQUISITO DE PARTIDO (pieza nueva
+    -- _draw_cards_matching_requirement con party_requirement), coloca 2
+    -- delegados en un mismo partido (ya existia place_delegates), y +1 de
+    -- influencia permanente (influence_bonus ya existia).
+    ('high_circles', 'High Circles', '{earth}',
+     '{"tr_delta": 1, "draw_cards_matching_requirement": {"n": 1, "party": true},
+       "place_delegates": 2,
+       "passive": {"influence_bonus": 1}}'::jsonb),
+
+    -- P54: +5 M€, roba 2 cartas con CUALQUIER requisito (misma pieza nueva
+    -- que High Circles, sin el filtro de partido).
+    ('nobel_prize', 'Nobel Prize', '{wild}',
+     '{"resource_deltas": {"mc": 5}, "draw_cards_matching_requirement": {"n": 2}}'::jsonb),
+
+    -- X40: sin efecto automatico -- se juega con la tool nueva
+    -- play_double_down, que copia el efecto DIRECTO de otra prelude ya
+    -- jugada por este jugador.
+    ('double_down', 'Double Down', '{}', '{}'::jsonb),
+
+    -- X41: dispara el flujo de choose_corporation con un costo extra de 42
+    -- M€ (pieza nueva requires_corporation_choice, resuelta en
+    -- play_prelude). No rompe "una corporacion por partida": sigue siendo
+    -- UNA sola, solo cambia el costo de elegirla.
+    ('merger', 'Merger', '{}',
+     '{"requires_corporation_choice": {"extra_cost_mc": 42}}'::jsonb),
+
+    -- X42: +1 produccion de M€, revela 2 preludes al azar entre las no
+    -- jugadas (pieza nueva reveal_random_preludes) -- sin mazo persistente,
+    -- el jugador juega la elegida con una llamada normal a play_prelude.
+    ('new_partner', 'New Partner', '{}',
+     '{"production_deltas": {"mc_production": 1}, "reveal_random_preludes": {"n": 2}}'::jsonb)
+on conflict (id) do update set
+    name = excluded.name, tags = excluded.tags, effects = excluded.effects;
+
+update prelude_review_queue q set reviewed = true, prelude_id = m.pid
+from (values
+    ('P11','eccentric_sponsor'),('P44','atmospheric_enhancers'),
+    ('P65','venus_contract'),('P50','focused_organization'),
+    ('P52','industrial_complex'),('P47','corridors_of_power'),
+    ('P48','early_colonization'),('P51','high_circles'),
+    ('P54','nobel_prize'),('X40','double_down'),
+    ('X41','merger'),('X42','new_partner')
+) as m(scan, pid)
+where q.scan_number = m.scan;
+
+-- Pendientes por mecanica (ver CARDS_LOG.md, "Preludes pendientes"):
+--   * Ecology Experts (P10): "play a card from hand, ignoring global
+--     requirements" -- necesita extender play_card con
+--     ignore_global_requirements + cost_reduction_mc y una forma de
+--     invocarlo encadenado desde play_prelude. Mismo hueco que se penso
+--     compartido con Eccentric Sponsor (P11) y WG Project -- ya resuelto que
+--     NO lo comparten: Eccentric Sponsor es next_card_discount_mc (arriba) y
+--     WG Project ya estaba cargado con otra pieza.
+--   * Board of Directors (P45): pide robar una prelude de un pool que no
+--     repita descartes anteriores -- a diferencia de New Partner (un solo
+--     robo, sin estado), esta es una ACCION REPETIBLE, asi que necesita un
+--     "mazo de preludes vistas" persistente para no redescartar siempre la
+--     misma carta. Ademas jugar la robada es "jugar una carta dentro de una
+--     accion", el mismo hueco de Ecology Experts.
+update prelude_review_queue set reviewed = true, prelude_id = null
+where scan_number in ('P10', 'P45');

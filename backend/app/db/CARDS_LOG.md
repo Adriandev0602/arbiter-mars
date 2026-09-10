@@ -796,26 +796,136 @@ plantas); `tag_filter` acepta LISTA en `card_cost_discount_mc` (Space Lanes: "pl
 tres tags); `draw_cards_matching_tag` acepta lista de specs y lista de tags (Planetary Alliance:
 1 jovian + 1 venus); y `play_prelude` ahora resuelve delegados, colonias, descartes y pasivos.
 
-**20 pendientes, agrupadas por la pieza que les falta:**
-- **Cartas activas / acciones repetibles en preludes** (4): Applied Science, Board of Directors,
-  Floating Trade Hub, Main Belt Asteroids, World Government Advisor. `prelude_cards` solo modela
-  efectos inmediatos; no hay registro en `active_cards` ni `use_card_action` para preludes.
-- **Robar filtrando por propiedad del catálogo que no es un tag** (3): Atmospheric Enhancers
-  (ícono de floater), High Circles (requisito de partido), Nobel Prize (que tenga requisitos).
+**10 de las 12 preludes pendientes, cargadas (2026-09-09): 68 preludes en total.** La misma
+orquestación multi-agente, pero re-verificando el hueco de cada una contra el estado ACTUAL del
+motor (mucho más grande que cuando se diagnosticaron originalmente: `play_prelude` ya soporta
+`becomes_active`/`action`, hooks de TR/producción, colonias, tablero...). **Resultado: 7 de las
+12 ya estaban cargables sin ninguna pieza nueva**, y solo 5 necesitaron algo chico. Quedan
+pendientes Ecology Experts (P10) y Board of Directors (P45).
+
+**Corrección importante sobre el análisis viejo:** la nota que agrupaba Ecology Experts (P10),
+Eccentric Sponsor (P11) y WG Project bajo "jugar otra carta de la mano" estaba mal para 2 de las
+3. Eccentric Sponsor es en realidad `next_card_discount_mc: 25` — idéntica a Indentured Workers,
+ya cargada sin pieza nueva. WG Project ya estaba cargada con otra pieza distinta desde el bloque 3.
+**Solo Ecology Experts necesita de verdad la mecánica de "jugar una carta anidada"** — la pieza
+queda pospuesta, pero ahora acotada a una sola carta en vez de tres.
+
+**Verificación de tags: 3 errores en 14 informes**, atrapados con la hoja de contacto (variante
+vertical de `tag_contact_sheet.py`, con el prefijo `PRELUDE_` en vez de `AUDIT_`):
+
+| Carta | Tag real | Qué reportó el agente |
+|---|---|---|
+| Atmospheric Enhancers | `venus` | ninguno ("banner de expansión") |
+| High Circles | `earth` | ninguno ("banner de expansión") |
+| Nobel Prize | `wild` | ninguno ("el '?' indica ausencia de tags") |
+
+El "?" de Nobel Prize es el MISMO ícono de tag `wild` ya identificado en Septem Tribus
+(corporaciones bloque 4) — confirma que ese ícono no es "sin tags", es un tag específico.
+
+**Cargables sin pieza nueva (7):**
+- **Atmospheric Enhancers** (P44): elegir temperatura/oxígeno/Venus +2, robar 2 cartas `venus`
+  (`draw_cards_matching_tag`, ya existía — mismo patrón que Stratospheric Expedition).
+- **Eccentric Sponsor** (P11): `next_card_discount_mc: 25`.
+- **Venus Contract** (P65): `on_venus_raised` con `mc_delta: 3` (Aphrodite ya lo usaba con 2).
+- **Focused Organization** (P50): elección de recurso estándar entre 6 opciones — mismo patrón que
+  Astrodrill/Robinson Industries/Utopia Invest.
+- **Double Down** (X40): resultó ser mucho más chico que lo que decía el análisis viejo — el texto
+  real dice "your OTHER prelude" (una carta concreta que el jugador ya tiene), no "the prelude
+  deck". No hace falta sub-mazo drafteable.
+- **Merger** (X41): tampoco es "corporaciones no modeladas" — ese diagnóstico era de antes de que
+  las corporaciones existieran en el motor. Es un camino alternativo hacia `choose_corporation`
+  con un costo extra.
+- **New Partner** (X42): tampoco necesita mazo persistente — "draw 2, play 1, discard 1" se
+  resuelve con un query aleatorio sobre las 68 filas de `prelude_cards`, sin estado nuevo.
+
+**Piezas nuevas (todas chicas):**
+- `cost.discard_card` + parámetro `discard_card_id` en `use_card_action` (Focused Organization):
+  descartar una carta de la mano como parte del costo de una acción. Motor puro, no necesita
+  catálogo — a diferencia de `discard_card_then_draw` (un effect inmediato ya existente).
+- `raise_production_floor: {"min": N}` en `apply_card_effect` (Industrial Complex): sube cada
+  producción que esté por debajo de N hasta N — no es un delta fijo, así que cada aumento se
+  calcula (`N - actual`) y pasa por `_increase_production` para combinarse con Manutech.
+- `on_become_party_leader` + `apply_become_party_leader_bonus` (Corridors of Power):
+  `turmoil.place_delegate` es una función PURA que no conoce pasivos (separación arquitectónica
+  deliberada), así que el disparo se detecta en `tools.py` comparando el `leader` de antes y
+  después, en los 4 puntos donde se llama esa función.
+- `adjust_all_colony_tracks_in_play: {"delta": N}` en `play_prelude` (Early Colonization): sube
+  TODAS las colonias EN JUEGO de esta partida (no `COLONY_DEFS` completo), reusando
+  `colonies.adjust_colony_track` en un loop.
+- `_draw_cards_matching_requirement` (tools.py), hermana de `_draw_cards_matching_tag` pero
+  filtrando por `cards.requirements` no vacío en vez de por tags, con un modo `party_requirement`
+  para requisitos de partido específicamente (`ruling_or_delegates`) — compartida por High Circles
+  y Nobel Prize.
+- `reveal_random_preludes: {"n": N}` en `play_prelude` (New Partner): revela N preludes al azar
+  entre las no jugadas, sin mazo persistente — el jugador juega la elegida con una llamada normal
+  a `play_prelude` después.
+- `requires_corporation_choice: {"extra_cost_mc": N}` en `play_prelude` (Merger): dispara el mismo
+  flujo de `choose_corporation`, llamado internamente vía `.func` (el atributo que expone la
+  función real debajo del wrapper `@tool` de LangChain), con un costo extra descontado después.
+  No relaja "una corporación por partida" — sigue siendo una sola, solo cambia el costo de
+  elegirla.
+- Tool nueva `play_double_down`: copia el efecto DIRECTO (sin `passive`/`action`) de otra prelude
+  que el jugador YA jugó, y lo reaplica con `apply_card_effect`.
+
+**Bug preexistente encontrado y corregido, agarrado por la prueba de humo (no por los tests
+unitarios):** el camino normal de `play_prelude` nunca agregaba la prelude a `player.played_cards`
+— a diferencia de `play_card` y `choose_corporation`, que sí lo hacían. No rompía nada antes
+porque ninguna pieza existente leía `played_cards` para preludes, pero **Double Down y New
+Partner sí** (para saber "qué prelude ya jugó este jugador" y no repetirla en el robo aleatorio).
+Corregido agregando `engine.register_played_card` al final del camino normal.
+
+**Nota de prueba de humo:** las mutaciones se probaron contra un jugador desechable (UUID nuevo,
+`display_name='_smoke_test_preludes'`, borrado al terminar) para no tocar ningún dato real. Un
+descuido propio: `setup_colonies` sobrescribe el estado COMPARTIDO de colonias en
+`global_parameters` (no es por-jugador), y se llamó sin snapshotear antes — quedó reseteado a `{}`
+al terminar la verificación. No hay evidencia de que hubiera una partida real en curso (el
+proyecto todavía no tiene frontend), pero es un recordatorio de que ese estado en particular
+necesita el mismo cuidado que el jugador de prueba.
+
+**Preservation Program / Suitable Infrastructure / Terraforming Deal / Colony Trade Hub,
+cargadas (2026-09-09).** Destrabadas por el refactor de corporaciones del mismo día — ver
+"Corporaciones: mecánicas pendientes resueltas" arriba. Colony Trade Hub no necesitó pieza nueva
+(`on_colony_placed` ya existía); las otras tres sumaron `on_tr_increased`, `on_action_production_
+increased_bonus` y `skip_first_tr_gain_per_generation` al mismo punto único `_raise_tr`. **16
+pendientes, agrupadas por la pieza que les falta:**
+~~- **Cartas activas / acciones repetibles en preludes** (4): Applied Science, Board of Directors,
+  Floating Trade Hub, Main Belt Asteroids, World Government Advisor.~~ Applied Science, Floating
+  Trade Hub y World Government Advisor **ya estaban cargadas** desde el bloque 3 de preludes
+  (`play_prelude` soporta `becomes_active`/`action` desde entonces). Solo **Board of Directors**
+  sigue pendiente — no por esta pieza (ya resuelta) sino por el mazo de preludes vistas (ver
+  abajo).
+- ~~**Robar filtrando por propiedad del catálogo que no es un tag** (3): Atmospheric Enhancers,
+  High Circles, Nobel Prize.~~ **Las 3 se re-diagnosticaron mal la primera vez.** Atmospheric
+  Enhancers en realidad pide tag `venus` (`draw_cards_matching_tag`, ya existía). High Circles y
+  Nobel Prize sí necesitaban una pieza nueva pero chica —
+  `_draw_cards_matching_requirement` — **cargadas el 2026-09-09** (ver arriba).
 - ~~**Hook genérico "subió el TR" / "subió producción"** (3): Preservation Program, Suitable
-  Infrastructure, Terraforming Deal.~~ **DESTRABADAS el 2026-09-09**: "subió producción" se
-  resolvió con `_increase_production` (Manutech) y "subió el TR" con `_raise_tr` +
-  `tr_raised_this_generation` (Pristar / UNMI). Las tres se pueden cargar ya; solo falta bajar
-  sus scans y verificarlas, que es trabajo de catálogo, no de motor.
-- **Pasivos de eventos nuevos** (3): ~~Colony Trade Hub (al colocarse cualquier colonia)~~
-  — **destrabada** por el pasivo `on_colony_placed` (Poseidon, bloque 3); Corridors
-  of Power (al volverse party leader), Venus Contract (por cada paso de Venus).
-- **Elección de recurso estándar como costo/destino** (2): Focused Organization, Industrial
-  Complex (esta además necesita "subir a 1 todas las producciones que estén por debajo").
-- **Corporaciones, no modeladas** (1): Merger.
-- **Sub-mazo Prelude drafteable** (2): New Partner y Double Down (esta además necesita copiar
-  el `effects` de otra prelude en runtime). Misma familia que WG Project.
-- **Subir todos los tracks de colonia a la vez** (1): Early Colonization.
+  Infrastructure, Terraforming Deal.~~ **Cargadas el 2026-09-09** (ver arriba).
+- ~~**Pasivos de eventos nuevos** (3): Colony Trade Hub, Corridors of Power, Venus Contract.~~
+  **Las 3 cargadas el 2026-09-09** (Colony Trade Hub reusó `on_colony_placed`; las otras dos
+  sumaron `on_become_party_leader` y reusaron `on_venus_raised`).
+- ~~**Elección de recurso estándar como costo/destino** (2): Focused Organization, Industrial
+  Complex.~~ **Cargadas el 2026-09-09** — Focused Organization con el patrón `choice` ya
+  existente, Industrial Complex con la pieza nueva `raise_production_floor`.
+- ~~**Corporaciones, no modeladas** (1): Merger.~~ Diagnóstico de antes de que existieran las
+  corporaciones en el motor. **Cargada el 2026-09-09** — dispara el mismo flujo de
+  `choose_corporation` con un costo extra.
+- ~~**Sub-mazo Prelude drafteable** (2): New Partner, Double Down.~~ Los textos reales no piden
+  un mazo — Double Down copia "tu OTRA prelude" (una carta concreta ya jugada) y New Partner
+  resuelve "draw 2, play 1" con un query aleatorio sin estado nuevo. **Las 2 cargadas el
+  2026-09-09.**
+- ~~**Subir todos los tracks de colonia a la vez** (1): Early Colonization.~~ **Cargada el
+  2026-09-09** — pieza nueva `adjust_all_colony_tracks_in_play`, itera las colonias EN JUEGO.
+
+**Quedan 2 pendientes**, ambas necesitan "jugar una carta dentro de otra jugada/acción" — la
+misma pieza de infraestructura, más grande, sin resolver todavía:
+- **Ecology Experts** (P10): "play a card from hand, ignoring global requirements". Necesita
+  extender `play_card` con `ignore_global_requirements` + `cost_reduction_mc`, invocado
+  encadenado desde `play_prelude`.
+- **Board of Directors** (P45): pide robar una prelude de un pool que no repita descartes
+  anteriores (a diferencia de New Partner, que es un robo único sin estado) — necesita un "mazo
+  de preludes vistas" persistente, más la misma pieza de "jugar una carta dentro de una acción"
+  que Ecology Experts. Candidata a resolverse junto con esa, cuando se retome.
 
 ### Prelude: mazo propio (categoría que faltaba entera)
 
@@ -1062,20 +1172,38 @@ Republic. Se cargó primero con un `gains.place_community` que **no estaba cable
 `use_card_action`** — una vía muerta que se detectó al verificar el JSON contra Supabase y se
 corrigió antes de commitear.
 
-**La única que queda: Vitor.** *"When you play a card with a NON-NEGATIVE VP icon, gain 3 M€."* No
-es vocabulario faltante: **ninguna de las 408 cartas del catálogo tiene cargado su VP impreso**,
-así que el pasivo no tendría de dónde leerlo. El análisis encontró una vía razonable —
-"no-negativo" incluye a las que no tienen ícono, y las de VP **negativo** son ~10 en todo el
-juego, así que alcanzaría con cargar a mano esa lista corta verificada y asumir el resto como
-no-negativo, sin re-verificar 408 scans. Se pospuso igual: destraba **una sola carta**, y ninguna
-otra del catálogo necesita el dato. Se desbloquea el día que aparezca una segunda carta que lo
-use, o en una sesión dedicada a esa lista corta.
+**Vitor, cargada (2026-09-09). El catálogo de corporaciones queda COMPLETO: 48 de 48.**
+*"When you play a card with a NON-NEGATIVE VP icon, gain 3 M€."* Se hizo con la vía que el
+análisis previo ya había identificado como razonable: en vez de cargar el VP de las 408 cartas
+del catálogo, una lista **corta** de `excluded_card_ids` con las pocas que tienen VP **negativo**
+impreso, verificadas contra su scan una por una — mismo rigor que el resto del catálogo, no un
+dato al voleo. "No-negativo" (lo que paga Vitor) incluye a las que no tienen ícono de VP.
 
-**Las 3 preludes que esperaban el mismo hook** (Preservation Program, Suitable Infrastructure,
-Terraforming Deal) quedan **destrabadas pero sin cargar**: sus scans no están en el cache y el
-criterio del repo es no cargar nada sin verificar el scan. Es el próximo paso natural, y ahora es
-trabajo de catálogo, no de motor. Lo mismo vale para **Colony Trade Hub** ("al colocarse cualquier
-colonia"), que quedó destrabada por el `on_colony_placed` del bloque anterior.
+**Las tres confirmadas para este catálogo**, cada una re-verificada contra su scan (bajados con
+`https://cards.hadronikle.com/projects/<Expansion> - <scan> - <Nombre>.png`, mismo patrón de URL
+que usan corporaciones/preludes):
+- `nuclear_zone` (097, Base): **-2 VP fija**, ícono redondo con el número impreso.
+- `bribed_committee` (112, Corporate Era): **-2 VP fija**, evento "raise TR 2 steps, -2 VP".
+- `vermin` (X75, Promo): **-1 VP condicional** por cada ciudad, SI hay 10+ animales guardados en
+  la propia carta — el ícono no es un número fijo sino una fórmula, pero el signo es negativo.
+
+**Esta lista NO es necesariamente exhaustiva.** Se armó cruzando el propio historial del proyecto
+(estas tres ya estaban anotadas con "VP no trackeado" en tablas viejas de `CARDS_LOG.md`) con
+conocimiento del juego real, y cada candidata se verificó contra su scan antes de cargar nada —
+ninguna se cargó "de memoria". Si aparece una carta nueva con VP negativo confirmado, se agrega a
+`excluded_card_ids` en `seed_corporations.sql` sin tocar el motor (la pieza
+`on_card_played_with_vp_icon` ya está lista para eso).
+
+**Las 3 preludes + Colony Trade Hub, cargadas (2026-09-09).** Se bajaron sus 4 scans y se
+verificaron contra el texto oficial — ver "Preservation Program / Suitable Infrastructure /
+Terraforming Deal / Colony Trade Hub" en la sección de Preludes, arriba. Un matiz que solo
+apareció al leer el scan real: **Preservation Program NO usa `tr_raised_this_generation`** como
+se pensaba al diseñar el hook — su texto es "skip the first TR you gain", así que necesitó una
+pieza hermana (`skip_first_tr_gain_per_generation`) que anula el primer paso en vez de solo
+leerlo. Terraforming Deal sí usa el punto único `_raise_tr` directo (`on_tr_increased`), y
+Suitable Infrastructure resultó ser una mecánica distinta a las dos: "una vez por acción", no por
+paso — se resolvió con snapshot/diff de producción antes/después, mismo patrón que
+`on_card_resource_gained`, en las 4 vías de acción del motor.
 
 #### Corporaciones, bloques 3-5: la cola quedó VACÍA (41 de 48 cargadas)
 

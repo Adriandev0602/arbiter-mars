@@ -138,7 +138,83 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-09, corporaciones 47/48)
+### 📍 Punto de retoma (última sesión: 2026-09-09, 10 de 12 preludes pendientes cargadas: 68 en total)
+
+**10 de las 12 preludes pendientes, cargadas.** Misma orquestación multi-agente, pero
+re-diagnosticando cada hueco contra el motor ACTUAL en vez de confiar en notas viejas —
+**7 de las 12 resultaron cargables sin ninguna pieza nueva** (el análisis original de varias
+estaba desactualizado o directamente mal: Merger no depende de corporaciones sin modelar porque
+las corporaciones ya existen; Double Down/New Partner no necesitan un mazo de preludes porque el
+texto real habla de "tu otra prelude" o de un robo único, no de un draft). Detalle completo en
+"10 de las 12 preludes pendientes, cargadas" en `CARDS_LOG.md`.
+
+**Piezas nuevas, todas chicas:** `cost.discard_card` en `use_card_action`; `raise_production_floor`
+(combina con Manutech vía `_increase_production`); `on_become_party_leader` (detectado en
+`tools.py` comparando el Party Leader de antes/después, porque `turmoil.place_delegate` es pura y
+no conoce pasivos); `adjust_all_colony_tracks_in_play`; `_draw_cards_matching_requirement`
+(hermana de `_draw_cards_matching_tag`, filtra por `cards.requirements`); `reveal_random_preludes`;
+`requires_corporation_choice` (dispara `choose_corporation` desde una prelude); y la tool nueva
+`play_double_down`.
+
+**Bug preexistente encontrado y corregido:** `play_prelude` nunca agregaba la prelude a
+`played_cards` en su camino normal (a diferencia de `play_card`/`choose_corporation`). No rompía
+nada hasta ahora porque nadie leía ese dato para preludes — Double Down y New Partner sí.
+
+**Quedan 2 pendientes**, ambas por la misma pieza más grande ("jugar una carta dentro de otra
+jugada/acción"): Ecology Experts (P10) y Board of Directors (P45, que además necesita un mazo de
+preludes vistas). Candidatas a resolverse juntas cuando se retome.
+
+**Nota de higiene para la próxima sesión que corra pruebas de humo:** `setup_colonies` sobrescribe
+`global_parameters.colonies`, que es estado COMPARTIDO (no por jugador) — snapshotear antes de
+llamarla en una prueba, igual que ya se hace con el jugador de prueba.
+
+### 📍 Punto de retoma anterior (2026-09-09, CORPORACIONES COMPLETAS: 48 de 48)
+
+**Vitor cargada (2026-09-09) — cierra el catálogo de corporaciones entero.** *"When you play a
+card with a non-negative VP icon, gain 3 M€."* No se hizo el retrofit de VP en las 408 cartas:
+alcanzó con una lista corta y verificada (`excluded_card_ids`) de las pocas cartas con VP
+**negativo** impreso — `nuclear_zone` (-2 fija), `bribed_committee` (-2 fija), `vermin` (-1
+condicional por ciudad). Cada una se re-verificó contra su scan antes de cargar, mismo rigor que
+el resto del catálogo — la lista no se armó de memoria. Pieza nueva:
+`on_card_played_with_vp_icon`, enganchada en `play_card`, `play_prelude` y `choose_corporation`
+(esta última para el "including this": Vitor misma no tiene ícono de VP, así que paga al
+elegirla). No es necesariamente exhaustiva — se amplía si aparece otra carta con VP negativo
+confirmada.
+
+**Nota de proceso:** el PR anterior (preludes de TR/producción) seguía sin mergear cuando arrancó
+esta sesión — se ramificó desde ahí en vez de desde `main`, siguiendo la convención de cadenas del
+repo, para no repetir el problema de recuperación de una sesión anterior (ver "Corporaciones,
+bloques 3-5" más abajo).
+
+### 📍 Punto de retoma anterior (2026-09-09, las 4 preludes destrabadas ya están cargadas)
+
+**Preservation Program, Suitable Infrastructure, Terraforming Deal y Colony Trade Hub, cargadas
+(2026-09-09).** Las 4 preludes que el hook de TR/producción del bloque anterior destrabó. Bajados
+y verificados sus scans. **Catálogo de preludes: 52 → 56.**
+
+**Sorpresa al leer los scans reales:** Preservation Program NO usaba `tr_raised_this_generation`
+como se había asumido al diseñar el hook — su texto es "skip the first TR you gain in each
+generation's action phase", así que necesitó una pieza hermana nueva:
+`skip_first_tr_gain_per_generation`, que anula (no solo lee) el primer paso de TR de la
+generación. Terraforming Deal sí usa el punto único directo con `on_tr_increased` ("each step
+your TR is raised, gain 2 M€"). Y Suitable Infrastructure resultó otra familia: "once per action
+you take, gain 2 M€ if you increase any production(s)" — no es por paso (eso ya es Manutech), es
+una vez por ACCIÓN, sin importar cuántas producciones subieron. Se resolvió con
+`snapshot_production_totals` + `apply_production_increased_bonus`, mismo patrón "diff antes/
+después" que `on_card_resource_gained`, enganchado en las 4 vías de acción del motor (`play_card`,
+`use_card_action`, `use_standard_project`, `play_prelude`).
+
+**Las tres piezas viven en `_raise_tr`, en este orden:** (1) el skip de Preservation Program
+consume como mucho 1 paso, (2) se aplica el resto y se marca `tr_raised_this_generation`, (3)
+`on_tr_increased` paga por los pasos que sobrevivieron al skip. Colony Trade Hub no necesitó
+nada nuevo: reusó `on_colony_placed` (Poseidon, bloque 3).
+
+**Aprendizaje repetido de esta sesión:** diseñar una mecánica "contra el nombre" antes de ver el
+scan es arriesgado — el diseño previo de `_raise_tr` asumía que las 3 preludes leerían el mismo
+flag que Pristar/UNMI, y dos de las tres necesitaban algo distinto. **Verificar el scan sigue
+siendo obligatorio incluso cuando ya existe un plan de diseño.**
+
+### 📍 Punto de retoma anterior (2026-09-09, corporaciones 47/48)
 
 **Se resolvieron 6 de las 7 corporaciones trabadas por mecánica (2026-09-09). Solo queda Vitor.**
 Misma orquestación multi-agente, pero con otro encargo: cada subagente **diseñó una mecánica
@@ -607,8 +683,7 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
 2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
    Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
-3. ~~Corporaciones: seguir la cola~~ — **cola cerrada el 2026-09-09** (41 de 48 cargadas). Lo
-   que queda son 7 pendientes por mecánica, no cartas sin revisar.
+3. ~~Corporaciones~~ — **COMPLETO el 2026-09-09: 48 de 48 cargadas**, cero pendientes.
 4. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
    quedan sí necesitan mecánicas grandes (sub-mazo de Prelude, hook genérico "subió el TR",
    corporaciones). Siguen pendientes también las 3 cartas dudosas de proyecto
