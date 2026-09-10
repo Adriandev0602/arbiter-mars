@@ -138,7 +138,37 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-09, CORPORACIONES COMPLETAS: 48 de 48)
+### 📍 Punto de retoma (última sesión: 2026-09-09, 10 de 12 preludes pendientes cargadas: 68 en total)
+
+**10 de las 12 preludes pendientes, cargadas.** Misma orquestación multi-agente, pero
+re-diagnosticando cada hueco contra el motor ACTUAL en vez de confiar en notas viejas —
+**7 de las 12 resultaron cargables sin ninguna pieza nueva** (el análisis original de varias
+estaba desactualizado o directamente mal: Merger no depende de corporaciones sin modelar porque
+las corporaciones ya existen; Double Down/New Partner no necesitan un mazo de preludes porque el
+texto real habla de "tu otra prelude" o de un robo único, no de un draft). Detalle completo en
+"10 de las 12 preludes pendientes, cargadas" en `CARDS_LOG.md`.
+
+**Piezas nuevas, todas chicas:** `cost.discard_card` en `use_card_action`; `raise_production_floor`
+(combina con Manutech vía `_increase_production`); `on_become_party_leader` (detectado en
+`tools.py` comparando el Party Leader de antes/después, porque `turmoil.place_delegate` es pura y
+no conoce pasivos); `adjust_all_colony_tracks_in_play`; `_draw_cards_matching_requirement`
+(hermana de `_draw_cards_matching_tag`, filtra por `cards.requirements`); `reveal_random_preludes`;
+`requires_corporation_choice` (dispara `choose_corporation` desde una prelude); y la tool nueva
+`play_double_down`.
+
+**Bug preexistente encontrado y corregido:** `play_prelude` nunca agregaba la prelude a
+`played_cards` en su camino normal (a diferencia de `play_card`/`choose_corporation`). No rompía
+nada hasta ahora porque nadie leía ese dato para preludes — Double Down y New Partner sí.
+
+**Quedan 2 pendientes**, ambas por la misma pieza más grande ("jugar una carta dentro de otra
+jugada/acción"): Ecology Experts (P10) y Board of Directors (P45, que además necesita un mazo de
+preludes vistas). Candidatas a resolverse juntas cuando se retome.
+
+**Nota de higiene para la próxima sesión que corra pruebas de humo:** `setup_colonies` sobrescribe
+`global_parameters.colonies`, que es estado COMPARTIDO (no por jugador) — snapshotear antes de
+llamarla en una prueba, igual que ya se hace con el jugador de prueba.
+
+### 📍 Punto de retoma anterior (2026-09-09, CORPORACIONES COMPLETAS: 48 de 48)
 
 **Vitor cargada (2026-09-09) — cierra el catálogo de corporaciones entero.** *"When you play a
 card with a non-negative VP icon, gain 3 M€."* No se hizo el retrofit de VP en las 408 cartas:
