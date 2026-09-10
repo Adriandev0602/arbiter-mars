@@ -28,7 +28,7 @@ from typing import Literal, NotRequired, TypedDict
 # hexagono (bloquea colocar tiles ahi) pero no cuenta como ciudad/greenery/
 # oceano/special en ningun conteo -- ninguna funcion de conteo lo busca. Ver
 # place_nomads/move_nomads (Mars Nomads, bloque 37).
-TileType = Literal["city", "greenery", "ocean", "special", "nomad"]
+TileType = Literal["city", "greenery", "ocean", "special", "nomad", "community"]
 HexType = Literal["land", "ocean"]
 
 
@@ -227,9 +227,17 @@ def get_neighbors(hex_id: str) -> list[str]:
 
 
 def is_hex_empty(board: Board, hex_id: str) -> bool:
+    """
+    True si en `hex_id` se puede colocar un tile. Un marcador "community"
+    (Arcadian Communities) NO ocupa el hexagono: lo RESERVA, y construir ahi
+    encima es justamente su objetivo -- a diferencia del marcador "nomad",
+    que si lo bloquea mientras esta parado ahi. Ver place_community.
+    """
     if hex_id not in HEX_DEFS:
         raise UnknownHexError(f"Hexagono '{hex_id}' no existe en el mapa Tharsis")
-    return hex_id not in board
+    if hex_id not in board:
+        return True
+    return board[hex_id]["tile_type"] == "community"
 
 
 def get_adjacent_tiles(board: Board, hex_id: str) -> list[HexState]:
@@ -373,6 +381,50 @@ def place_nomads(board: Board, hex_id: str) -> Board:
     return {
         **board,
         hex_id: HexState(tile_type="nomad", owner=None, bonus_consumed=False, card=None),
+    }
+
+
+def community_owner(board: Board, hex_id: str) -> str | None:
+    """
+    Dueno del marcador "community" en `hex_id`, o None si no hay ninguno.
+    Lo consulta tools al colocar un tile: construir sobre un community PROPIO
+    paga el bonus de Arcadian Communities.
+    """
+    tile = board.get(hex_id)
+    return tile["owner"] if tile is not None and tile["tile_type"] == "community" else None
+
+
+def place_community(board: Board, hex_id: str, player_id: str, require_adjacency: bool = True) -> Board:
+    """
+    Coloca un marcador de "community" (Arcadian Communities) en un hexagono
+    vacio y no reservado por el catalogo. No es un tile: ningun conteo lo
+    encuentra y NO impide construir ahi -- al reves, reserva el hexagono para
+    que el jugador construya despues y cobre su bonus (ver community_owner e
+    is_hex_empty, que lo trata como vacio).
+
+    `require_adjacency` exige que el hexagono toque un tile propio o otro
+    community propio, como pide la accion de la carta. El primer marcador, el
+    que se coloca en el setup, va sin esa restriccion (el jugador todavia no
+    tiene nada en el mapa).
+    """
+    if not is_hex_empty(board, hex_id):
+        raise HexOccupiedError(f"El hexagono '{hex_id}' ya esta ocupado")
+    if community_owner(board, hex_id) is not None:
+        raise HexOccupiedError(f"El hexagono '{hex_id}' ya tiene un marcador de community")
+    hex_def = HEX_DEFS[hex_id]
+    if hex_def["hex_type"] == "ocean":
+        raise InvalidPlacementError(f"'{hex_id}' es un hexagono reservado para oceano")
+    if hex_def["reserved_city"] is not None:
+        raise InvalidPlacementError(f"'{hex_id}' esta reservado por el mapa ({hex_def['reserved_city']})")
+    if require_adjacency and not any(
+        tile["owner"] == player_id for tile in get_adjacent_tiles(board, hex_id)
+    ):
+        raise InvalidPlacementError(
+            f"'{hex_id}' no es adyacente a ningun tile ni community de '{player_id}'"
+        )
+    return {
+        **board,
+        hex_id: HexState(tile_type="community", owner=player_id, bonus_consumed=False, card=None),
     }
 
 

@@ -138,7 +138,36 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-09, CORPORACIONES TERMINADAS)
+### 📍 Punto de retoma (última sesión: 2026-09-09, corporaciones 47/48)
+
+**Se resolvieron 6 de las 7 corporaciones trabadas por mecánica (2026-09-09). Solo queda Vitor.**
+Misma orquestación multi-agente, pero con otro encargo: cada subagente **diseñó una mecánica
+contra el código** en vez de leer un scan. Detalle en "Corporaciones: mecánicas pendientes
+resueltas" en `CARDS_LOG.md`.
+
+**La pieza grande: `_raise_tr`.** Punto ÚNICO por el que pasa todo cambio de TR del motor (11
+sitios centralizados), con el campo nuevo `tr_raised_this_generation` (columna nueva en `players`,
+**hay que correr `schema.sql` de nuevo**). Mismo movimiento que `_increase_production` para
+Manutech, y el reemplazo fue igual de mecánico: los 622 tests previos pasaron sin tocar ninguno.
+**Destrabó 5 cartas de una**: Pristar, United Nations Mars Initiative y las 3 preludes
+(Preservation Program, Suitable Infrastructure, Terraforming Deal).
+
+**Ojo con el orden en `run_production_phase`:** Pristar se evalúa ahí mismo, leyendo el flag ANTES
+del reset (que va al final del dict de retorno). Si se leyera después, Pristar no pagaría nunca,
+**en silencio**. Hay un test que fija ese comportamiento.
+
+**Piezas nuevas:** `_raise_tr` + `requires_tr_raised_this_generation` +
+`on_production_phase_if_tr_not_raised`; `on_tag_played_conditional_by_own_resource` + tool
+`retire_card_as_event`; `on_card_played_tag_count_resource_delta` + `draw_cards_matching_tag` con
+`tag: null`; `card_resource_as_heat` + parámetro `card_resources_as_heat`; y el `TileType`
+`"community"` + `place_community` + `on_build_on_own_community`.
+
+**Lo que sigue, en orden de valor:** cargar las 3 preludes destrabadas + Colony Trade Hub (ya es
+trabajo de catálogo, no de motor: bajar sus scans y verificarlos). Vitor sigue pendiente porque
+necesita el VP impreso de las cartas, que el catálogo no tiene — el alcance mínimo sería una lista
+corta verificada de las ~10 cartas con VP negativo.
+
+### 📍 Punto de retoma anterior (2026-09-09, corporaciones 41/48)
 
 **La cola de corporaciones quedó VACÍA (2026-09-09): 41 de 48 cargadas, 7 pendientes por
 mecánica.** Se revisaron las 28 que faltaban en tres bloques (10/10/8) con subagentes Sonnet en

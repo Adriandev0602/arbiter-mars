@@ -155,6 +155,9 @@ class PlayerState(TypedDict):
     # Consultants). Se acumulan en place_ocean, se consumen con la tool
     # resolve_ocean_offer y se pierden al cerrar la generacion.
     pending_ocean_offers: int
+    # True si el jugador subio su TR en lo que va de esta generacion.
+    # Lo marca _raise_tr y lo limpia run_production_phase (ver ambas).
+    tr_raised_this_generation: bool
 
     # Igual que pending_mc_discount pero para relajar/endurecer (puede ser
     # negativo) los requisitos de temperatura/oxigeno/oceanos de la
@@ -240,6 +243,7 @@ def new_player_state() -> PlayerState:
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0, pending_ocean_offers=0,
+        tr_raised_this_generation=False,
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
         lobby_delegates=1, reserve_delegates=6,
@@ -298,7 +302,7 @@ def raise_temperature(player: PlayerState, globals_: GlobalParameters, steps: in
     applied_steps = min(steps, max_possible_steps)
 
     new_globals = {**globals_, "temperature": globals_["temperature"] + applied_steps * TEMPERATURE_STEP}
-    new_player: dict = {**player, "tr": player["tr"] + applied_steps}
+    new_player: dict = _raise_tr(dict(player), applied_steps)
     for effect in player["passive_effects"]:
         bonus = effect.get("on_temperature_raised")
         if bonus is None:
@@ -316,7 +320,7 @@ def raise_oxygen(player: PlayerState, globals_: GlobalParameters, steps: int = 1
     max_possible_steps = min(steps, OXYGEN_MAX - globals_["oxygen"])
 
     new_globals = {**globals_, "oxygen": globals_["oxygen"] + max_possible_steps}
-    new_player = {**player, "tr": player["tr"] + max_possible_steps}
+    new_player = _raise_tr(dict(player), max_possible_steps)
     return new_player, new_globals
 
 
@@ -336,7 +340,7 @@ def raise_venus(player: PlayerState, globals_: GlobalParameters, steps: int = 1)
     after = before + max_possible_steps * VENUS_STEP
 
     new_globals = {**globals_, "venus": after}
-    new_player: dict = {**player, "tr": player["tr"] + max_possible_steps}
+    new_player: dict = _raise_tr(dict(player), max_possible_steps)
     # Pasivo "on_venus_raised" (ej. Aphrodite: +2 M€ por PASO aplicado),
     # mismo patron que on_temperature_raised en raise_temperature: una vez
     # por paso realmente aplicado, cero si Venus ya estaba al tope.
@@ -349,7 +353,7 @@ def raise_venus(player: PlayerState, globals_: GlobalParameters, steps: int = 1)
     if before < VENUS_BONUS_STEP_DRAW_CARD <= after:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), 1))  # type: ignore[typeddict-item]
     if before < VENUS_BONUS_STEP_EXTRA_TR <= after:
-        new_player["tr"] = new_player["tr"] + 1
+        new_player = _raise_tr(new_player, 1)
     return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
 
 
@@ -412,7 +416,7 @@ def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[Player
         raise GlobalParameterMaxedError("Ya se colocaron los 9 tiles de oceano")
 
     new_globals = {**globals_, "oceans_placed": globals_["oceans_placed"] + 1}
-    new_player: dict = {**player, "tr": player["tr"] + 1}
+    new_player: dict = _raise_tr(dict(player), 1)
     for effect in player["passive_effects"]:
         bonus = effect.get("on_ocean_placed")
         if bonus is None:
@@ -633,9 +637,28 @@ def run_production_phase(player: PlayerState, energy_to_convert: int | None = No
         card_id: {**data, "action_used": False} for card_id, data in player["active_cards"].items()
     }
 
+    # Pristar: "during production phase, if you did not get TR so far this
+    # generation, add 1 preservation resource here and gain 6 M€". Se evalua
+    # ACA, con el flag de ENTRADA (`player`, todavia sin resetear) -- si se
+    # leyera despues del reset veria siempre False y el pasivo no pagaria
+    # nunca, en silencio. Por eso el reset va al final, en el dict de retorno,
+    # igual que pending_mc_discount y pending_ocean_offers.
+    extra_mc = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_production_phase_if_tr_not_raised")
+        if spec is None or player["tr_raised_this_generation"]:
+            continue
+        extra_mc += spec.get("mc_delta", 0)
+        card_id = effect["card_id"]
+        if spec.get("card_resource_delta") and card_id in reset_active_cards:
+            reset_active_cards[card_id] = {
+                **reset_active_cards[card_id],
+                "resources": reset_active_cards[card_id]["resources"] + spec["card_resource_delta"],
+            }
+
     return {
         **player,
-        "mc": new_mc,
+        "mc": new_mc + extra_mc,
         "steel": player["steel"] + player["steel_production"],
         "titanium": player["titanium"] + player["titanium_production"],
         "plants": player["plants"] + player["plant_production"],
@@ -647,6 +670,8 @@ def run_production_phase(player: PlayerState, energy_to_convert: int | None = No
         "pending_mc_discount": 0,
         "pending_requirement_tolerance_steps": 0,
         "pending_ocean_offers": 0,
+        # Arranca la generacion nueva sin TR subido (ver _raise_tr).
+        "tr_raised_this_generation": False,
     }
 
 
@@ -721,6 +746,31 @@ _PRODUCTION_STOCK_KEY = {
     "energy_production": "energy",
     "heat_production": "heat",
 }
+
+
+def _raise_tr(new_player: dict, delta: int) -> dict:
+    """
+    Punto UNICO por el que pasa todo cambio de Terraform Rating del motor.
+    Ademas de aplicar el delta, marca `tr_raised_this_generation` cuando el
+    cambio es un AUMENTO real -- el flag que necesitan las cartas que
+    preguntan "¿subiste el TR en esta generacion?".
+
+    Cinco cartas dependen de este flag: United Nations Mars Initiative
+    ("if your TR was raised this generation, pay 3 M€ to raise it 1 more"),
+    Pristar (al reves: paga solo si NO subiste TR) y las tres preludes
+    Preservation Program / Suitable Infrastructure / Terraforming Deal.
+
+    Un delta negativo (ej. tr_delta_reduced_by_influence, o la reversion de
+    una oferta de oceano no aceptada) pasa igual por aca pero NO marca el
+    flag: bajar el TR no es haberlo subido. Mismo criterio y misma forma que
+    _increase_production, que centraliza los aumentos de produccion.
+
+    El flag se limpia en run_production_phase, al cerrar la generacion.
+    """
+    new_player = {**new_player, "tr": new_player["tr"] + delta}
+    if delta > 0:
+        new_player["tr_raised_this_generation"] = True
+    return new_player
 
 
 def _increase_production(new_player: dict, key: str, delta: int) -> dict:
@@ -853,6 +903,12 @@ def check_card_requirements(
       - "max_oxygen": oxigeno maximo en % (ej. Domed Crater: 7).
       - "min_oceans" / "max_oceans": cantidad minima/maxima de tiles de
         oceano colocados (ej. Dust Seals: maximo 3).
+      - "requires_tr_raised_this_generation": bool -- True exige que el
+        jugador YA haya subido su TR en esta generacion (ej. United Nations
+        Mars Initiative: "if your TR was raised this generation, pay 3 M€ to
+        raise it 1 step more"); False exige lo contrario. Lee el campo
+        `tr_raised_this_generation`, que marca _raise_tr y limpia
+        run_production_phase.
       - "min_tr": Terraform Rating minimo del jugador (ej. Terraforming
         Contract: 25). Requiere pasar `player`.
       - "max_colonies_owned": N -- maximo de colonias que el jugador puede
@@ -1080,6 +1136,15 @@ def check_card_requirements(
             raise CardRequirementNotMetError("Este requisito necesita el estado del jugador (TR)")
         if player["tr"] < requirements["min_tr"]:
             raise CardRequirementNotMetError(f"Requiere TR >= {requirements['min_tr']}, hay {player['tr']}")
+    if "requires_tr_raised_this_generation" in requirements:
+        if player is None:
+            raise CardRequirementNotMetError("Este requisito necesita el estado del jugador (TR)")
+        expected = requirements["requires_tr_raised_this_generation"]
+        if bool(player["tr_raised_this_generation"]) is not bool(expected):
+            raise CardRequirementNotMetError(
+                "Requiere haber subido el TR en esta generacion" if expected
+                else "Requiere NO haber subido el TR en esta generacion"
+            )
     if "max_colonies_owned" in requirements:
         if player is None:
             raise CardRequirementNotMetError("Este requisito necesita el estado del jugador (colonias)")
@@ -1523,7 +1588,7 @@ def apply_card_effect(
         count = player["tags_played"].get(spec["tag"], 0)
         if spec.get("include_this"):
             count += 1
-        new_player["tr"] = new_player["tr"] + count * spec.get("per_tag", 1)
+        new_player = _raise_tr(new_player, count * spec.get("per_tag", 1))
 
     if "production_delta_per_colony" in effects:
         spec = effects["production_delta_per_colony"]
@@ -1587,7 +1652,7 @@ def apply_card_effect(
     if "tr_delta_reduced_by_influence" in effects:
         spec = effects["tr_delta_reduced_by_influence"]
         steps = max(0, spec["base_reduction"] - influence)
-        new_player["tr"] = new_player["tr"] - steps
+        new_player = _raise_tr(new_player, -steps)
 
     if "lower_temperature_steps" in effects and new_globals["temperature"] < TEMPERATURE_MAX:
         # Si la temperatura ya esta en su maximo, este efecto NO se aplica: un
@@ -1648,7 +1713,7 @@ def apply_card_effect(
             if score >= min_score:
                 tr_gain = tr
                 break
-        new_player["tr"] = new_player["tr"] + tr_gain
+        new_player = _raise_tr(new_player, tr_gain)
 
     if "production_delta_per_tag_plus_influence" in effects:
         spec = effects["production_delta_per_tag_plus_influence"]
@@ -1752,14 +1817,14 @@ def apply_card_effect(
                 break
             p2, g2 = place_ocean(PlayerState(**new_player), GlobalParameters(**new_globals))  # type: ignore[typeddict-item]
             new_player, new_globals = dict(p2), dict(g2)
-            new_player["tr"] = new_player["tr"] - 1  # el TR se revierte: este oceano no lo otorga
+            new_player = _raise_tr(new_player, -1)  # el TR se revierte: este oceano no lo otorga
 
     if "place_city_tiles" in effects:
         for _ in range(effects["place_city_tiles"]):
             new_globals = dict(place_city_tile(GlobalParameters(**new_globals)))  # type: ignore[typeddict-item]
 
     if "tr_delta" in effects:
-        new_player["tr"] = new_player["tr"] + effects["tr_delta"]
+        new_player = _raise_tr(new_player, effects["tr_delta"])
 
     if "draw_cards" in effects:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), effects["draw_cards"]))  # type: ignore[typeddict-item]
@@ -2513,7 +2578,7 @@ def use_card_action(
         p2, g2 = raise_venus(PlayerState(**new_player), GlobalParameters(**new_globals), steps=gains["raise_venus_steps"])  # type: ignore[typeddict-item]
         new_player, new_globals = dict(p2), dict(g2)
     if "tr_delta" in gains:
-        new_player["tr"] = new_player["tr"] + gains["tr_delta"]
+        new_player = _raise_tr(new_player, gains["tr_delta"])
     if "mc_per_counter" in gains:
         new_player["mc"] = new_player["mc"] + new_globals[gains["mc_per_counter"]]
     if "mc_per_card_resource" in gains:
@@ -2878,6 +2943,39 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         cualquier carta con su tag, no dependen de una carta activa
         puntual). Ver tools.play_card (parametro card_resource_to_pay) y
         rules_engine.spend_active_card_resource.
+      - "on_production_phase_if_tr_not_raised": {"mc_delta": N,
+        "card_resource_delta": M} -- se cobra DENTRO de run_production_phase,
+        y solo si el jugador NO subio su TR en esa generacion (ej. Pristar:
+        +6 M€ y +1 preservation). Lee `tr_raised_this_generation` ANTES del
+        reset; ver el comentario en run_production_phase, que explica por que
+        el orden importa.
+      - "on_tag_played_conditional_by_own_resource": {"matching_tags":
+        ["<tag>", ...], "resource_threshold": N (default 1), "if_at_least":
+        {"card_resource_delta": M, "tr_delta": K}, "if_below": {...}} -- la
+        rama "if_at_least" se aplica sola cuando la carta tiene al menos N
+        recursos guardados; la rama "if_below" es OPCIONAL y la cobra la tool
+        retire_card_as_event, porque ademas retira la carta (ej. Pharmacy
+        Union: con diseases, -1 disease y +1 TR; sin ninguno, el jugador puede
+        llevarse 3 TR y mandarla a la pila de eventos).
+      - "on_card_played_tag_count_resource_delta": {"count": N, "resource":
+        "<recurso>", "resource_delta": M} (o una LISTA de specs) -- paga por
+        la CANTIDAD EXACTA de tags de la carta jugada, no por cuales son (ej.
+        Sagitta Frontier Services: 4 M€ por carta sin tags, 1 M€ por carta de
+        exactamente 1 tag). Hermana de on_card_played_min_tags_add_resource
+        (Spire), que usa un minimo en vez de una cantidad exacta.
+      - "card_resource_as_heat": {"resource_type": "<tipo>", "heat_value": N}
+        -- los recursos guardados en esa carta activa se pueden gastar como
+        CALOR, a N cada uno (ej. Stormcraft Incorporated: floaters a 2). No es
+        una via de pago mas: el calor no compra nada, se gasta en los dos
+        unicos sumideros del motor (convertir 8 en temperatura, y las acciones
+        con cost.heat), asi que se acredita antes de que esos cobren. Ver
+        spend_card_resource_as_heat y el parametro `card_resources_as_heat` de
+        tools.convert_resources / tools.use_card_action.
+      - "on_build_on_own_community": {"mc_delta": N} -- N M€ al colocar un
+        tile sobre un hexagono que el jugador tenia reservado con un marcador
+        de "community" (ej. Arcadian Communities: 3). Ver board.place_community
+        y tools._apply_community_build_bonus, enganchado en las tres vias de
+        colocacion real en el mapa.
       - "standard_project_discount_mc": {"projects": ["<nombre>", ...]
         (opcional: sin el campo vale para todos), "amount": N} -- paga N M€
         menos por esos proyectos estandar (ej. Thorgate, corporaciones
@@ -3013,6 +3111,88 @@ def compute_trade_cost_discount(player: PlayerState) -> int:
     for effect in player["passive_effects"]:
         discount += effect.get("trade_cost_discount", 0)
     return discount
+
+
+def retire_card_as_event(player: PlayerState, card_id: str) -> PlayerState:
+    """
+    Retira una carta activa "a la pila de eventos": la saca de `active_cards`
+    y de `passive_effects` (deja de estar en juego), y aplica el `tr_delta`
+    que declare la rama `if_below` de su pasivo
+    "on_tag_played_conditional_by_own_resource".
+
+    La usa Pharmacy Union: *"if there are no diseases here, you MAY raise your
+    TR 3 steps and place this card in your event pile. It now counts as a
+    played event."* Es la rama OPCIONAL, por eso vive en su propia funcion en
+    vez de dispararse sola dentro de apply_tag_played_resource_bonuses.
+
+    `played_cards` no se toca: la carta ya figura ahi desde que se jugo, y ese
+    historial es justamente lo que el motor entiende por "pila de eventos"
+    (ver el effect retrieve_played_events_to_hand de Astra Mechanica). Sumar
+    la carta al contador global `events_played` es responsabilidad del caller
+    (tools), que es quien tiene el estado compartido.
+
+    Lanza CardEffectError si la carta no esta activa, si no tiene el pasivo, o
+    si todavia le quedan recursos guardados (la rama opcional exige 0).
+    """
+    if card_id not in player["active_cards"]:
+        raise CardEffectError(f"La carta '{card_id}' no esta activa para este jugador")
+    spec = next(
+        (e.get("on_tag_played_conditional_by_own_resource") for e in player["passive_effects"]
+         if e["card_id"] == card_id and "on_tag_played_conditional_by_own_resource" in e),
+        None,
+    )
+    if spec is None:
+        raise CardEffectError(f"La carta '{card_id}' no se puede retirar a la pila de eventos")
+    if player["active_cards"][card_id]["resources"] >= spec.get("resource_threshold", 1):
+        raise CardEffectError(
+            f"'{card_id}' todavia guarda recursos: esta rama solo aplica cuando no le queda ninguno"
+        )
+
+    branch = spec.get("if_below", {})
+    new_player: dict = {
+        **player,
+        "active_cards": {k: v for k, v in player["active_cards"].items() if k != card_id},
+        "passive_effects": [e for e in player["passive_effects"] if e["card_id"] != card_id],
+    }
+    return PlayerState(**_raise_tr(new_player, branch.get("tr_delta", 0)))  # type: ignore[typeddict-item]
+
+
+def spend_card_resource_as_heat(player: PlayerState, amount: int) -> PlayerState:
+    """
+    Gasta `amount` recursos guardados en la carta activa que tenga el pasivo
+    "card_resource_as_heat": {"resource_type": "<tipo>", "heat_value": N} y
+    acredita su equivalente en CALOR (ej. Stormcraft Incorporated: "floaters
+    on this card may be used as 2 heat each").
+
+    A diferencia de las otras vias de pago (que pagan CARTAS o PROYECTOS
+    ESTANDAR), esta acredita calor de stock: el calor no se usa para comprar
+    nada, se gasta en los dos unicos sumideros del motor -- convertir 8 calor
+    en un paso de temperatura, y las acciones de carta con `cost.heat`. Por
+    eso alcanza con acreditarlo ANTES de que esos dos caminos cobren, en vez
+    de agregar una sexta via de pago generica: el calor acreditado se gasta
+    solo, por el camino de siempre.
+
+    Lanza CardEffectError si el jugador no tiene el pasivo, e
+    InsufficientResourcesError si la carta no tiene tantos recursos.
+    """
+    if amount <= 0:
+        return player
+    for effect in player["passive_effects"]:
+        spec = effect.get("card_resource_as_heat")
+        if spec is None:
+            continue
+        card_id = effect["card_id"]
+        available = player["active_cards"].get(card_id, {}).get("resources", 0)
+        if available < amount:
+            raise InsufficientResourcesError(
+                f"'{card_id}' tiene {available} {spec.get('resource_type', 'recurso')}(s), "
+                f"se quisieron gastar {amount}"
+            )
+        new_player = spend_active_card_resource(player, card_id, amount)
+        return {**new_player, "heat": new_player["heat"] + amount * spec.get("heat_value", 1)}
+    raise CardEffectError(
+        "Ningun efecto pasivo del jugador permite usar recursos de carta como calor"
+    )
 
 
 def compute_standard_project_discount(player: PlayerState, project_name: str) -> int:
@@ -3297,6 +3477,10 @@ def apply_tag_played_resource_bonuses(
             }
             changed = True
 
+    # Acumulador de TR de los pasivos por tag (ej. Pharmacy Union). Se aplica
+    # al final via _raise_tr, para que marque tr_raised_this_generation.
+    tr_gains = 0
+
     # Spire: "when you play a card with AT LEAST 2 tags, add 1 science resource
     # here". No mira CUALES son los tags -- mira cuantos trae la carta jugada,
     # asi que dispara una sola vez por carta, no una vez por tag.
@@ -3349,6 +3533,52 @@ def apply_tag_played_resource_bonuses(
         if matches:
             production_gains.append((spec["production"], matches * spec.get("production_delta", 1)))
 
+    # Pharmacy Union: "when you play a science tag, remove 1 disease from here
+    # and raise your TR 1 step, OR, if there are no diseases here, you may
+    # raise your TR 3 steps and place this card in your event pile". La rama
+    # AUTOMATICA (hay recursos) se resuelve aca; la otra es OPCIONAL y ademas
+    # retira la carta, asi que se cobra con la tool retire_card_as_event --
+    # mismo criterio que on_ocean_placed_offer, que tampoco se puede resolver
+    # dentro de un camino que corre sin interaccion.
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_tag_played_conditional_by_own_resource")
+        if spec is None:
+            continue
+        target_card_id = effect["card_id"]
+        if target_card_id not in new_active_cards:
+            continue
+        matching_tags = set(spec.get("matching_tags", []))
+        matches = sum(1 for t in played_card_tags if t in matching_tags)
+        if not matches:
+            continue
+        branch = spec.get("if_at_least")
+        if branch is None:
+            continue
+        for _ in range(matches):
+            current_res = new_active_cards[target_card_id]["resources"]
+            if current_res < spec.get("resource_threshold", 1):
+                break
+            new_active_cards[target_card_id] = {
+                **new_active_cards[target_card_id],
+                "resources": current_res + branch.get("card_resource_delta", 0),
+            }
+            tr_gains += branch.get("tr_delta", 0)
+            changed = True
+
+    # Sagitta Frontier Services: "when you play a card with NO TAGS, including
+    # this, gain 4 M€. When you play a card with EXACTLY 1 TAG, gain 1 M€".
+    # Misma familia que on_card_played_min_tags_add_resource (Spire), pero
+    # sobre cantidad EXACTA y pagando al stock: por eso acepta una lista de
+    # specs, una por cada cantidad de tags premiada.
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_card_played_tag_count_resource_delta")
+        if spec is None:
+            continue
+        for entry in (spec if isinstance(spec, list) else [spec]):
+            if len(played_card_tags) == entry["count"]:
+                key = entry.get("resource", "mc")
+                stock_gains[key] = stock_gains.get(key, 0) + entry.get("resource_delta", 0)
+
     # Point Luna: "when you play an Earth tag, including this, draw a card".
     # Automatico, no una eleccion (a diferencia de on_any_tag_played_choice).
     cards_to_draw = 0
@@ -3360,7 +3590,7 @@ def apply_tag_played_resource_bonuses(
         matches = sum(1 for t in played_card_tags if t in matching_tags)
         cards_to_draw += matches * spec.get("cards", 1)
 
-    if not changed and not stock_gains and not production_gains and not cards_to_draw:
+    if not changed and not stock_gains and not production_gains and not cards_to_draw and not tr_gains:
         return player
     new_player = {**player, "active_cards": new_active_cards}
     for key, amount in stock_gains.items():
@@ -3369,6 +3599,8 @@ def apply_tag_played_resource_bonuses(
         new_player = _increase_production(new_player, key, amount)
     if cards_to_draw:
         new_player = dict(draw_cards_to_hand(PlayerState(**new_player), cards_to_draw))  # type: ignore[typeddict-item]
+    if tr_gains:
+        new_player = _raise_tr(new_player, tr_gains)
     return new_player
 
 

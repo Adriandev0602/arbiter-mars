@@ -25,6 +25,8 @@ from app.agent.board import (
     count_cities_and_special_tiles_adjacent_to_ocean,
     remove_greenery_tile,
     place_nomads,
+    place_community,
+    community_owner,
     move_nomads,
     find_nomads,
     place_cathedral,
@@ -623,3 +625,50 @@ def test_remove_ocean_tile_rejects_empty_hex_and_non_ocean():
     board, _, _ = place_city_tile(board, "05", "p1")
     with pytest.raises(InvalidPlacementError):
         remove_ocean_tile(board, "05")
+
+
+def test_community_reserva_el_hex_sin_ocuparlo():
+    # Arcadian Communities: el marcador NO es un tile -- reserva el hexagono
+    # pero se puede construir encima (al reves que el marcador de nomads).
+    board = new_board()
+    land = next(h for h, d in HEX_DEFS.items()
+                if d["hex_type"] == "land" and d["reserved_city"] is None)
+
+    con_community = place_community(board, land, "p1", require_adjacency=False)
+    assert community_owner(con_community, land) == "p1"
+    # Sigue contando como VACIO: construir ahi es justamente el objetivo.
+    assert is_hex_empty(con_community, land) is True
+    assert can_place_city(con_community, land) is True
+    # Y ningun conteo de tiles lo encuentra.
+    assert count_tiles_of_type(con_community, "city") == 0
+
+    # No se puede poner dos veces en el mismo hexagono.
+    with pytest.raises(HexOccupiedError):
+        place_community(con_community, land, "p1", require_adjacency=False)
+
+
+def test_community_exige_adyacencia_salvo_la_primera():
+    board = new_board()
+    land = next(h for h, d in HEX_DEFS.items()
+                if d["hex_type"] == "land" and d["reserved_city"] is None)
+    lejano = next(h for h, d in HEX_DEFS.items()
+                  if d["hex_type"] == "land" and d["reserved_city"] is None
+                  and h != land and h not in ADJACENCY[land])
+
+    board = place_community(board, land, "p1", require_adjacency=False)
+    # Un hexagono que no toca nada propio se rechaza.
+    with pytest.raises(InvalidPlacementError):
+        place_community(board, lejano, "p1")
+    # Uno adyacente al community anterior, si.
+    vecino = next(h for h in ADJACENCY[land]
+                  if HEX_DEFS[h]["hex_type"] == "land" and HEX_DEFS[h]["reserved_city"] is None)
+    assert community_owner(place_community(board, vecino, "p1"), vecino) == "p1"
+
+
+def test_community_no_va_en_oceano_ni_en_hex_reservado():
+    board = new_board()
+    oceano = next(h for h, d in HEX_DEFS.items() if d["hex_type"] == "ocean")
+    with pytest.raises(InvalidPlacementError):
+        place_community(board, oceano, "p1", require_adjacency=False)
+    with pytest.raises(InvalidPlacementError):
+        place_community(board, NOCTIS_CITY_HEX_ID, "p1", require_adjacency=False)

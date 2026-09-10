@@ -114,9 +114,9 @@ from (values
 ) as m(nombre, cid)
 where q.name = m.nombre;
 
--- Revisada pero pendiente por mecanica (ver CARDS_LOG.md).
-update corporation_review_queue set reviewed = true, corporation_id = null
-where name = 'Arcadian Communities';
+-- Arcadian Communities quedo pendiente hasta 2026-09-09, cuando se agrego el
+-- marcador "community" al tablero (ver el bloque de mecanicas pendientes al
+-- final de este archivo).
 
 -- Bloque 2 (Ecotec -> Manutech): 10 de 10 cargadas. Manutech necesito el
 -- hook generico "subio una produccion" (rules_engine._increase_production,
@@ -318,8 +318,9 @@ where q.name = m.nombre;
 --     generation" -- necesita el hook "subio el TR", la misma familia que
 --     esperan Preservation Program / Suitable Infrastructure / Terraforming
 --     Deal de las preludes pendientes.
-update corporation_review_queue set reviewed = true, corporation_id = null
-where name in ('Pharmacy Union', 'Pristar');
+-- Las dos se cargaron el 2026-09-09 (ver el bloque de mecanicas pendientes al
+-- final de este archivo): Pristar con el hook "subio el TR" y Pharmacy Union
+-- con la rama condicional por recursos propios + retire_card_as_event.
 
 -- ---------------------------------------------------------------------------
 -- Bloque 4 (Recyclon -> TerraLabs Research): 8 de 10 cargadas.
@@ -425,8 +426,8 @@ where q.name = m.nombre;
 --     each" -- una carta activa que funciona como stock de CALOR en cualquier
 --     punto donde el motor gaste calor (proyecto estandar, conversion 8->TR),
 --     no solo para pagar cartas como card_resource_payment.
-update corporation_review_queue set reviewed = true, corporation_id = null
-where name in ('Sagitta Frontier Services', 'Stormcraft Incorporated');
+-- Las dos se cargaron el 2026-09-09 (ver el bloque de mecanicas pendientes al
+-- final de este archivo).
 
 -- ---------------------------------------------------------------------------
 -- Bloque 5 (Tharsis Republic -> Vitor): 6 de 8 cargadas. Cierra la cola.
@@ -509,5 +510,113 @@ where q.name = m.nombre;
 --     No es solo vocabulario faltante: NINGUNA carta del catalogo tiene
 --     cargado su VP impreso, asi que el pasivo no tendria de donde leerlo.
 --     Necesita un retrofit de `vp_icon` en el catalogo entero primero.
+-- United Nations Mars Initiative se cargo el 2026-09-09 con el hook "subio el
+-- TR" (ver el bloque final). Vitor sigue pendiente.
 update corporation_review_queue set reviewed = true, corporation_id = null
-where name in ('United Nations Mars Initiative', 'Vitor');
+where name = 'Vitor';
+
+-- ---------------------------------------------------------------------------
+-- Mecanicas pendientes resueltas (2026-09-09): 6 de las 7 corporaciones que
+-- estaban trabadas por falta de mecanica. Solo queda Vitor.
+--
+-- Las cinco piezas nuevas, en orden de valor:
+--   1. `_raise_tr` + `tr_raised_this_generation`: punto UNICO por el que pasa
+--      todo cambio de TR del motor (11 sitios centralizados), analogo a lo que
+--      `_increase_production` hizo por Manutech. Destraba Pristar y United
+--      Nations Mars Initiative -- y las 3 preludes que esperaban lo mismo.
+--   2. `on_tag_played_conditional_by_own_resource` + tool retire_card_as_event
+--      (Pharmacy Union).
+--   3. `on_card_played_tag_count_resource_delta` + `draw_cards_matching_tag`
+--      con tag null = "carta SIN tags" (Sagitta Frontier Services).
+--   4. `card_resource_as_heat` + parametro `card_resources_as_heat` en las dos
+--      tools que gastan calor (Stormcraft Incorporated).
+--   5. TileType "community" + place_community + `on_build_on_own_community`
+--      (Arcadian Communities).
+insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) values
+    -- 40 M€ y 10 de acero. Coloca marcadores de "community" que reservan
+    -- hexagonos; construir sobre uno propio da 3 M€. El marcador NO es un
+    -- tile: no lo encuentra ningun conteo y no impide construir ahi (al reves
+    -- que el de nomads). El primero va en el setup sin exigir adyacencia
+    -- (tool place_community con first_action=true); los demas, con la accion.
+    -- Su accion NO va en `effects.action`: colocar el marcador necesita un
+    -- hex_id, y las colocaciones en el mapa se piden siempre con su propia
+    -- tool (place_community), igual que el greenery de Philares o la ciudad
+    -- de Tharsis Republic. `effects` solo lleva lo que resuelve el motor.
+    ('arcadian_communities', 'Arcadian Communities', 'Promo', '{}', 40,
+     '{"resource_deltas": {"steel": 10},
+       "passive": {"on_build_on_own_community": {"mc_delta": 3}}}'::jsonb),
+
+    -- 54 M€ y roba una carta con tag science. Guarda "diseases". Dos mitades:
+    -- al jugar CUALQUIER tag microbe (incluidos sus 2 propios, que se
+    -- autodisparan al elegirla) suma 1 disease y pierde 4 M€ -- o lo que
+    -- tenga, porque on_tag_played_resource_delta ya cappea en 0 sin lanzar
+    -- error. Al jugar un tag science, saca 1 disease y sube 1 TR; si no le
+    -- queda ninguno, el jugador PUEDE retirarla con la tool
+    -- retire_card_as_event y llevarse 3 TR (esa rama es opcional, por eso no
+    -- se dispara sola).
+    ('pharmacy_union', 'Pharmacy Union', 'Promo', '{microbe,microbe}', 54,
+     '{"draw_cards_matching_tag": {"tag": "science", "n": 1},
+       "becomes_active": true, "active_card_resource_type": "disease",
+       "passive": {"on_tag_played_add_resource": {"matching_tags": ["microbe"], "resource_delta": 1},
+                   "on_tag_played_resource_delta": {"matching_tags": ["microbe"],
+                                                    "resource": "mc", "resource_delta": -4},
+                   "on_tag_played_conditional_by_own_resource": {
+                       "matching_tags": ["science"], "resource_threshold": 1,
+                       "if_at_least": {"card_resource_delta": -1, "tr_delta": 1},
+                       "if_below": {"tr_delta": 3}}}}'::jsonb),
+
+    -- 53 M€ y arranca en TR 18 (tr_delta -2 sobre el TR_START de 20). Guarda
+    -- "preservation". En cada fase de produccion, si NO subio el TR en esa
+    -- generacion, suma 1 preservation y 6 M€ (el "1 VP per preservation
+    -- resource" no se modela: el motor no puntua).
+    ('pristar', 'Pristar', 'Turmoil', '{}', 53,
+     '{"tr_delta": -2, "becomes_active": true,
+       "active_card_resource_type": "preservation",
+       "passive": {"on_production_phase_if_tr_not_raised": {"mc_delta": 6,
+                                                            "card_resource_delta": 1}}}'::jsonb),
+
+    -- 31 M€, +1 produccion de energia y +2 de M€, y roba una carta SIN NINGUN
+    -- tag (draw_cards_matching_tag con tag null). Effect: 4 M€ por cada carta
+    -- sin tags jugada -- incluida ella misma al elegirla, que no tiene
+    -- ninguno -- y 1 M€ por cada carta de EXACTAMENTE 1 tag.
+    ('sagitta_frontier_services', 'Sagitta Frontier Services', 'Prelude 2', '{}', 31,
+     '{"production_deltas": {"energy_production": 1, "mc_production": 2},
+       "draw_cards_matching_tag": {"tag": null, "n": 1},
+       "passive": {"on_card_played_tag_count_resource_delta": [
+           {"count": 0, "resource": "mc", "resource_delta": 4},
+           {"count": 1, "resource": "mc", "resource_delta": 1}]}}'::jsonb),
+
+    -- 48 M€. Guarda floaters. Accion: 1 floater a CUALQUIER carta (igual que
+    -- Celestic). Effect: cada floater de ESTA carta vale 2 de calor, que se
+    -- gasta por el parametro `card_resources_as_heat` de convert_resources y
+    -- use_card_action -- los dos unicos sumideros de calor del motor.
+    ('stormcraft_incorporated', 'Stormcraft Incorporated', 'Colonies', '{jovian}', 48,
+     '{"becomes_active": true, "active_card_resource_type": "floater",
+       "passive": {"card_resource_as_heat": {"resource_type": "floater", "heat_value": 2}},
+       "action": {"cost": {}, "gains": {"target_card_resource_delta_allow_self": 1}}}'::jsonb),
+
+    -- 40 M€. Accion: si YA subiste el TR en esta generacion, pagar 3 M€ para
+    -- subirlo 1 paso mas (requisito `requires_tr_raised_this_generation`).
+    ('united_nations_mars_initiative', 'United Nations Mars Initiative', 'Base', '{earth}', 40,
+     '{"becomes_active": true,
+       "action": {"requirements": {"requires_tr_raised_this_generation": true},
+                  "cost": {"mc": 3}, "gains": {"tr_delta": 1}}}'::jsonb)
+on conflict (id) do update set
+    name = excluded.name, expansion = excluded.expansion, tags = excluded.tags,
+    starting_mc = excluded.starting_mc, effects = excluded.effects;
+
+update corporation_review_queue q set reviewed = true, corporation_id = m.cid
+from (values
+    ('Arcadian Communities','arcadian_communities'),('Pharmacy Union','pharmacy_union'),
+    ('Pristar','pristar'),('Sagitta Frontier Services','sagitta_frontier_services'),
+    ('Stormcraft Incorporated','stormcraft_incorporated'),
+    ('United Nations Mars Initiative','united_nations_mars_initiative')
+) as m(nombre, cid)
+where q.name = m.nombre;
+
+-- Unica corporacion que sigue pendiente: Vitor ("when you play a card with a
+-- NON-NEGATIVE VP icon, gain 3 M€"). No es vocabulario faltante -- ninguna
+-- carta del catalogo tiene cargado su VP impreso, asi que el pasivo no
+-- tendria de donde leerlo. El alcance minimo para destrabarla es cargar a
+-- mano la lista corta (~10) de cartas con icono de VP NEGATIVO y asumir el
+-- resto como no-negativo; se pospuso porque destraba una sola carta.

@@ -90,6 +90,7 @@ do $$ begin
     alter table if exists players add column if not exists lobby_delegates integer not null default 1;
     alter table if exists players add column if not exists reserve_delegates integer not null default 6;
     alter table if exists players add column if not exists pending_ocean_offers integer not null default 0;
+    alter table if exists players add column if not exists tr_raised_this_generation boolean not null default false;
 exception when undefined_table then null;
 end $$;
 
