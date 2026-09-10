@@ -138,7 +138,25 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-09, las 4 preludes destrabadas ya están cargadas)
+### 📍 Punto de retoma (última sesión: 2026-09-09, CORPORACIONES COMPLETAS: 48 de 48)
+
+**Vitor cargada (2026-09-09) — cierra el catálogo de corporaciones entero.** *"When you play a
+card with a non-negative VP icon, gain 3 M€."* No se hizo el retrofit de VP en las 408 cartas:
+alcanzó con una lista corta y verificada (`excluded_card_ids`) de las pocas cartas con VP
+**negativo** impreso — `nuclear_zone` (-2 fija), `bribed_committee` (-2 fija), `vermin` (-1
+condicional por ciudad). Cada una se re-verificó contra su scan antes de cargar, mismo rigor que
+el resto del catálogo — la lista no se armó de memoria. Pieza nueva:
+`on_card_played_with_vp_icon`, enganchada en `play_card`, `play_prelude` y `choose_corporation`
+(esta última para el "including this": Vitor misma no tiene ícono de VP, así que paga al
+elegirla). No es necesariamente exhaustiva — se amplía si aparece otra carta con VP negativo
+confirmada.
+
+**Nota de proceso:** el PR anterior (preludes de TR/producción) seguía sin mergear cuando arrancó
+esta sesión — se ramificó desde ahí en vez de desde `main`, siguiendo la convención de cadenas del
+repo, para no repetir el problema de recuperación de una sesión anterior (ver "Corporaciones,
+bloques 3-5" más abajo).
+
+### 📍 Punto de retoma anterior (2026-09-09, las 4 preludes destrabadas ya están cargadas)
 
 **Preservation Program, Suitable Infrastructure, Terraforming Deal y Colony Trade Hub, cargadas
 (2026-09-09).** Las 4 preludes que el hook de TR/producción del bloque anterior destrabó. Bajados
@@ -635,8 +653,7 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
 2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
    Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
-3. ~~Corporaciones: seguir la cola~~ — **cola cerrada el 2026-09-09** (41 de 48 cargadas). Lo
-   que queda son 7 pendientes por mecánica, no cartas sin revisar.
+3. ~~Corporaciones~~ — **COMPLETO el 2026-09-09: 48 de 48 cargadas**, cero pendientes.
 4. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
    quedan sí necesitan mecánicas grandes (sub-mazo de Prelude, hook genérico "subió el TR",
    corporaciones). Siguen pendientes también las 3 cartas dudosas de proyecto

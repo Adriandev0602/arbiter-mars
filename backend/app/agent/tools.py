@@ -1246,6 +1246,7 @@ def play_card(
     )
     new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
     new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
+    new_player = engine.apply_card_played_vp_icon_bonus(new_player, card_id)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -2547,6 +2548,7 @@ def play_prelude(
     new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
     new_player = engine.increment_tags_played(new_player, tags)
     new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
+    new_player = engine.apply_card_played_vp_icon_bonus(new_player, prelude_id)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -2618,6 +2620,7 @@ def choose_corporation(player_id: str, corporation_id: str) -> dict:
     new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
     new_player = engine.increment_tags_played(new_player, tags)
     new_player = engine.register_played_card(new_player, corporation_id)
+    new_player = engine.apply_card_played_vp_icon_bonus(new_player, corporation_id)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
