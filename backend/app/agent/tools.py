@@ -173,8 +173,54 @@ def _apply_community_build_bonus(
     return {**player, "mc": player["mc"] + bonus}  # type: ignore[return-value]
 
 
+def _apply_mars_first_ruling_bonus(player: dict, ruling_party: str | None) -> dict:
+    """
+    Ruling Policy de Mars First (rulebook oficial, pagina 6): "When you
+    place any tile on Mars, you receive 1 steel." Este motor solo modela
+    el mapa Tharsis (nunca los tiles fuera de mapa como Ganymede Colony),
+    asi que "on Mars" es sencillamente "paso por uno de los wrappers de
+    colocacion real" -- no hace falta distinguir nada mas.
+    """
+    if ruling_party != "mars_first":
+        return player
+    return {**player, "steel": player["steel"] + 1}
+
+
+def _apply_reds_ruling_policy(player_before: dict, player_after: dict, ruling_party: str | None) -> dict:
+    """
+    Ruling Policy de Reds (rulebook oficial, pagina 6): "Whenever a player
+    takes an action that raises their TR, that player must immediately pay
+    Reds 3 M€ per step raised. If you don't have enough M€, you cannot take
+    the action." No toca engine._raise_tr (que sigue puro, sin saber de
+    Turmoil): se aplica aca, en el BORDE de tools.py, comparando el TR de
+    `player_before`/`player_after` -- mismo idioma diff-antes/despues que
+    apply_ruling_bonus en resolve_new_government. Se llama desde cada tool
+    que representa una ACCION del jugador (play_card, use_card_action,
+    play_prelude, use_standard_project, convert_resources) -- NO desde
+    efectos automaticos como la revision de TR o el propio Ruling Bonus de
+    Reds en resolve_new_government, que no son "una accion que el jugador
+    toma".
+
+    Lanza InsufficientResourcesError si el cargo deja el MC en negativo --
+    el llamador debe evitar guardar el estado en ese caso (la accion entera
+    se cancela, como pide el rulebook).
+    """
+    if ruling_party != "reds":
+        return player_after
+    steps = player_after["tr"] - player_before["tr"]
+    if steps <= 0:
+        return player_after
+    cost = steps * 3
+    if player_after["mc"] < cost:
+        raise engine.InsufficientResourcesError(
+            f"Reds gobierna: subir el TR {steps} paso(s) cuesta {cost} MC, hay {player_after['mc']}"
+        )
+    return {**player_after, "mc": player_after["mc"] - cost}
+
+
 def _place_ocean_and_apply_bonus(
-    board: boardlib.Board, player: engine.PlayerState, hex_id: str, on_land: bool = False
+    board: boardlib.Board, player: engine.PlayerState, hex_id: str, on_land: bool = False,
+    ruling_party: str | None = None,
 ) -> tuple[boardlib.Board, engine.PlayerState]:
     """
     on_land=True: para cartas como Artificial Lake, que colocan el oceano
@@ -187,12 +233,14 @@ def _place_ocean_and_apply_bonus(
     new_player = _apply_hex_bonus(player, hex_bonus)
     new_player = _apply_community_build_bonus(new_player, board, hex_id)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
+    new_player = _apply_mars_first_ruling_bonus(new_player, ruling_party)
     return new_board, new_player  # type: ignore[return-value]
 
 
 def _place_city_and_apply_bonus(
     board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str,
     require_adjacent_cities: int | None = None, placement_bonus_multiplier: int = 1,
+    ruling_party: str | None = None,
 ) -> tuple[boardlib.Board, engine.PlayerState]:
     """
     require_adjacent_cities: para cartas como Urbanized Area, que EXIGEN
@@ -217,6 +265,7 @@ def _place_city_and_apply_bonus(
     new_player = _apply_community_build_bonus(new_player, board, hex_id)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     new_player = engine.apply_city_placed_bonuses(new_player)
+    new_player = _apply_mars_first_ruling_bonus(new_player, ruling_party)
     return new_board, new_player  # type: ignore[return-value]
 
 
@@ -271,7 +320,7 @@ def _matches_required_tag(required_tag, card_tags: tuple[str, ...]) -> bool:
 
 def _place_greenery_and_apply_bonus(
     board: boardlib.Board, player: engine.PlayerState, hex_id: str, owner_id: str,
-    ignore_restrictions: bool = False,
+    ignore_restrictions: bool = False, ruling_party: str | None = None,
 ) -> tuple[boardlib.Board, engine.PlayerState]:
     new_board, hex_bonus, ocean_bonus_mc = boardlib.place_greenery_tile(
         board, hex_id, owner_id, ignore_restrictions=ignore_restrictions
@@ -281,6 +330,11 @@ def _place_greenery_and_apply_bonus(
     new_player = _apply_community_build_bonus(new_player, board, hex_id)
     new_player = {**new_player, "mc": new_player["mc"] + ocean_bonus_mc}
     new_player = engine.apply_greenery_placed_bonuses(new_player)
+    new_player = _apply_mars_first_ruling_bonus(new_player, ruling_party)
+    if ruling_party == "greens":
+        # Ruling Policy de Greens (rulebook oficial, pagina 6): "Gain 4 M€
+        # each time you place a Greenery tile."
+        new_player = {**new_player, "mc": new_player["mc"] + 4}
     return new_board, new_player  # type: ignore[return-value]
 
 
@@ -322,9 +376,11 @@ def use_standard_project(
     elegido no es legal para ese tile.
     """
     player = _load_player(player_id)
+    player_before = player
     globals_ = _load_global_parameters()
     board = None
     production_totals_before = engine.snapshot_production_totals(player)
+    ruling_party = _load_turmoil()["ruling_party"]
 
     # Kuiper Cooperative: "when paying for the ASTEROID or AQUIFER standard
     # projects, each asteroid here may be used as 1 M€". El motor cobra el
@@ -388,7 +444,7 @@ def use_standard_project(
         if not boardlib.can_place_ocean(board, hex_id):
             raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hex_id}'")
         new_player, new_globals = engine.standard_project_aquifer(player, globals_)
-        board, new_player = _place_ocean_and_apply_bonus(board, new_player, hex_id)
+        board, new_player = _place_ocean_and_apply_bonus(board, new_player, hex_id, ruling_party=ruling_party)
     elif project_name == "greenery":
         if hex_id is None:
             raise ValueError("project_name 'greenery' requiere hex_id (donde colocar el greenery)")
@@ -396,7 +452,7 @@ def use_standard_project(
         if not boardlib.can_place_greenery(board, hex_id, player_id):
             raise boardlib.InvalidPlacementError(f"No se puede colocar greenery en '{hex_id}' para este jugador")
         new_player, new_globals = engine.standard_project_greenery(player, globals_)
-        board, new_player = _place_greenery_and_apply_bonus(board, new_player, hex_id, player_id)
+        board, new_player = _place_greenery_and_apply_bonus(board, new_player, hex_id, player_id, ruling_party=ruling_party)
     elif project_name == "city":
         if hex_id is None:
             raise ValueError("project_name 'city' requiere hex_id (donde colocar la ciudad)")
@@ -404,7 +460,7 @@ def use_standard_project(
         if not boardlib.can_place_city(board, hex_id):
             raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hex_id}'")
         new_player, new_globals = engine.standard_project_city(player, globals_)
-        board, new_player = _place_city_and_apply_bonus(board, new_player, hex_id, player_id)
+        board, new_player = _place_city_and_apply_bonus(board, new_player, hex_id, player_id, ruling_party=ruling_party)
     elif project_name == "air_scrapping":
         new_player, new_globals = engine.standard_project_air_scrapping(player, globals_)
     else:
@@ -458,8 +514,10 @@ def convert_resources(
         dict con el estado actualizado del jugador y los parametros globales.
     """
     player = _load_player(player_id)
+    player_before = player
     globals_ = _load_global_parameters()
     board = None
+    ruling_party = _load_turmoil()["ruling_party"]
 
     if conversion == "plants_to_greenery":
         if hex_id is None:
@@ -468,7 +526,7 @@ def convert_resources(
         if not boardlib.can_place_greenery(board, hex_id, player_id):
             raise boardlib.InvalidPlacementError(f"No se puede colocar greenery en '{hex_id}' para este jugador")
         new_player, new_globals = engine.convert_plants_to_greenery(player, globals_)
-        board, new_player = _place_greenery_and_apply_bonus(board, new_player, hex_id, player_id)
+        board, new_player = _place_greenery_and_apply_bonus(board, new_player, hex_id, player_id, ruling_party=ruling_party)
     elif conversion == "heat_to_temperature":
         if card_resources_as_heat:
             player = engine.spend_card_resource_as_heat(player, card_resources_as_heat)
@@ -477,6 +535,8 @@ def convert_resources(
         raise ValueError(
             f"conversion debe ser 'plants_to_greenery' o 'heat_to_temperature'. Recibido: {conversion}"
         )
+
+    new_player = _apply_reds_ruling_policy(player_before, new_player, ruling_party)
 
     _save_player(player_id, new_player)
     _save_global_parameters(new_globals)
@@ -723,6 +783,7 @@ def play_card(
 
     globals_ = _load_global_parameters()
     player = _load_player(player_id)
+    player_before = player
     played_from_reserve = card_id in player["reserved_cards"]
     if not played_from_reserve and card_id not in player["hand"]:
         raise engine.CardNotInHandError(f"El jugador no tiene '{card_id}' en la mano ni reservada")
@@ -740,13 +801,10 @@ def play_card(
                 "min_oceans", "max_oceans", "min_venus", "max_venus",
             )
         }
-    turmoil = (
-        _load_turmoil()
-        if "ruling_or_delegates" in requirements
-        or "party_leader_and_neutral_chairman" in requirements
-        or "min_party_leader_count" in requirements
-        else None
-    )
+    # Se carga siempre (no solo para requisitos de partido): Unity gobernando
+    # sube el valor del titanio (Ruling Policy, ver compute_conversion_rates)
+    # en CUALQUIER pago, no solo en cartas con requisito de partido.
+    turmoil = _load_turmoil()
     engine.check_card_requirements(
         requirements, globals_, player, wild_tag_choice=wild_tag_choice, turmoil=turmoil, player_id=player_id,
     )
@@ -800,7 +858,7 @@ def play_card(
     production_totals_before = engine.snapshot_production_totals(player)
 
     card_tags = tuple(card.get("tags", []))
-    steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player)
+    steel_value_mc, titanium_value_mc = engine.compute_conversion_rates(player, turmoil["ruling_party"])
 
     card_resource_source_id = None
     card_resource_discount = 0
@@ -939,7 +997,7 @@ def play_card(
         for hid in chosen:
             if not can_place_fn(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
-            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid, on_land=on_land)
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid, on_land=on_land, ruling_party=turmoil["ruling_party"])
     if cities_delta > 0:
         chosen = city_hex_ids or []
         if len(chosen) != cities_delta:
@@ -962,6 +1020,7 @@ def play_card(
             board, new_player = _place_city_and_apply_bonus(
                 board, new_player, hid, player_id, require_adjacent_cities=require_adjacent_cities,
                 placement_bonus_multiplier=effects.get("city_placement_bonus_multiplier", 1),
+                ruling_party=turmoil["ruling_party"],
             )
 
     special_tile_spec = effects.get("place_special_tile")
@@ -989,6 +1048,7 @@ def play_card(
             **new_player,
             "mc": new_player["mc"] + _scale_ocean_adjacency_bonus(new_player, ocean_bonus_mc),
         }
+        new_player = _apply_mars_first_ruling_bonus(new_player, turmoil["ruling_party"])
 
     if effects.get("mc_per_empty_hex_adjacent_to_own_tiles"):
         # Red Tourism Wave (T12, Turmoil, bloque 31): "Gain 1 M€ for each
@@ -1024,7 +1084,7 @@ def play_card(
         if board is None:
             board = _load_board()
         board = boardlib.remove_greenery_tile(board, greenery_hex_id, player_id)
-        board, new_player = _place_city_and_apply_bonus(board, new_player, greenery_hex_id, player_id)
+        board, new_player = _place_city_and_apply_bonus(board, new_player, greenery_hex_id, player_id, ruling_party=turmoil["ruling_party"])
         new_globals = dict(engine.place_city_tile(engine.GlobalParameters(**new_globals)))
 
     if effects.get("place_nomads"):
@@ -1172,6 +1232,7 @@ def play_card(
         board, new_player = _place_greenery_and_apply_bonus(
             board, new_player, greenery_hex_id, player_id,
             ignore_restrictions=greenery_spec.get("ignore_restrictions", False),
+            ruling_party=turmoil["ruling_party"],
         )
 
     # Dispara bonus pasivos por tags jugados (ej. Ecological Zone, Decomposers)
@@ -1294,6 +1355,7 @@ def play_card(
     new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
     new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
     new_player = engine.apply_card_played_vp_icon_bonus(new_player, card_id)
+    new_player = _apply_reds_ruling_policy(player_before, new_player, turmoil["ruling_party"])
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -1416,6 +1478,7 @@ def use_card_action(
         raise ValueError(f"La carta '{card_id}' no tiene una accion definida")
 
     player = _load_player(player_id)
+    player_before = player
     globals_ = _load_global_parameters()
     # Stormcraft Incorporated: gastar floaters como calor ANTES de que el
     # motor cobre el `cost.heat` de la accion -- el calor acreditado se gasta
@@ -1608,11 +1671,14 @@ def use_card_action(
             new_gains["card_resource_delta"] = new_gains.get("card_resource_delta", 0) + 1
         spec_for_engine = {**spec_for_engine, "gains": new_gains}
 
+    # Se asegura cargado (no solo para requisitos de partido): Unity
+    # gobernando sube el titanio en CUALQUIER accion que pague con el.
+    turmoil = turmoil if turmoil is not None else _load_turmoil()
     new_player, new_globals = engine.use_card_action(
         player, globals_, card_id, spec_for_engine,
         None if remove_delegates_count else effect_choice, target_card_id=target_card_id,
         effect_amount=effect_amount, reserved_card_id=reserved_card_id, titanium_to_pay=titanium_to_pay,
-        steel_to_pay=steel_to_pay, discard_card_id=discard_card_id,
+        steel_to_pay=steel_to_pay, discard_card_id=discard_card_id, ruling_party=turmoil["ruling_party"],
     )
     if reveal_prelude_spec is not None:
         # La revelacion NO consume la accion de la generacion: Board of
@@ -1704,7 +1770,10 @@ def use_card_action(
             if skip_bonus:
                 board, _hex_bonus, _ocean_mc = boardlib.place_ocean_tile(board, hid)
             else:
-                board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+                turmoil = turmoil if turmoil is not None else _load_turmoil()
+                board, new_player = _place_ocean_and_apply_bonus(
+                    board, new_player, hid, ruling_party=turmoil["ruling_party"],
+                )
 
     trade_result = None
     if free_trade:
@@ -1720,6 +1789,7 @@ def use_card_action(
 
     new_player = engine.apply_card_resource_gained_bonuses(new_player, card_resource_totals_before, active_cards_before)
     new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
+    new_player = _apply_reds_ruling_policy(player_before, new_player, turmoil["ruling_party"])
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -2147,19 +2217,26 @@ def resolve_new_government(player_id: str) -> dict:
     Chairman anterior si lo tenia) vuelven a su Reserva. Tambien rellena
     el Lobby del jugador (1 delegado, tomado de la Reserva si hay).
 
-    NO aplica Ruling Bonus/Ruling Policy ni la revision de TR (-1 a todos
-    los jugadores) -- fuera de alcance de esta primera pasada, ver
-    turmoil.py.
+    Tambien aplica, en este orden (rulebook, "Turmoil phase" paso 4):
+    1. TR REVISION: -1 TR incondicional, pase lo que pase con el partido
+       Dominante (incluso sin Dominante todavia). "At the beginning of the
+       Turmoil phase, after the Production phase, ALL players lose 1 TR" --
+       texto literal del rulebook oficial, verificado.
+    2. RULING BONUS: solo si el partido Ruling efectivamente CAMBIO esta
+       generacion (compara `ruling_party` de antes/despues) -- ver
+       engine.apply_ruling_bonus.
 
     Args:
         player_id: id del jugador.
 
     Returns:
-        dict con el estado actualizado del jugador y de Turmoil. No hace
-        nada si todavia no hay partido Dominante (delegados_devueltos=0).
+        dict con el estado actualizado del jugador y de Turmoil. Si
+        todavia no hay partido Dominante, igual aplica la revision de TR
+        (delegados_devueltos=0, sin Ruling Bonus).
     """
     player = _load_player(player_id)
     turmoil = _load_turmoil()
+    old_ruling = turmoil["ruling_party"]
     new_turmoil, returned = turmoillib.resolve_new_government(turmoil, player_id)
 
     new_reserve = player["reserve_delegates"] + returned
@@ -2169,11 +2246,87 @@ def resolve_new_government(player_id: str) -> dict:
         new_reserve -= 1
     new_player = {**player, "reserve_delegates": new_reserve, "lobby_delegates": new_lobby}
 
+    new_player = dict(engine._raise_tr(new_player, -1))
+    if new_turmoil["ruling_party"] != old_ruling:
+        new_player = dict(engine.apply_ruling_bonus(engine.PlayerState(**new_player), new_turmoil["ruling_party"]))  # type: ignore[typeddict-item]
+
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_turmoil(new_turmoil)
     _log_transaction(player_id, "resolve_new_government", {"delegates_returned": returned})
 
     return {"player": new_player, "turmoil": dict(new_turmoil), "delegates_returned": returned}
+
+
+@tool
+def use_kelvinists_ruling_policy(player_id: str) -> dict:
+    """
+    Ruling Policy de Kelvinists (rulebook oficial, pagina 6): "Spend 10 M€
+    to increase your heat production 1 step and your energy production 1
+    step." Accion disponible SOLO durante la fase de Accion mientras
+    Kelvinists gobierna, usable cualquier cantidad de veces por generacion
+    (no tiene un flag de "usado" como Scientists).
+
+    Args:
+        player_id: id del jugador.
+
+    Returns:
+        dict con el estado actualizado del jugador.
+
+    Lanza ValueError si Kelvinists no gobierna, InsufficientResourcesError
+    si el jugador no tiene 10 M€.
+    """
+    player = _load_player(player_id)
+    turmoil = _load_turmoil()
+    if turmoil["ruling_party"] != "kelvinists":
+        raise ValueError("Kelvinists no gobierna -- esta Ruling Policy no esta disponible")
+    if player["mc"] < 10:
+        raise engine.InsufficientResourcesError(f"Se necesitan 10 MC, hay {player['mc']}")
+
+    new_player = {
+        **player,
+        "mc": player["mc"] - 10,
+        "heat_production": engine._apply_production_floor("heat_production", player["heat_production"] + 1),
+        "energy_production": engine._apply_production_floor("energy_production", player["energy_production"] + 1),
+    }
+
+    _save_player(player_id, new_player)  # type: ignore[arg-type]
+    _log_transaction(player_id, "use_kelvinists_ruling_policy", {})
+    return {"player": new_player}
+
+
+@tool
+def use_scientists_ruling_policy(player_id: str) -> dict:
+    """
+    Ruling Policy de Scientists (rulebook oficial, pagina 6): "Spend 10 M€
+    to draw 3 cards -- may only be used once per generation and player."
+    Accion disponible SOLO durante la fase de Accion mientras Scientists
+    gobierna.
+
+    Args:
+        player_id: id del jugador.
+
+    Returns:
+        dict con el estado actualizado del jugador.
+
+    Lanza ValueError si Scientists no gobierna o el jugador ya la uso esta
+    generacion, InsufficientResourcesError si no tiene 10 M€.
+    """
+    player = _load_player(player_id)
+    turmoil = _load_turmoil()
+    if turmoil["ruling_party"] != "scientists":
+        raise ValueError("Scientists no gobierna -- esta Ruling Policy no esta disponible")
+    if player["scientists_policy_used_this_generation"]:
+        raise ValueError("Ya se uso la Ruling Policy de Scientists esta generacion")
+    if player["mc"] < 10:
+        raise engine.InsufficientResourcesError(f"Se necesitan 10 MC, hay {player['mc']}")
+
+    new_player = dict(engine.draw_cards_to_hand(engine.PlayerState(**player), 3))  # type: ignore[typeddict-item]
+    new_player["mc"] -= 10
+    new_player["scientists_policy_used_this_generation"] = True
+
+    _save_player(player_id, new_player)  # type: ignore[arg-type]
+    _log_transaction(player_id, "use_scientists_ruling_policy", {})
+    return {"player": new_player}
 
 
 @tool
@@ -2304,6 +2457,7 @@ def play_double_down(
 
     globals_ = _load_global_parameters()
     new_player, new_globals = engine.apply_card_effect(player, globals_, direct_effects)
+    ruling_party = _load_turmoil()["ruling_party"]
 
     board = None
     oceans_delta = new_globals["oceans_placed"] - globals_["oceans_placed"]
@@ -2315,13 +2469,13 @@ def play_double_down(
         if len(chosen) != oceans_delta:
             raise ValueError(f"Este efecto coloca {oceans_delta} oceano(s); se recibieron {len(chosen)} hex_id(s)")
         for hid in chosen:
-            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid, ruling_party=ruling_party)
     if cities_delta > 0:
         chosen = city_hex_ids or []
         if len(chosen) != cities_delta:
             raise ValueError(f"Este efecto coloca {cities_delta} ciudad(es); se recibieron {len(chosen)} hex_id(s)")
         for hid in chosen:
-            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id)
+            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id, ruling_party=ruling_party)
     greenery_spec = direct_effects.get("place_greenery")
     if greenery_spec is not None:
         if greenery_hex_id is None:
@@ -2329,6 +2483,7 @@ def play_double_down(
         board, new_player = _place_greenery_and_apply_bonus(
             board, new_player, greenery_hex_id, player_id,
             ignore_restrictions=greenery_spec.get("ignore_restrictions", False),
+            ruling_party=ruling_party,
         )
 
     new_player = engine.register_played_card(new_player, "double_down")
@@ -2710,6 +2865,7 @@ def play_prelude(
     effects = prelude.get("effects") or {}
     tags = tuple(prelude.get("tags") or [])
     player = _load_player(player_id)
+    player_before = player
     globals_ = _load_global_parameters()
 
     corp_choice_spec = effects.get("requires_corporation_choice")
@@ -2735,6 +2891,7 @@ def play_prelude(
         return {"player": dict(new_player), "globals": result["globals"], "corporation": result["corporation"]}
 
     production_totals_before = engine.snapshot_production_totals(player)
+    ruling_party = _load_turmoil()["ruling_party"]
 
     # Una prelude puede quedarse en juego con accion repetible y/o recursos
     # propios, igual que una carta de proyecto azul (ej. Applied Science:
@@ -2773,7 +2930,7 @@ def play_prelude(
         for hid in chosen:
             if not boardlib.can_place_ocean(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{hid}'")
-            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid)
+            board, new_player = _place_ocean_and_apply_bonus(board, new_player, hid, ruling_party=ruling_party)
     if cities_delta > 0:
         chosen = city_hex_ids or []
         if len(chosen) != cities_delta:
@@ -2783,7 +2940,7 @@ def play_prelude(
         for hid in chosen:
             if not boardlib.can_place_city(board, hid):
                 raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hid}'")
-            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id)
+            board, new_player = _place_city_and_apply_bonus(board, new_player, hid, player_id, ruling_party=ruling_party)
     greenery_spec = effects.get("place_greenery")
     if greenery_spec is not None:
         if greenery_hex_id is None:
@@ -2791,6 +2948,7 @@ def play_prelude(
         board, new_player = _place_greenery_and_apply_bonus(
             board, new_player, greenery_hex_id, player_id,
             ignore_restrictions=greenery_spec.get("ignore_restrictions", False),
+            ruling_party=ruling_party,
         )
 
     draw_tag_spec = effects.get("draw_cards_matching_tag")
@@ -2884,6 +3042,8 @@ def play_prelude(
         candidates = [row["id"] for row in (all_res.data or []) if row["id"] not in already_played]
         random.shuffle(candidates)
         revealed_preludes = candidates[: reveal_spec["n"]]
+
+    new_player = _apply_reds_ruling_policy(player_before, new_player, ruling_party)
 
     _save_player(player_id, new_player)
     if new_globals != globals_:
@@ -2999,4 +3159,5 @@ ALL_TOOLS = [
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
     get_active_cards_state, resolve_ocean_offer, choose_corporation,
     retire_card_as_event, place_community, play_double_down,
+    use_kelvinists_ruling_policy, use_scientists_ruling_policy,
 ]

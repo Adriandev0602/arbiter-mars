@@ -92,6 +92,7 @@ do $$ begin
     alter table if exists players add column if not exists pending_ocean_offers integer not null default 0;
     alter table if exists players add column if not exists tr_raised_this_generation boolean not null default false;
     alter table if exists players add column if not exists tr_skip_used_this_generation boolean not null default false;
+    alter table if exists players add column if not exists scientists_policy_used_this_generation boolean not null default false;
 exception when undefined_table then null;
 end $$;
 
