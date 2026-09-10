@@ -511,9 +511,9 @@ where q.name = m.nombre;
 --     cargado su VP impreso, asi que el pasivo no tendria de donde leerlo.
 --     Necesita un retrofit de `vp_icon` en el catalogo entero primero.
 -- United Nations Mars Initiative se cargo el 2026-09-09 con el hook "subio el
--- TR" (ver el bloque final). Vitor sigue pendiente.
-update corporation_review_queue set reviewed = true, corporation_id = null
-where name = 'Vitor';
+-- TR" (ver el bloque final). Vitor se cargo tambien ese dia (ver el final de
+-- este archivo): no hacia falta un retrofit de vp_icon en las 408 cartas,
+-- alcanzo con una lista corta y verificada de las pocas con VP NEGATIVO.
 
 -- ---------------------------------------------------------------------------
 -- Mecanicas pendientes resueltas (2026-09-09): 6 de las 7 corporaciones que
@@ -615,8 +615,34 @@ from (values
 where q.name = m.nombre;
 
 -- Unica corporacion que sigue pendiente: Vitor ("when you play a card with a
--- NON-NEGATIVE VP icon, gain 3 M€"). No es vocabulario faltante -- ninguna
--- carta del catalogo tiene cargado su VP impreso, asi que el pasivo no
--- tendria de donde leerlo. El alcance minimo para destrabarla es cargar a
--- mano la lista corta (~10) de cartas con icono de VP NEGATIVO y asumir el
--- resto como no-negativo; se pospuso porque destraba una sola carta.
+-- NON-NEGATIVE VP icon, gain 3 M€"). CARGADA el 2026-09-09 (ver el bloque
+-- final de este archivo): no hizo falta un retrofit de vp_icon en las 408
+-- cartas -- alcanzo con una lista corta y verificada de las pocas con VP
+-- NEGATIVO impreso (excluded_card_ids), no con cargar el VP de todo el
+-- catalogo.
+
+
+-- ---------------------------------------------------------------------------
+-- Vitor, cargada (2026-09-09): la ultima corporacion. 48 de 48.
+--
+-- Pieza nueva `on_card_played_with_vp_icon` (rules_engine.py): en vez de
+-- trackear el VP de las 408 cartas del catalogo, usa una lista CORTA y
+-- verificada contra el scan de las pocas con VP NEGATIVO impreso --
+-- confirmadas para este catalogo: nuclear_zone (-2 VP fija), bribed_committee
+-- (-2 VP fija) y vermin (-1 VP condicional por ciudad, con >=10 animales
+-- aca). No es necesariamente exhaustiva: se amplia si aparece otra carta con
+-- VP negativo confirmada contra su scan. Ver "Vitor" en CARDS_LOG.md.
+insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) values
+    -- 45 M€. Su Effect ("fund an award for free") sigue fuera de alcance:
+    -- milestones/awards no estan modelados en el MVP (CLAUDE.md seccion 7).
+    ('vitor', 'Vitor', 'Prelude', '{earth}', 45,
+     '{"passive": {"on_card_played_with_vp_icon": {
+         "mc_delta": 3,
+         "excluded_card_ids": ["nuclear_zone", "bribed_committee", "vermin"]}}}'::jsonb)
+on conflict (id) do update set
+    name = excluded.name, expansion = excluded.expansion, tags = excluded.tags,
+    starting_mc = excluded.starting_mc, effects = excluded.effects;
+
+update corporation_review_queue q set reviewed = true, corporation_id = m.cid
+from (values ('Vitor','vitor')) as m(nombre, cid)
+where q.name = m.nombre;

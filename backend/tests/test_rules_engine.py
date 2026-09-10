@@ -71,6 +71,7 @@ from app.agent.rules_engine import (
     apply_tag_played_resource_bonuses,
     apply_colony_placed_bonuses,
     snapshot_production_totals,
+    apply_card_played_vp_icon_bonus,
     apply_production_increased_bonus,
     retire_card_as_event,
     spend_card_resource_as_heat,
@@ -4990,6 +4991,26 @@ def test_apply_corporation_start_pone_produccion_en_cero():
     assert all(corp_player[f"{r}_production"] == 0
                for r in ("mc", "steel", "titanium", "plant", "energy", "heat"))
     assert corp_player["tr"] == player["tr"]     # el TR no lo toca
+
+
+def test_vitor_paga_por_carta_con_vp_no_negativo():
+    # Vitor: "when you play a card with a non-negative VP icon, gain 3 M€".
+    # No trackeamos VP: la lista de excluded_card_ids son las CONOCIDAS con
+    # VP negativo (nuclear_zone, bribed_committee, vermin); cualquier otro
+    # id paga, incluida Vitor misma ("including this").
+    player = register_passive_effect(new_player_state(), "vitor", {
+        "on_card_played_with_vp_icon": {
+            "mc_delta": 3, "excluded_card_ids": ["nuclear_zone", "bribed_committee", "vermin"],
+        }
+    })
+    assert apply_card_played_vp_icon_bonus(player, "vitor")["mc"] == player["mc"] + 3
+    assert apply_card_played_vp_icon_bonus(player, "greenhouses")["mc"] == player["mc"] + 3
+    # Las de VP negativo conocido no pagan.
+    assert apply_card_played_vp_icon_bonus(player, "nuclear_zone")["mc"] == player["mc"]
+    assert apply_card_played_vp_icon_bonus(player, "bribed_committee")["mc"] == player["mc"]
+    assert apply_card_played_vp_icon_bonus(player, "vermin")["mc"] == player["mc"]
+    # Sin el pasivo, no paga nada.
+    assert apply_card_played_vp_icon_bonus(new_player_state(), "greenhouses") == new_player_state()
 
 
 def test_preservation_program_anula_el_primer_paso_de_tr_de_la_generacion():

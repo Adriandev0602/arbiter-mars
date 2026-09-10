@@ -3006,6 +3006,17 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
         cualquier carta con su tag, no dependen de una carta activa
         puntual). Ver tools.play_card (parametro card_resource_to_pay) y
         rules_engine.spend_active_card_resource.
+      - "on_card_played_with_vp_icon": {"mc_delta": N, "excluded_card_ids":
+        [...]} -- N M€ cada vez que se juega CUALQUIER carta/prelude/
+        corporacion (incluida esta) cuyo icono de VP impreso no sea negativo
+        (ej. Vitor: "when you play a card with a non-negative VP icon,
+        including this, gain 3 M€"). El motor no trackea VP: en vez de eso,
+        `excluded_card_ids` lleva la lista CORTA y verificada contra el scan
+        de las pocas cartas con VP negativo impreso (ej. nuclear_zone,
+        bribed_committee, vermin -- ver "Vitor" en CARDS_LOG.md). El resto
+        cuenta como "no negativo" y paga, incluidas las de VP positivo, cero,
+        o sin icono de VP. Ver apply_card_played_vp_icon_bonus, llamado
+        desde tools.play_card, play_prelude y choose_corporation.
       - "on_production_phase_if_tr_not_raised": {"mc_delta": N,
         "card_resource_delta": M} -- se cobra DENTRO de run_production_phase,
         y solo si el jugador NO subio su TR en esa generacion (ej. Pristar:
@@ -3348,6 +3359,33 @@ def apply_colony_placed_bonuses(player: PlayerState) -> PlayerState:
             new_player = _increase_production(new_player, key, delta)
             changed = True
     return PlayerState(**new_player) if changed else player  # type: ignore[typeddict-item]
+
+
+def apply_card_played_vp_icon_bonus(player: PlayerState, played_card_id: str) -> PlayerState:
+    """
+    Aplica el pasivo "on_card_played_with_vp_icon": {"mc_delta": N,
+    "excluded_card_ids": [...]} -- N M€ cada vez que se juega (cualquier
+    carta/prelude/corporacion, incluida esta) CUYO ICONO DE VP IMPRESO no sea
+    negativo (ej. Vitor: "when you play a card with a non-negative VP icon,
+    including this, gain 3 M€").
+
+    El motor NO trackea el VP de las 408 cartas del catalogo -- decision de
+    diseño documentada en CLAUDE.md. En vez de eso, `excluded_card_ids` lleva
+    la lista CORTA y verificada contra el scan de las pocas cartas que SI
+    tienen VP negativo impreso (ver CARDS_LOG.md, "Vitor"): si `played_card_id`
+    esta en esa lista, no paga; para el resto (incluidas las que dan VP
+    positivo, cero, o no tienen icono de VP) si paga, porque todas esas
+    cuentan como "no negativo". No es necesariamente exhaustiva -- se amplia
+    si aparece una carta nueva con VP negativo confirmada contra su scan.
+    """
+    bonus = 0
+    for effect in player["passive_effects"]:
+        spec = effect.get("on_card_played_with_vp_icon")
+        if spec is not None and played_card_id not in spec.get("excluded_card_ids", []):
+            bonus += spec.get("mc_delta", 0)
+    if not bonus:
+        return player
+    return {**player, "mc": player["mc"] + bonus}  # type: ignore[return-value]
 
 
 def apply_event_played_bonuses(player: PlayerState, played_card_tags: tuple[str, ...] = ()) -> PlayerState:

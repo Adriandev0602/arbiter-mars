@@ -1067,14 +1067,27 @@ Republic. Se cargó primero con un `gains.place_community` que **no estaba cable
 `use_card_action`** — una vía muerta que se detectó al verificar el JSON contra Supabase y se
 corrigió antes de commitear.
 
-**La única que queda: Vitor.** *"When you play a card with a NON-NEGATIVE VP icon, gain 3 M€."* No
-es vocabulario faltante: **ninguna de las 408 cartas del catálogo tiene cargado su VP impreso**,
-así que el pasivo no tendría de dónde leerlo. El análisis encontró una vía razonable —
-"no-negativo" incluye a las que no tienen ícono, y las de VP **negativo** son ~10 en todo el
-juego, así que alcanzaría con cargar a mano esa lista corta verificada y asumir el resto como
-no-negativo, sin re-verificar 408 scans. Se pospuso igual: destraba **una sola carta**, y ninguna
-otra del catálogo necesita el dato. Se desbloquea el día que aparezca una segunda carta que lo
-use, o en una sesión dedicada a esa lista corta.
+**Vitor, cargada (2026-09-09). El catálogo de corporaciones queda COMPLETO: 48 de 48.**
+*"When you play a card with a NON-NEGATIVE VP icon, gain 3 M€."* Se hizo con la vía que el
+análisis previo ya había identificado como razonable: en vez de cargar el VP de las 408 cartas
+del catálogo, una lista **corta** de `excluded_card_ids` con las pocas que tienen VP **negativo**
+impreso, verificadas contra su scan una por una — mismo rigor que el resto del catálogo, no un
+dato al voleo. "No-negativo" (lo que paga Vitor) incluye a las que no tienen ícono de VP.
+
+**Las tres confirmadas para este catálogo**, cada una re-verificada contra su scan (bajados con
+`https://cards.hadronikle.com/projects/<Expansion> - <scan> - <Nombre>.png`, mismo patrón de URL
+que usan corporaciones/preludes):
+- `nuclear_zone` (097, Base): **-2 VP fija**, ícono redondo con el número impreso.
+- `bribed_committee` (112, Corporate Era): **-2 VP fija**, evento "raise TR 2 steps, -2 VP".
+- `vermin` (X75, Promo): **-1 VP condicional** por cada ciudad, SI hay 10+ animales guardados en
+  la propia carta — el ícono no es un número fijo sino una fórmula, pero el signo es negativo.
+
+**Esta lista NO es necesariamente exhaustiva.** Se armó cruzando el propio historial del proyecto
+(estas tres ya estaban anotadas con "VP no trackeado" en tablas viejas de `CARDS_LOG.md`) con
+conocimiento del juego real, y cada candidata se verificó contra su scan antes de cargar nada —
+ninguna se cargó "de memoria". Si aparece una carta nueva con VP negativo confirmado, se agrega a
+`excluded_card_ids` en `seed_corporations.sql` sin tocar el motor (la pieza
+`on_card_played_with_vp_icon` ya está lista para eso).
 
 **Las 3 preludes + Colony Trade Hub, cargadas (2026-09-09).** Se bajaron sus 4 scans y se
 verificaron contra el texto oficial — ver "Preservation Program / Suitable Infrastructure /
