@@ -11,6 +11,7 @@ from app.agent.turmoil import (
     STARTING_LOBBY_DELEGATES,
     STARTING_RESERVE_DELEGATES,
     LOBBY_FROM_RESERVE_COST_MC,
+    STARTING_NEUTRAL_DELEGATES,
     UnknownPartyError,
     new_turmoil,
     place_delegate,
@@ -18,6 +19,7 @@ from app.agent.turmoil import (
     compute_influence,
     resolve_new_government,
     remove_delegate,
+    exchange_neutral_delegate,
 )
 
 
@@ -34,6 +36,49 @@ def test_new_turmoil_starts_with_greens_ruling_no_dominant_no_chairman():
     assert t["dominant_party"] is None
     assert t["chairman"] is None
     assert all(p["leader"] is None and p["delegates"] == {} for p in t["parties"].values())
+    # Recruitment (T11) necesita delegados neutrales para intercambiar --
+    # cantidad fija, supuesto de diseño documentado en turmoil.py, no un
+    # dato verificado contra el reglamento oficial (que sí lo especifica
+    # según cantidad de jugadores, algo que este modulo no modela).
+    assert all(p["neutral"] == STARTING_NEUTRAL_DELEGATES for p in t["parties"].values())
+
+
+def test_exchange_neutral_delegate_gana_presencia_sin_gastar_mc():
+    # Recruitment (T11): "exchange one NEUTRAL NON-LEADER delegate with one
+    # of your own from the reserve" -- un neutral sale, uno propio entra.
+    t = new_turmoil()
+    antes = t["parties"]["unity"]["neutral"]
+    t = exchange_neutral_delegate(t, "unity", "p1")
+    assert t["parties"]["unity"]["neutral"] == antes - 1
+    assert t["parties"]["unity"]["delegates"] == {"p1": 1}
+    assert t["parties"]["unity"]["leader"] == "p1"    # el unico delegado ahi, es leader
+    assert t["dominant_party"] == "unity"             # y ahora tiene mas que cualquier otro
+
+
+def test_exchange_neutral_delegate_falla_si_no_hay_neutrales():
+    t = new_turmoil()
+    for _ in range(STARTING_NEUTRAL_DELEGATES):
+        t = exchange_neutral_delegate(t, "unity", "p1")
+    assert t["parties"]["unity"]["neutral"] == 0
+    with pytest.raises(UnknownPartyError):
+        exchange_neutral_delegate(t, "unity", "p2")
+
+
+def test_exchange_neutral_delegate_partido_desconocido():
+    t = new_turmoil()
+    with pytest.raises(UnknownPartyError):
+        exchange_neutral_delegate(t, "bogus_party", "p1")
+
+
+def test_exchange_neutral_delegate_puede_reemplazar_al_leader():
+    # p1 ya lidera unity con 1 delegado propio; p2 intercambia dos veces
+    # (con 2 neutrales disponibles) y le saca el liderazgo.
+    t = new_turmoil()
+    t = place_delegate(t, "unity", "p1")
+    t = exchange_neutral_delegate(t, "unity", "p2")
+    t = exchange_neutral_delegate(t, "unity", "p2")
+    assert t["parties"]["unity"]["delegates"] == {"p1": 1, "p2": 2}
+    assert t["parties"]["unity"]["leader"] == "p2"
 
 
 def test_place_delegate_unknown_party_raises():

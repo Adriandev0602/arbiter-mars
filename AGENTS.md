@@ -138,7 +138,35 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-10, CATÁLOGO DE PRELUDES COMPLETO: 70 de 70)
+### 📍 Punto de retoma (última sesión: 2026-09-10, T11 Recruitment cargada: catálogo de proyecto SIN pendientes por mecánica)
+
+**T11 Recruitment cargada.** Era la única fila que quedaba en "Pendientes" de `CARDS_LOG.md`.
+Necesitó delegados NEUTRALES por partido, algo que `turmoil.py` explícitamente no modelaba (el
+propio docstring del módulo lo decía). **Decisión de alcance consultada con el usuario antes de
+tocar código** (no hay dato oficial verificable sin re-leer el reglamento, que además fija la
+cantidad según número de jugadores — algo que este proyecto no modela): se usa una **cantidad
+fija de 2 delegados neutrales por partido**, documentada como supuesto de diseño explícito
+(`turmoil.STARTING_NEUTRAL_DELEGATES`), no como dato oficial.
+
+**Piezas nuevas:** `PartyState.neutral: int`; `turmoil.exchange_neutral_delegate(turmoil, party,
+player_id)` (un neutral sale, uno propio entra — nunca es leader, así que alcanza con
+`neutral >= 1`); `effects.exchange_neutral_delegate` en `play_card`, resuelto en `tools.py`
+reusando el parámetro `removal_party` que ya existía.
+
+**Migración de estado compartido necesaria y ya aplicada:** `global_parameters.turmoil` es una
+fila COMPARTIDA (no por jugador) que ya existía en Supabase sin el campo `neutral` en sus
+partidos — hubo que parchearla a mano (se verificó primero que los 6 partidos estaban vacíos,
+sin delegados de ninguna partida real). **Cualquier otro entorno con esa fila en la forma vieja
+va a necesitar el mismo parche antes de poder jugar Recruitment** — no es algo que `schema.sql`
+resuelva solo, porque `turmoil` es una columna jsonb sin sub-esquema.
+
+**Nota de proceso — mismo problema de PRs huérfanos que ya pasó dos veces antes:** al arrancar
+esta sesión, el trabajo de las 2 últimas preludes (PR #55) seguía sin llegar a `main` pese a
+estar mergeado en su rama base. Se abrió un PR de recuperación (#56) y **se mergeó de inmediato**
+(a pedido explícito del usuario, en vez de seguir encadenando) antes de continuar con T11, para
+no seguir acumulando ramas huérfanas.
+
+### 📍 Punto de retoma anterior (2026-09-10, CATÁLOGO DE PRELUDES COMPLETO: 70 de 70)
 
 **Ecology Experts y Board of Directors, cargadas — cierran el catálogo de preludes entero.**
 Ambas necesitaban la misma pieza: "jugar una carta dentro de otra jugada/acción". `play_card`
@@ -715,8 +743,8 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 4. ~~Preludes~~ — **COMPLETO el 2026-09-10: 70 de 70 cargadas**, cero pendientes. Siguen
    pendientes las 3 cartas dudosas de proyecto (`self_replicating_robots`,
    `venus_orbital_survey`, `wg_project`).
-5. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
-   neutrales por partido en Turmoil).
+5. ~~T11 Recruitment~~ — **cargada el 2026-09-10** (ver punto de retoma). La tabla "Pendientes"
+   de `CARDS_LOG.md` queda vacía.
 6. El **frontend**, todavía 100% mockeado.
 7. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
 
