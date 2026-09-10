@@ -138,7 +138,35 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-09, 10 de 12 preludes pendientes cargadas: 68 en total)
+### 📍 Punto de retoma (última sesión: 2026-09-10, CATÁLOGO DE PRELUDES COMPLETO: 70 de 70)
+
+**Ecology Experts y Board of Directors, cargadas — cierran el catálogo de preludes entero.**
+Ambas necesitaban la misma pieza: "jugar una carta dentro de otra jugada/acción". `play_card`
+suma `ignore_global_requirements` + `cost_reduction_mc`; `play_prelude` suma `nested_card_id`
+(Ecology Experts la usa); `use_card_action` suma `reveal_prelude` + `play_revealed_prelude`
+(Board of Directors: revela una prelude al azar sin costo, y en una segunda llamada la
+descarta implícitamente o paga 12 M€ + 1 director resource para jugarla de verdad vía
+`play_prelude.func`).
+
+**El detalle que casi rompe el diseño:** la acción de una carta se usa una sola vez por
+generación. Separar "revelar" y "pagar+jugar" en dos llamadas normales chocaba con esa regla — la
+primera marcaba `action_used=True` y la segunda se rechazaba. Se resolvió reseteando
+`action_used` específicamente después de la rama `reveal_prelude`, para que la resolución quede
+disponible en la misma generación. Lo agarró la prueba de humo, no los tests.
+
+**Dos bugs preexistentes más, agarrados por la misma prueba de humo — ninguno lo detectaban los
+tests unitarios porque viven en el cableado `tools.py`↔Supabase, no en `rules_engine.py` puro:**
+`tools.use_card_action` nunca pasaba `discard_card_id` al motor (la pieza `cost.discard_card` del
+bloque anterior estaba inalcanzable), y `tools.play_prelude` nunca aceptaba `effect_choice` —
+ninguna prelude con un `choice` en su efecto inmediato era jugable (afectaba a Atmospheric
+Enhancers y Focused Organization, cargadas sin haberse probado contra Supabase real).
+
+**Moraleja reforzada de esta sesión:** la prueba de humo contra Supabase real no es opcional
+antes de dar un bloque de preludes/corporaciones por cerrado — es la única capa que atrapa huecos
+de cableado entre el motor puro (bien testeado) y `tools.py` (la capa de I/O, sin tests
+unitarios propios por diseño).
+
+### 📍 Punto de retoma anterior (2026-09-09, 10 de 12 preludes pendientes cargadas: 68 en total)
 
 **10 de las 12 preludes pendientes, cargadas.** Misma orquestación multi-agente, pero
 re-diagnosticando cada hueco contra el motor ACTUAL en vez de confiar en notas viejas —
@@ -684,10 +712,9 @@ bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
    Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
 3. ~~Corporaciones~~ — **COMPLETO el 2026-09-09: 48 de 48 cargadas**, cero pendientes.
-4. ~~Los 22 preludes pendientes~~ — **4 cargados el 2026-09-08** (ver arriba). Los 18 que
-   quedan sí necesitan mecánicas grandes (sub-mazo de Prelude, hook genérico "subió el TR",
-   corporaciones). Siguen pendientes también las 3 cartas dudosas de proyecto
-   (`self_replicating_robots`, `venus_orbital_survey`, `wg_project`).
+4. ~~Preludes~~ — **COMPLETO el 2026-09-10: 70 de 70 cargadas**, cero pendientes. Siguen
+   pendientes las 3 cartas dudosas de proyecto (`self_replicating_robots`,
+   `venus_orbital_survey`, `wg_project`).
 5. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
    neutrales por partido en Turmoil).
 6. El **frontend**, todavía 100% mockeado.
