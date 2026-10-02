@@ -1800,7 +1800,7 @@ disponibles). Campos nuevos en `PlayerState`: `colonies_owned`, `trade_fleets`,
 `trade_fleets_used`; en `GlobalParameters` (cargado/guardado aparte, igual que `board`):
 `colonies`. Tools nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`.
 
-**Catálogo de colonias — 9 de 11 cargadas (2026-09-08).** El juego real tiene 11 Colony Tiles con
+**Catálogo de colonias — 11 de 11 cargadas (9 el 2026-09-08; Pluto y Europa el 2026-10-02).** El juego real tiene 11 Colony Tiles con
 nombre (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto, Ceres, Io).
 Callisto ya estaba, verificada con dos fuentes independientes (el ejemplo trabajado del rulebook
 oficial, que muestra el track 0/2/3/5/7/10/13 con el marcador en 10 energía y colony bonus 3
@@ -1825,12 +1825,47 @@ resto: al leer los scans aparecieron tres formas de premio que el modelo no cont
   validando que la carta destino guarde ese tipo. `build_colony` y `use_trade_fleet` suman ese
   parámetro.
 - **Robar cartas como premio** (Miranda colony bonus): clave `"cards"` en el mismo helper.
-- **Pendientes, 2 de 11:** *Pluto*, cuyo colony bonus es "roba 1 carta y descarta 1" y necesita
-  que el jugador ELIJA el descarte (su income, robar X cartas, sí entraría — pero cargarla a
-  medias sería peor que no cargarla); y *Europa*, cuyo trade income no es "X de un recurso" sino
-  "gana la PRODUCCIÓN indicada", distinta en cada casilla del track (MC, MC, energía, energía,
-  plantas, plantas, plantas), lo que rompe el tipo `track: list[int]` + `income_type: str`, y
-  cuyo placement bonus es **colocar un océano**.
+- **Pluto y Europa, resueltas (2026-10-02)** — antes figuraban como "Pendientes, 2 de 11". Leídas
+  del scan (`COLONY_pluto.png`, `COLONY_europa.png`), con el mismo método; ningún valor quedó sin
+  poder leerse.
+  - *Pluto*: trade income "X cartas", track 0/1/2/2/3/3/4; colony bonus "+1 carta −1 carta";
+    colony spots con DOS cartas sin marco = robar 2 al construir. El colony bonus necesitaba que el
+    jugador ELIJA el descarte **después de ver lo robado** (puede descartar justo esa carta), así
+    que no se puede resolver como un parámetro decidido a ciegas. Pieza nueva: clave
+    `cards_draw_then_discard` en `colony_bonus`; `rules_engine.draw_cards_then_require_discard`
+    roba y anota la obligación en el campo nuevo `player.pending_card_discards` (columna nueva en
+    `schema.sql`); `rules_engine.resolve_pending_discards` la salda (cantidad exacta, o la mano
+    entera si tiene menos), vía la tool nueva `resolve_pending_discards` o directamente con el
+    parámetro opcional `discard_card_ids` de `use_trade_fleet` si el jugador ya sabe qué descartar.
+    Es una OBLIGACIÓN (no una oferta como `pending_ocean_offers`): no se pierde al cerrar la
+    generación, y `tools.play_card` se niega a jugar cartas mientras quede alguna pendiente.
+  - *Europa*: trade income "Gain the indicated production" — cada casilla tiene impreso un ícono de
+    producción de 1 paso: M€, M€, energía, energía, plantas, plantas, plantas (los de M€ traen "1";
+    los de energía/plantas no traen número = 1). Pieza nueva: campo opcional
+    `ColonyDef.income_types` (una clave por casilla, pisa a `income_type`) + función pura
+    `colonies.trade_income(colony_id, position)`; `track` queda en 1 en todas las casillas. Colony
+    bonus: 1 M€ de stock. Placement bonus: un tile de OCÉANO en los 3 colony spots — clave
+    `"ocean"`, resuelta en `tools._apply_colony_placement_bonus` con un océano real
+    (`engine.place_ocean`: +1 TR y pasivos `on_ocean_placed`; `_place_ocean_and_apply_bonus`: bonus
+    del hex, adyacencia, Mars First). Parámetros nuevos: `ocean_hex_id` en `build_colony`,
+    `colony_ocean_hex_id` en `play_card`/`play_prelude` (cartas que construyen colonia como efecto;
+    distinto de `ocean_hex_ids`, que son los océanos de la propia carta, ej. Ice Moon Colony). Con
+    los 9 océanos ya colocados la colonia se construye igual y el océano no se coloca (regla
+    general de parámetro al tope).
+  - **Colony bonus cuando comercia OTRO jugador:** en single-player no hay otros jugadores; se sigue
+    cobrando al comerciar uno mismo siendo dueño, igual que las otras 9. El paso de producción de
+    colonias (`run_colony_production`) no necesitó nada nuevo: solo mueve el marcador.
+  - **Correcciones de paso, encontradas al cablear:** (1) `_apply_colony_gain` ahora sube las
+    claves `*_production` vía `engine._increase_production` (antes era suma directa: Callisto/
+    Ceres/Ganymede/Io/Luna nunca disparaban Manutech); (2) `build_colony` y `use_trade_fleet`
+    aplican `apply_production_increased_bonus` (Suitable Infrastructure, son acciones) y
+    `build_colony` aplica la Ruling Policy de Reds (el océano de Europa sube TR); (3) los caminos de
+    `play_card`/`play_prelude` con `build_colony_id`, y `gain_all_colony_bonuses`, sumaban las claves
+    del bonus directo al jugador — con Enceladus/Titan/Miranda/Pluto/Europa eso habría tirado
+    KeyError. Ahora pasan por el mismo helper que la tool `build_colony`.
+  - Tests: `test_colonies.py` (defs, `trade_income` por casilla, comercio con Europa y Pluto,
+    descarte pendiente). La colocación del océano vive en `tools.py` (sin tests unitarios por
+    diseño); se verificó offline llamando al helper con un tablero en memoria.
 
 Esto desbloqueó **Cryo-Sleep** (pasivo `trade_cost_discount`) y **Ecology Research** (efecto
 nuevo `production_delta_per_colony`, que cuenta `player["colonies_owned"]` sin importar cuál).

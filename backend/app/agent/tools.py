@@ -46,6 +46,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         played_cards=row.get("played_cards") or [],
         pending_mc_discount=row.get("pending_mc_discount") or 0,
         pending_ocean_offers=row.get("pending_ocean_offers") or 0,
+        pending_card_discards=row.get("pending_card_discards") or 0,
         pending_requirement_tolerance_steps=row.get("pending_requirement_tolerance_steps") or 0,
         reserved_cards=row.get("reserved_cards") or {},
         zero_tag_cards_played=row.get("zero_tag_cards_played") or 0,
@@ -276,7 +277,12 @@ def _apply_colony_gain(player: dict, key: str, amount: int, target_card_id: str 
     Las cinco colonias "simples" dan recursos de stock y les alcanza con sumar
     la clave al jugador, pero otras dan cosas que no viven en el stock:
       - "cards": ROBA N cartas del mazo (ej. Pluto: su trade income son
-        cartas, no un recurso).
+        cartas, no un recurso; Miranda colony bonus; Pluto placement).
+      - "cards_draw_then_discard": roba N y deja N descartes PENDIENTES (Pluto
+        colony bonus, ver rules_engine.draw_cards_then_require_discard).
+      - "<recurso>_production": sube esa produccion via
+        engine._increase_production, el punto unico del motor (dispara
+        Manutech). Ej. Callisto/Ceres placement, Europa trade income.
       - "card_resource:<tipo>": suma N recursos a UNA carta activa elegida
         (`target_card_id`), porque microbios/floaters/animales viven en cartas
         (ej. Enceladus microbios, Titan floaters, Miranda animales). Valida
@@ -285,6 +291,10 @@ def _apply_colony_gain(player: dict, key: str, amount: int, target_card_id: str 
     """
     if key == "cards":
         return dict(engine.draw_cards_to_hand(engine.PlayerState(**player), amount))
+    if key == "cards_draw_then_discard":
+        return dict(engine.draw_cards_then_require_discard(engine.PlayerState(**player), amount))
+    if key.endswith("_production"):
+        return engine._increase_production(dict(player), key, amount)
     if key.startswith("card_resource:"):
         resource_type = key.split(":", 1)[1]
         if target_card_id is None:
@@ -304,6 +314,46 @@ def _apply_colony_gain(player: dict, key: str, amount: int, target_card_id: str 
             },
         }
     return {**player, key: player[key] + amount}
+
+
+def _apply_colony_placement_bonus(
+    player: dict, placement_bonus: dict, target_card_id: str | None, ocean_hex_id: str | None,
+    board: boardlib.Board | None, globals_: engine.GlobalParameters, ruling_party: str | None,
+) -> tuple[dict, boardlib.Board | None, engine.GlobalParameters]:
+    """
+    Aplica el placement bonus de una colonia recien construida. Todo pasa
+    por _apply_colony_gain salvo la clave "ocean" (Europa: los colony spots
+    muestran un tile de oceano), que coloca un oceano REAL: valida el hex,
+    engine.place_ocean (+1 TR, pasivos on_ocean_placed) y
+    _place_ocean_and_apply_bonus (bonus del hexagono, adyacencia a oceanos,
+    Mars First). Si ya estan los 9 oceanos, la colonia se construye igual y
+    el oceano simplemente no se coloca (regla general: un parametro global
+    al tope no impide la accion, solo no da nada) -- en ese caso
+    `ocean_hex_id` no hace falta.
+
+    Devuelve (jugador, tablero -- None si no se toco --, parametros globales).
+    El caller guarda.
+    """
+    new_player = dict(player)
+    for key, delta in placement_bonus.items():
+        if key != "ocean":
+            new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
+            continue
+        for _ in range(delta):
+            if globals_["oceans_placed"] >= engine.OCEANS_MAX:
+                break
+            if ocean_hex_id is None:
+                raise ValueError("Esta colonia coloca un oceano al construirse: falta ocean_hex_id")
+            if board is None:
+                board = _load_board()
+            if not boardlib.can_place_ocean(board, ocean_hex_id):
+                raise boardlib.InvalidPlacementError(f"No se puede colocar oceano en '{ocean_hex_id}'")
+            placed_player, globals_ = engine.place_ocean(engine.PlayerState(**new_player), globals_)  # type: ignore[typeddict-item]
+            board, placed_player = _place_ocean_and_apply_bonus(
+                board, placed_player, ocean_hex_id, ruling_party=ruling_party,
+            )
+            new_player = dict(placed_player)
+    return new_player, board, globals_
 
 
 def _matches_required_tag(required_tag, card_tags: tuple[str, ...]) -> bool:
@@ -615,6 +665,7 @@ def play_card(
     target_card_id_3: str | None = None,
     ignore_global_requirements: bool = False,
     cost_reduction_mc: int = 0,
+    colony_ocean_hex_id: str | None = None,
 ) -> dict:
     """
     Valida y paga una carta de proyecto contra su costo real en la tabla
@@ -719,6 +770,12 @@ def play_card(
             Colony, Space Port Colony: "may be placed where you already
             have a colony"), se ignora la restriccion normal de 1 colonia
             por jugador por tile. None si la carta no tiene esta mecanica.
+            El placement bonus de esa colonia se cobra igual que en la tool
+            build_colony (si va a una carta, usa `target_card_id`).
+        colony_ocean_hex_id: OBLIGATORIO si `build_colony_id` es "europa",
+            cuyo placement bonus coloca un oceano en el tablero -- el hex
+            donde va (distinto de `ocean_hex_ids`, que son los oceanos de la
+            propia carta, ej. Ice Moon Colony). Ignorado si ya estan los 9.
         colony_id_increase: OBLIGATORIO junto con `colony_id_decrease` si
             `effects.adjust_colony_tracks` esta definido (ej. Market
             Manipulation: subir el track de una colonia 1 paso, bajar el
@@ -783,6 +840,10 @@ def play_card(
 
     globals_ = _load_global_parameters()
     player = _load_player(player_id)
+    if player.get("pending_card_discards", 0) > 0:
+        # Pluto colony bonus: "roba 1 y descarta 1" -- el descarte es
+        # obligatorio, no se puede jugar la carta robada antes de saldarlo.
+        raise ValueError("El jugador tiene descartes pendientes: resolverlos antes con resolve_pending_discards")
     player_before = player
     played_from_reserve = card_id in player["reserved_cards"]
     if not played_from_reserve and card_id not in player["hand"]:
@@ -1069,8 +1130,10 @@ def play_card(
             colonies, build_colony_id, player_id, allow_duplicate=allow_duplicate,
         )
         new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], build_colony_id]}
-        for key, delta in placement_bonus.items():
-            new_player[key] = new_player[key] + delta
+        new_player, board, new_globals = _apply_colony_placement_bonus(
+            new_player, placement_bonus, target_card_id, colony_ocean_hex_id,
+            board, new_globals, turmoil["ruling_party"],
+        )
         new_player = dict(engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         _save_colonies(new_colonies)
 
@@ -1109,7 +1172,7 @@ def play_card(
     if effects.get("gain_all_colony_bonuses"):
         for colony_id in new_player["colonies_owned"]:
             for key, delta in colonieslib.COLONY_DEFS[colony_id]["colony_bonus"].items():
-                new_player[key] = new_player[key] + delta
+                new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
 
     if effects.get("mc_per_colony_in_play"):
         colonies_in_play = _load_colonies()
@@ -2012,7 +2075,9 @@ def setup_colonies(colony_ids: list[str]) -> dict:
 
 
 @tool
-def build_colony(player_id: str, colony_id: str, target_card_id: str | None = None) -> dict:
+def build_colony(
+    player_id: str, colony_id: str, target_card_id: str | None = None, ocean_hex_id: str | None = None,
+) -> dict:
     """
     Proyecto estandar de la expansion Colonies: paga 17 MC, coloca el
     marcador del jugador en el slot mas bajo libre de `colony_id` (maximo 3
@@ -2024,11 +2089,19 @@ def build_colony(player_id: str, colony_id: str, target_card_id: str | None = No
         player_id: id del jugador.
         colony_id: id de `colonies.COLONY_DEFS`, debe estar en juego (ver
             setup_colonies).
+        target_card_id: OBLIGATORIO si el placement bonus va a una carta
+            (Enceladus microbios, Titan floaters, Miranda animales) -- la
+            carta activa que lo recibe.
+        ocean_hex_id: OBLIGATORIO para Europa, cuyo placement bonus coloca un
+            oceano en el tablero (+1 TR, bonus del hexagono) -- el hex donde
+            va (ver get_board_state). Ignorado si ya estan los 9 oceanos.
 
     Returns:
-        dict con el estado actualizado del jugador y de las colonias.
+        dict con el estado actualizado del jugador, de las colonias y de los
+        parametros globales.
 
-    Lanza InsufficientResourcesError si falta MC, colonies.ColonyFullError
+    Lanza InsufficientResourcesError si falta MC (o, con Reds gobernando, si
+    no alcanza para pagar el TR del oceano de Europa), colonies.ColonyFullError
     si la colonia ya esta completa o el jugador ya tiene una ahi,
     colonies.UnknownColonyError si `colony_id` no esta en juego.
     """
@@ -2040,25 +2113,39 @@ def build_colony(player_id: str, colony_id: str, target_card_id: str | None = No
     colonies = _load_colonies()
     new_colonies, placement_bonus = colonieslib.build_colony(colonies, colony_id, player_id)
 
+    globals_ = _load_global_parameters()
+    ruling_party = _load_turmoil()["ruling_party"]
+    production_totals_before = engine.snapshot_production_totals(player)
+
     new_player: dict = {
         **player, "mc": player["mc"] - colonieslib.BUILD_COLONY_COST_MC,
         "colonies_owned": [*player["colonies_owned"], colony_id],
     }
-    for key, delta in placement_bonus.items():
-        new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
+    new_player, board, new_globals = _apply_colony_placement_bonus(
+        new_player, placement_bonus, target_card_id, ocean_hex_id, None, globals_, ruling_party,
+    )
     new_player = dict(engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
+    # Construir colonia es una ACCION (proyecto estandar): Suitable
+    # Infrastructure si sube una produccion (Callisto, Ceres...) y Reds si
+    # sube el TR (oceano de Europa), igual que use_standard_project.
+    new_player = dict(engine.apply_production_increased_bonus(new_player, production_totals_before))  # type: ignore[arg-type]
+    new_player = _apply_reds_ruling_policy(player, new_player, ruling_party)
 
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_colonies(new_colonies)
-    _log_transaction(player_id, "build_colony", {"colony_id": colony_id})
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
+    if board is not None:
+        _save_board(board)
+    _log_transaction(player_id, "build_colony", {"colony_id": colony_id, "ocean_hex_id": ocean_hex_id})
 
-    return {"player": new_player, "colonies": dict(new_colonies)}
+    return {"player": new_player, "colonies": dict(new_colonies), "global_parameters": dict(new_globals)}
 
 
 @tool
 def use_trade_fleet(
     player_id: str, colony_id: str, payment: str, bump_track_first: bool = False,
-    target_card_id: str | None = None,
+    target_card_id: str | None = None, discard_card_ids: list[str] | None = None,
 ) -> dict:
     """
     Accion de comerciar de la expansion Colonies (no es un proyecto
@@ -2082,11 +2169,22 @@ def use_trade_fleet(
             Tile track 1 step") y quiere ejercer esa opcion -- sube el
             track de `colony_id` 1 paso ANTES de calcular el trade income
             (asi cobra el valor mas alto). False (default) no la ejerce.
+        target_card_id: OBLIGATORIO si el income o el colony bonus va a una
+            carta (Enceladus, Titan, Miranda).
+        discard_card_ids: OPCIONAL, solo para Pluto cuando el jugador es
+            dueno de una colonia ahi: su colony bonus es "roba 1 carta y
+            descarta 1". Si el jugador ya sabe que descartar (cualquier
+            carta de la mano DESPUES de robar el income y el bonus), se pasa
+            aca y se salda en la misma llamada. Si no (lo normal: tiene que
+            ver primero que robo), se deja en None y el descarte queda en
+            `pending_card_discards`, a resolver con resolve_pending_discards
+            -- play_card se niega a jugar cartas mientras quede pendiente.
 
     Returns:
         dict con el estado actualizado del jugador y de las colonias, mas
         `income_type`/`income_amount`/`colony_bonus` para que el LLM le
-        explique al usuario que gano.
+        explique al usuario que gano. Europa da PRODUCCION (income_type
+        "mc_production"/"energy_production"/"plant_production", 1 paso).
 
     Lanza ValueError si `payment` no es valido o si `bump_track_first` es
     True sin tener el pasivo, InsufficientResourcesError si falta el
@@ -2123,6 +2221,7 @@ def use_trade_fleet(
         colonies = colonieslib.adjust_colony_track(colonies, colony_id, int(bump_steps))
     new_colonies, income_type, income_amount, colony_bonus = colonieslib.trade_with_colony(colonies, colony_id)
 
+    production_totals_before = engine.snapshot_production_totals(player)
     new_player: dict = {**player, payment: player[payment] - cost, "trade_fleets_used": player["trade_fleets_used"] + 1}
     new_player = _apply_colony_gain(new_player, income_type, income_amount, target_card_id)
     # Pasivos que premian el acto de comerciar (ej. Venus Trade Hub: +3 MC)
@@ -2131,6 +2230,11 @@ def use_trade_fleet(
     if player_id in new_colonies[colony_id]["owners"]:
         for key, delta in colony_bonus.items():
             new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
+    if discard_card_ids is not None:
+        new_player = dict(engine.resolve_pending_discards(engine.PlayerState(**new_player), discard_card_ids))  # type: ignore[typeddict-item]
+    # Comerciar es una accion: Suitable Infrastructure paga si subio alguna
+    # produccion (Europa).
+    new_player = dict(engine.apply_production_increased_bonus(new_player, production_totals_before))  # type: ignore[arg-type]
 
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_colonies(new_colonies)
@@ -2144,6 +2248,32 @@ def use_trade_fleet(
         "player": new_player, "colonies": dict(new_colonies),
         "income_type": income_type, "income_amount": income_amount, "colony_bonus": colony_bonus,
     }
+
+
+@tool
+def resolve_pending_discards(player_id: str, discard_card_ids: list[str]) -> dict:
+    """
+    Salda un descarte OBLIGATORIO pendiente (`player.pending_card_discards`),
+    hoy solo generado por el colony bonus de Pluto ("roba 1 carta y
+    descarta 1": el jugador ve lo robado y despues elige). Mientras quede
+    pendiente, play_card no deja jugar cartas.
+
+    Args:
+        player_id: id del jugador.
+        discard_card_ids: cartas de la MANO a descartar, exactamente tantas
+            como `pending_card_discards` (o la mano entera, si tiene menos).
+
+    Returns:
+        dict con el estado actualizado del jugador.
+
+    Lanza CardEffectError si no hay descarte pendiente o la cantidad no
+    coincide, CardNotInHandError si alguna carta no esta en la mano.
+    """
+    player = _load_player(player_id)
+    new_player = engine.resolve_pending_discards(player, discard_card_ids)
+    _save_player(player_id, new_player)
+    _log_transaction(player_id, "resolve_pending_discards", {"discard_card_ids": discard_card_ids})
+    return {"player": dict(new_player)}
 
 
 @tool
@@ -2780,6 +2910,8 @@ def play_prelude(
     nested_greenery_hex_id: str | None = None,
     effect_choice: int | None = None,
     effect_amount: int | None = None,
+    colony_ocean_hex_id: str | None = None,
+    colony_target_card_id: str | None = None,
 ) -> dict:
     """
     Juega una carta PRELUDE (expansion Prelude). A diferencia de play_card:
@@ -2819,6 +2951,11 @@ def play_prelude(
             la prelude no tiene eleccion.
         effect_amount: parametro X que algunas preludes piden. None si no
             aplica.
+        colony_ocean_hex_id: OBLIGATORIO si la prelude construye una colonia
+            (`build_colony_id`) en Europa, cuyo placement bonus coloca un
+            oceano -- el hex donde va. Ignorado si ya estan los 9 oceanos.
+        colony_target_card_id: carta destino si el placement bonus de la
+            colonia construida va a una carta (Enceladus/Titan/Miranda).
 
     Returns:
         dict con el estado actualizado del jugador y de los parametros
@@ -2962,8 +3099,10 @@ def play_prelude(
             colonies, build_colony_id, player_id, allow_duplicate=allow_dup,
         )
         new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], build_colony_id]}
-        for key, delta in placement_bonus.items():
-            new_player[key] = new_player[key] + delta
+        new_player, board, new_globals = _apply_colony_placement_bonus(
+            new_player, placement_bonus, colony_target_card_id, colony_ocean_hex_id,
+            board, new_globals, ruling_party,
+        )
         new_player = dict(engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player)))  # type: ignore[typeddict-item]
         _save_colonies(new_colonies)
 
@@ -3126,7 +3265,7 @@ ALL_TOOLS = [
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
-    get_active_cards_state, resolve_ocean_offer, choose_corporation,
+    get_active_cards_state, resolve_ocean_offer, choose_corporation, resolve_pending_discards,
     retire_card_as_event, place_community, play_double_down,
     use_kelvinists_ruling_policy, use_scientists_ruling_policy,
 ]

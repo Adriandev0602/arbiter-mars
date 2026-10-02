@@ -90,6 +90,7 @@ do $$ begin
     alter table if exists players add column if not exists lobby_delegates integer not null default 1;
     alter table if exists players add column if not exists reserve_delegates integer not null default 6;
     alter table if exists players add column if not exists pending_ocean_offers integer not null default 0;
+    alter table if exists players add column if not exists pending_card_discards integer not null default 0;
     alter table if exists players add column if not exists tr_raised_this_generation boolean not null default false;
     alter table if exists players add column if not exists tr_skip_used_this_generation boolean not null default false;
     alter table if exists players add column if not exists scientists_policy_used_this_generation boolean not null default false;

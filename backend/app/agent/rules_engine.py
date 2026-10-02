@@ -155,6 +155,15 @@ class PlayerState(TypedDict):
     # Consultants). Se acumulan en place_ocean, se consumen con la tool
     # resolve_ocean_offer y se pierden al cerrar la generacion.
     pending_ocean_offers: int
+    # Cartas que el jugador ROBO con la obligacion de descartar despues (ej.
+    # colony bonus de Pluto: "roba 1 carta y descarta 1"). No se resuelve en
+    # el mismo paso porque el jugador tiene que ver lo robado antes de elegir
+    # que descartar: la anota draw_cards_then_require_discard y la salda
+    # resolve_pending_discards (tool del mismo nombre). A diferencia de
+    # pending_ocean_offers es una OBLIGACION, no una oferta: no se pierde al
+    # cerrar la generacion, y tools.play_card se niega a jugar cartas
+    # mientras quede alguna pendiente.
+    pending_card_discards: int
     # True si el jugador subio su TR en lo que va de esta generacion.
     # Lo marca _raise_tr y lo limpia run_production_phase (ver ambas).
     tr_raised_this_generation: bool
@@ -250,6 +259,7 @@ def new_player_state() -> PlayerState:
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0, pending_ocean_offers=0,
+        pending_card_discards=0,
         tr_raised_this_generation=False, tr_skip_used_this_generation=False,
         scientists_policy_used_this_generation=False,
         reserved_cards={}, zero_tag_cards_played=0,
@@ -4260,6 +4270,45 @@ def draw_cards_to_hand(player: PlayerState, n: int) -> PlayerState:
     drawn = player["deck"][:n]
     remaining_deck = player["deck"][n:]
     return {**player, "deck": remaining_deck, "hand": [*player["hand"], *drawn]}
+
+
+def draw_cards_then_require_discard(player: PlayerState, n: int) -> PlayerState:
+    """
+    Roba `n` cartas a la mano y anota la obligacion de descartar `n` despues
+    (ej. colony bonus de Pluto: "+1 carta -1 carta" -- robar 1, despues
+    descartar 1 a eleccion). El descarte no se resuelve aca porque el
+    jugador tiene que ver la carta robada antes de elegir (puede descartar
+    justo esa): queda en `pending_card_discards` hasta que se llame a
+    resolve_pending_discards. Si el mazo tiene menos de `n`, roba las que
+    queden, pero el descarte sigue siendo de `n` (la carta impresa dice
+    descartar 1, no "descartar lo robado").
+    """
+    drawn = draw_cards_to_hand(player, n)
+    return {**drawn, "pending_card_discards": player.get("pending_card_discards", 0) + n}  # type: ignore[return-value]
+
+
+def resolve_pending_discards(player: PlayerState, card_ids: list[str]) -> PlayerState:
+    """
+    Salda la obligacion anotada por draw_cards_then_require_discard: saca
+    de la mano exactamente `pending_card_discards` cartas (las elegidas en
+    `card_ids`, pueden ser cualquiera de la mano, incluida la recien
+    robada). Excepcion: si la mano tiene MENOS cartas que el descarte
+    pendiente, alcanza con descartar la mano entera (no se puede descartar
+    lo que no hay).
+
+    Lanza CardEffectError si no hay descarte pendiente o la cantidad no
+    coincide, CardNotInHandError si alguna carta no esta en la mano.
+    """
+    pending = player.get("pending_card_discards", 0)
+    if pending <= 0:
+        raise CardEffectError("El jugador no tiene descartes pendientes")
+    required = min(pending, len(player["hand"]))
+    if len(card_ids) != required:
+        raise CardEffectError(f"Hay que descartar exactamente {required} carta(s), se eligieron {len(card_ids)}")
+    new_player = player
+    for cid in card_ids:
+        new_player = remove_card_from_hand(new_player, cid)
+    return {**new_player, "pending_card_discards": 0}  # type: ignore[return-value]
 
 
 def remove_card_from_hand(player: PlayerState, card_id: str) -> PlayerState:
