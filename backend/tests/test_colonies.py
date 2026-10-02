@@ -217,3 +217,25 @@ def test_pluto_y_europa_siguen_sin_cargar():
     # Las dos que no entran en el modelo actual (ver la nota en COLONY_DEFS).
     assert "pluto" not in COLONY_DEFS
     assert "europa" not in COLONY_DEFS
+
+
+def test_add_colony_tile_agrega_sin_tocar_las_que_estan():
+    # Aridor (scan): "As your first action, put an additional Colony Tile of
+    # your choice into play." Agrega, no reemplaza: Callisto conserva su
+    # track y su dueno.
+    from app.agent.colonies import add_colony_tile
+    other = next(cid for cid in COLONY_DEFS if cid != "callisto")
+    colonies, _ = build_colony(new_colonies(["callisto"]), "callisto", "p1")
+    new = add_colony_tile(colonies, other)
+    assert new["callisto"] == colonies["callisto"]
+    assert new[other] == {"track_position": 1, "owners": [], "trade_fleet_present": False}
+    assert len(new) == 2
+
+
+def test_add_colony_tile_rechaza_repetida_o_desconocida():
+    from app.agent.colonies import add_colony_tile
+    colonies = new_colonies(["callisto"])
+    with pytest.raises(ValueError):
+        add_colony_tile(colonies, "callisto")
+    with pytest.raises(UnknownColonyError):
+        add_colony_tile(colonies, "no_existe")

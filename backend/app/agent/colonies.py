@@ -164,6 +164,26 @@ def new_colonies(colony_ids: list[str]) -> Colonies:
     return {cid: ColonyTileState(track_position=1, owners=[], trade_fleet_present=False) for cid in colony_ids}
 
 
+def add_colony_tile(colonies: Colonies, colony_id: str) -> Colonies:
+    """
+    Pone UNA Colony Tile mas en juego, sin tocar las que ya estan (Aridor:
+    "as your first action, put an additional Colony Tile of your choice into
+    play"). Arranca igual que en new_colonies: marcador blanco en la 2da
+    casilla, sin duenos ni flota.
+
+    A diferencia de new_colonies (que reemplaza el set entero), esto agrega:
+    las colonias ya en juego conservan su track, sus duenos y sus flotas.
+
+    Lanza UnknownColonyError si no esta cargada en COLONY_DEFS, ValueError si
+    ya esta en juego.
+    """
+    if colony_id not in COLONY_DEFS:
+        raise UnknownColonyError(f"Colonia '{colony_id}' no esta cargada en COLONY_DEFS")
+    if colony_id in colonies:
+        raise ValueError(f"La colonia '{colony_id}' ya esta en juego")
+    return {**colonies, colony_id: ColonyTileState(track_position=1, owners=[], trade_fleet_present=False)}
+
+
 def build_colony(
     colonies: Colonies, colony_id: str, player_id: str, allow_duplicate: bool = False
 ) -> tuple[Colonies, dict]:

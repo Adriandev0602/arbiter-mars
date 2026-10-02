@@ -30,11 +30,14 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
 
     -- 40 M€. Effect: +1 produccion de M€ cada vez que aparece un tipo de tag
     -- NUEVO (los eventos no cuentan) -- pieza nueva `on_new_distinct_tag_played`.
-    -- La clausula de setup ("as your first action, put an ADDITIONAL colony tile
-    -- into play") es una regla de SETUP: se resuelve con la tool setup_colonies
-    -- agregando una colonia mas, no es un efecto de carta.
+    -- "As your first action, put an additional Colony Tile of your choice into
+    -- play": `first_action` add_colony_tile, anotada como pendiente por
+    -- choose_corporation y resuelta con resolve_corporation_first_action
+    -- (colonies.add_colony_tile: AGREGA una tile, no reemplaza el set como
+    -- setup_colonies).
     ('aridor', 'Aridor', 'Colonies', '{}', 40,
-     '{"passive": {"on_new_distinct_tag_played": {"production_deltas": {"mc_production": 1}}}}'::jsonb),
+     '{"first_action": {"type": "add_colony_tile"},
+       "passive": {"on_new_distinct_tag_played": {"production_deltas": {"mc_production": 1}}}}'::jsonb),
 
     -- 45 M€, +2 produccion de M€. Guarda animales. Effect: +1 animal aca por
     -- cada tag animal/plant jugado, incluido el suyo propio (por eso el tag
@@ -250,9 +253,11 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
        "passive": {"venus_requirements_tolerance_steps": 2}}'::jsonb),
 
     -- 30 M€, +1 produccion de energia, plantas y acero. Su Effect ("awards and
-    -- milestones always cost 0 M€ for you") NO se modela: milestones/awards
-    -- estan fuera de alcance del MVP entero (CLAUDE.md seccion 7), no es una
-    -- pieza de vocabulario que falte.
+    -- milestones always cost 0 M€ for you") queda FUERA DE ALCANCE POR DISENO:
+    -- milestones/awards estan fuera del MVP entero (CLAUDE.md seccion 7) y el
+    -- Effect no toca ningun contador del motor. Revalidado contra el scan
+    -- (2026-10-02): el resto de la carta (30 M€ + las tres producciones) esta
+    -- cargado entero, no hay otra parte cargable.
     ('nirgal_enterprises', 'Nirgal Enterprises', 'Prelude 2', '{power,plant,building}', 30,
      '{"production_deltas": {"energy_production": 1, "plant_production": 1, "steel_production": 1}}'::jsonb),
 
@@ -265,11 +270,12 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
 
     -- 47 M€. Su Effect ("each new adjacency between your tile and an
     -- OPPONENT's tile") depende de tiles de oponentes: en un jugador nunca se
-    -- dispara, mismo criterio que Mons Insurance/Toll Station. La primera
-    -- accion (greenery gratis + oxigeno) tampoco entra en `effects`:
-    -- choose_corporation no coloca tiles (no recibe hex_id), asi que el
-    -- jugador la resuelve con la tool de colocacion como cualquier greenery.
-    ('philares', 'Philares', 'Promo', '{building}', 47, '{}'::jsonb),
+    -- dispara -- FUERA DE ALCANCE POR DISENO (multijugador), mismo criterio
+    -- que Mons Insurance/Toll Station. "As your first action, place a
+    -- greenery tile and raise the oxygen 1 step": `first_action`
+    -- place_greenery, gratis, con resolve_corporation_first_action(hex_id).
+    ('philares', 'Philares', 'Promo', '{building}', 47,
+     '{"first_action": {"type": "place_greenery"}}'::jsonb),
 
     -- 23 M€ y 10 de titanio. Effect: cada titanio vale 1 M€ extra al pagar
     -- cartas (mismo mecanismo que Advanced Alloys).
@@ -292,11 +298,13 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
        "passive": {"research_cost_delta_mc": 2}}'::jsonb),
 
     -- 45 M€. Effect: +1 produccion de M€ cada vez que se coloca CUALQUIER
-    -- colonia (pieza nueva `on_colony_placed`). La colonia gratis de su
-    -- primera accion se resuelve con la tool build_colony, que ya dispara el
-    -- pasivo -- por eso el "including this" del texto sale solo.
+    -- colonia (pieza nueva `on_colony_placed`). "As your first action, place
+    -- a colony": `first_action` build_colony, SIN los 17 M€ del proyecto
+    -- estandar (antes se resolvia con tools.build_colony, que los cobraba).
+    -- Dispara el pasivo -- por eso el "including this" del texto sale solo.
     ('poseidon', 'Poseidon', 'Colonies', '{}', 45,
-     '{"passive": {"on_colony_placed": {"production_deltas": {"mc_production": 1}}}}'::jsonb)
+     '{"first_action": {"type": "build_colony"},
+       "passive": {"on_colony_placed": {"production_deltas": {"mc_production": 1}}}}'::jsonb)
 on conflict (id) do update set
     name = excluded.name, expansion = excluded.expansion, tags = excluded.tags,
     starting_mc = excluded.starting_mc, effects = excluded.effects;
@@ -441,10 +449,13 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
     -- 40 M€. Dos efectos sobre ciudades: +1 produccion de M€ cuando se coloca
     -- CUALQUIER ciudad en Marte, y +3 M€ cuando la coloca el jugador. En un
     -- jugador los dos disparadores coinciden (ver apply_city_placed_bonuses).
-    -- Su "first action: place a city tile" no va en `effects`:
-    -- choose_corporation no coloca tiles, la resuelve el jugador aparte.
+    -- "As your first action in the game, place a city tile": `first_action`
+    -- place_city, gratis y SIN el +1 de produccion del proyecto estandar
+    -- (resolve_corporation_first_action(hex_id)); los dos pasivos de abajo se
+    -- disparan con esa misma ciudad.
     ('tharsis_republic', 'Tharsis Republic', 'Base', '{building}', 40,
-     '{"passive": {"on_city_tile_placed_production_delta": {"production": "mc_production", "per_tile": 1},
+     '{"first_action": {"type": "place_city"},
+       "passive": {"on_city_tile_placed_production_delta": {"production": "mc_production", "per_tile": 1},
                    "on_city_tile_placed_resource_delta": {"mc": 3}}}'::jsonb),
 
     -- 48 M€, +1 produccion de energia. Effect: -3 M€ tanto en las cartas con
@@ -537,13 +548,15 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
     -- hexagonos; construir sobre uno propio da 3 M€. El marcador NO es un
     -- tile: no lo encuentra ningun conteo y no impide construir ahi (al reves
     -- que el de nomads). El primero va en el setup sin exigir adyacencia
-    -- (tool place_community con first_action=true); los demas, con la accion.
+    -- (`first_action` place_community, resuelta con
+    -- resolve_corporation_first_action o place_community(first_action=true),
+    -- que ahora consume esa pendiente); los demas, con la accion.
     -- Su accion NO va en `effects.action`: colocar el marcador necesita un
     -- hex_id, y las colocaciones en el mapa se piden siempre con su propia
     -- tool (place_community), igual que el greenery de Philares o la ciudad
     -- de Tharsis Republic. `effects` solo lleva lo que resuelve el motor.
     ('arcadian_communities', 'Arcadian Communities', 'Promo', '{}', 40,
-     '{"resource_deltas": {"steel": 10},
+     '{"resource_deltas": {"steel": 10}, "first_action": {"type": "place_community"},
        "passive": {"on_build_on_own_community": {"mc_delta": 3}}}'::jsonb),
 
     -- 54 M€ y roba una carta con tag science. Guarda "diseases". Dos mitades:

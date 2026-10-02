@@ -96,6 +96,13 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+-- "As your first action..." de la corporacion, pendiente hasta resolverla con
+-- tools.resolve_corporation_first_action: {"corporation_id", "type"} o null.
+do $$ begin
+    alter table if exists players add column if not exists pending_corporation_first_action jsonb;
+exception when undefined_table then null;
+end $$;
+
 do $$ begin
     alter table if exists global_parameters add column if not exists turmoil jsonb not null default '{}'::jsonb;
 exception when undefined_table then null;

@@ -46,6 +46,7 @@ def _load_player(player_id: str) -> engine.PlayerState:
         played_cards=row.get("played_cards") or [],
         pending_mc_discount=row.get("pending_mc_discount") or 0,
         pending_ocean_offers=row.get("pending_ocean_offers") or 0,
+        pending_corporation_first_action=row.get("pending_corporation_first_action") or None,
         pending_requirement_tolerance_steps=row.get("pending_requirement_tolerance_steps") or 0,
         reserved_cards=row.get("reserved_cards") or {},
         zero_tag_cards_played=row.get("zero_tag_cards_played") or 0,
@@ -2516,14 +2517,22 @@ def place_community(player_id: str, hex_id: str, first_action: bool = False) -> 
             action, place a community on a non-reserved area"), que no exige
             adyacencia. La accion repetible de la carta exige que el hexagono
             toque un tile propio o un community propio, asi que va en False.
+            Con True se delega en resolve_corporation_first_action: consume
+            la first action PENDIENTE que anoto choose_corporation, asi que
+            solo se puede usar una vez (antes era un bypass repetible).
 
     Returns:
         dict con el estado del tablero actualizado.
 
     Lanza HexOccupiedError / InvalidPlacementError segun el caso.
     """
+    if first_action:
+        pending = _load_player(player_id).get("pending_corporation_first_action")
+        if not pending or pending.get("type") != "place_community":
+            raise ValueError("El jugador no tiene pendiente la first action 'place_community'")
+        return resolve_corporation_first_action.func(player_id, hex_id=hex_id)
     board = _load_board()
-    new_board = boardlib.place_community(board, hex_id, player_id, require_adjacency=not first_action)
+    new_board = boardlib.place_community(board, hex_id, player_id, require_adjacency=True)
     _save_board(new_board)
     _log_transaction(player_id, "place_community", {"hex_id": hex_id, "first_action": first_action})
     return {"board": {k: dict(v) for k, v in new_board.items()}}
@@ -3135,6 +3144,11 @@ def choose_corporation(player_id: str, corporation_id: str) -> dict:
         )
     if effects.get("passive"):
         player = engine.register_passive_effect(player, corporation_id, effects["passive"])
+    # "As your first action..." (Philares, Tharsis Republic, Aridor, Poseidon,
+    # Arcadian Communities): se ANOTA como pendiente, no se resuelve aca --
+    # necesita un hex_id/colony_id que esta tool no recibe. Se cobra sin costo
+    # con resolve_corporation_first_action.
+    player = engine.register_corporation_first_action(player, corporation_id, effects.get("first_action"))
 
     new_player, new_globals = engine.apply_card_effect(player, globals_, effects)
     new_player = engine.apply_tag_played_resource_bonuses(new_player, tags)
@@ -3147,7 +3161,120 @@ def choose_corporation(player_id: str, corporation_id: str) -> dict:
         _save_global_parameters(new_globals)
     _log_transaction(player_id, "choose_corporation", {"corporation_id": corporation_id})
 
-    return {"player": dict(new_player), "globals": dict(new_globals), "corporation": corp["name"]}
+    result = {"player": dict(new_player), "globals": dict(new_globals), "corporation": corp["name"]}
+    if new_player.get("pending_corporation_first_action"):
+        result["pending_first_action"] = dict(new_player["pending_corporation_first_action"])
+    return result
+
+
+@tool
+def resolve_corporation_first_action(
+    player_id: str, hex_id: str | None = None, colony_id: str | None = None,
+    target_card_id: str | None = None,
+) -> dict:
+    """
+    Resuelve, SIN COSTO, el "as your first action..." de la corporacion
+    elegida (lo anota choose_corporation en
+    `player.pending_corporation_first_action`). Se usa una sola vez. NO es un
+    proyecto estandar: no se pagan sus M€, no da su produccion propia y no
+    dispara pasivos de "proyecto estandar usado" (CrediCor, etc.).
+
+    Tipos (texto literal de cada scan):
+      - place_greenery (Philares: "place a greenery tile and raise the oxygen
+        1 step"): requiere hex_id. Bonus de hex, oceanos adyacentes, pasivos
+        de greenery, Mars First/Greens Ruling Policy y +1 paso de oxigeno.
+      - place_city (Tharsis Republic: "place a city tile"): requiere hex_id.
+        Bonus de hex y pasivos de ciudad (la propia Tharsis: +1 produccion de
+        M€ y +3 M€), Mars First Ruling Policy. Sin el +1 de produccion del
+        proyecto estandar.
+      - add_colony_tile (Aridor: "put an additional Colony Tile of your
+        choice into play"): requiere colony_id, una colonia de
+        colonies.COLONY_DEFS que todavia no este en juego.
+      - build_colony (Poseidon: "place a colony"): requiere colony_id, en
+        juego. Sin los 17 M€; da el placement bonus y dispara on_colony_placed
+        (el "including this" de Poseidon). target_card_id si el bonus va a
+        una carta.
+      - place_community (Arcadian Communities: "place a community on a
+        non-reserved area"): requiere hex_id, sin exigir adyacencia.
+
+    Si Reds gobierna y la accion sube el TR (Philares), se cobran los 3 M€
+    por paso como en cualquier otra accion del jugador.
+
+    Returns:
+        {"player": ..., "global_parameters": ..., "first_action": {...}} y
+        "board"/"colonies" segun el tipo.
+
+    Lanza ValueError si no hay first action pendiente o falta hex_id/colony_id.
+    """
+    player = _load_player(player_id)
+    player_before = player
+    new_player, pending = engine.consume_corporation_first_action(player)
+    action_type = pending["type"]
+    globals_ = _load_global_parameters()
+    new_globals = globals_
+    production_totals_before = engine.snapshot_production_totals(player)
+    board = None
+    colonies = None
+    result: dict = {}
+
+    if action_type in ("place_greenery", "place_city", "place_community") and hex_id is None:
+        raise ValueError(f"La first action '{action_type}' requiere hex_id")
+    if action_type in ("add_colony_tile", "build_colony") and colony_id is None:
+        raise ValueError(f"La first action '{action_type}' requiere colony_id")
+
+    if action_type == "place_greenery":
+        ruling_party = _load_turmoil()["ruling_party"]
+        board = _load_board()
+        if not boardlib.can_place_greenery(board, hex_id, player_id):
+            raise boardlib.InvalidPlacementError(f"No se puede colocar greenery en '{hex_id}' para este jugador")
+        new_player, new_globals = engine.corporation_first_action_greenery(new_player, globals_)
+        board, new_player = _place_greenery_and_apply_bonus(
+            board, new_player, hex_id, player_id, ruling_party=ruling_party
+        )
+        new_player = _apply_reds_ruling_policy(player_before, new_player, ruling_party)
+    elif action_type == "place_city":
+        ruling_party = _load_turmoil()["ruling_party"]
+        board = _load_board()
+        if not boardlib.can_place_city(board, hex_id):
+            raise boardlib.InvalidPlacementError(f"No se puede colocar ciudad en '{hex_id}'")
+        new_player, new_globals = engine.corporation_first_action_city(new_player, globals_)
+        board, new_player = _place_city_and_apply_bonus(
+            board, new_player, hex_id, player_id, ruling_party=ruling_party
+        )
+        new_player = _apply_reds_ruling_policy(player_before, new_player, ruling_party)
+    elif action_type == "place_community":
+        board = _load_board()
+        board = boardlib.place_community(board, hex_id, player_id, require_adjacency=False)
+    elif action_type == "add_colony_tile":
+        colonies = colonieslib.add_colony_tile(_load_colonies(), colony_id)
+    elif action_type == "build_colony":
+        colonies, placement_bonus = colonieslib.build_colony(_load_colonies(), colony_id, player_id)
+        new_player = {**new_player, "colonies_owned": [*new_player["colonies_owned"], colony_id]}
+        for key, delta in placement_bonus.items():
+            new_player = _apply_colony_gain(new_player, key, delta, target_card_id)
+        new_player = engine.apply_colony_placed_bonuses(engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
+    else:
+        raise ValueError(f"first action desconocida: '{action_type}'")
+
+    new_player = engine.apply_production_increased_bonus(new_player, production_totals_before)
+
+    _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
+    if new_globals != globals_:
+        _save_global_parameters(new_globals)
+    if board is not None:
+        _save_board(board)
+        result["board_hex"] = {hex_id: dict(board[hex_id])}
+    if colonies is not None:
+        _save_colonies(colonies)
+        result["colonies"] = dict(colonies)
+    _log_transaction(player_id, "corporation_first_action", {
+        **pending, "hex_id": hex_id, "colony_id": colony_id,
+    })
+
+    return {
+        "player": dict(new_player), "global_parameters": dict(new_globals),
+        "first_action": pending, **result,
+    }
 
 
 # Lista de tools que se bindean al LLM en graph.py
@@ -3157,7 +3284,7 @@ ALL_TOOLS = [
     deal_starting_hand, start_research_phase, resolve_research_phase,
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
-    get_active_cards_state, resolve_ocean_offer, choose_corporation,
+    get_active_cards_state, resolve_ocean_offer, choose_corporation, resolve_corporation_first_action,
     retire_card_as_event, place_community, play_double_down,
     use_kelvinists_ruling_policy, use_scientists_ruling_policy,
 ]
