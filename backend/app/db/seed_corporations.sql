@@ -488,11 +488,15 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
          {"cost": {"production_delta": {"energy_production": 1}}, "gains": {"resource_deltas": {"energy": 4}}},
          {"cost": {"production_delta": {"heat_production": 1}}, "gains": {"resource_deltas": {"heat": 4}}}]}}'::jsonb),
 
-    -- 37 M€. Effect: -2 M€ en las cartas con tag science. Su "first action:
-    -- draw 3 Prelude cards and play one" NO se modela: el sorteo/eleccion de
-    -- preludes del setup sigue sin existir (ver CARDS_LOG.md, "Prelude").
+    -- 37 M€. Effect: -2 M€ en las cartas con tag science. "As your first
+    -- action, draw 3 Prelude cards, and play one of them. Discard the other
+    -- two." (re-verificado contra el scan, 2026-10-02): clave
+    -- first_action de tipo `reveal_preludes`, resuelta por
+    -- resolve_corporation_first_action (revela) + resolve_prelude_draw
+    -- (juega gratis la elegida) -- misma pieza que New Partner/WG Project.
     ('valley_trust', 'Valley Trust', 'Prelude', '{earth}', 37,
-     '{"passive": {"card_cost_discount_mc": 2, "tag_filter": "science"}}'::jsonb),
+     '{"passive": {"card_cost_discount_mc": 2, "tag_filter": "science"},
+       "first_action": {"type": "reveal_preludes", "n": 3}}'::jsonb),
 
     -- 48 M€. Accion: reusar la accion de una carta activa ya usada esta
     -- generacion -- exactamente `reset_card_action_used`, que ya existia

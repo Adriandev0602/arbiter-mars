@@ -6637,3 +6637,127 @@ def test_tharsis_first_action_city_gratis_sin_produccion_del_proyecto_estandar()
     assert new_player["mc"] == 43
     assert new_player["mc_production"] == 1
     assert new_globals["city_tiles_placed"] == globals_["city_tiles_placed"] + 1
+# ---------------------------------------------------------------------------
+# Cartas "dudosas" cargadas (2026-10-02): Self-Replicating Robots, Venus
+# Orbital Survey, WG Project + robo de preludes "revela N, juga 1"
+# (New Partner, Board of Directors, WG Project, Valley Trust).
+# ---------------------------------------------------------------------------
+from app.agent import rules_engine as _engine_vos  # noqa: E402
+
+
+def test_self_replicating_robots_requires_exactly_2_science_tags():
+    req = {"min_tag_count": {"tag": "science", "count": 2}}
+    player = {**new_player_state(), "tags_played": {"science": 1}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player)
+    player = {**new_player_state(), "tags_played": {"science": 2}}
+    check_card_requirements(req, new_global_parameters(), player)
+
+
+def test_reveal_top_cards_take_tag_venus_to_hand_rest_to_pending_research():
+    # Venus Orbital Survey: revela 2; la venus va gratis a la mano, la otra
+    # queda para comprar (3 M€) o descartar. El mazo pierde exactamente 2.
+    player = {**new_player_state(), "deck": ["a_venus", "b_space", "c"], "hand": ["h"], "mc": 10}
+    tags = {"a_venus": ["venus", "space"], "b_space": ["space"]}
+    new_player = _engine_vos.reveal_top_cards_take_tag(player, 2, tags, "venus")
+    assert new_player["hand"] == ["h", "a_venus"]
+    assert new_player["pending_research"] == ["b_space"]
+    assert new_player["deck"] == ["c"]
+    assert new_player["mc"] == 10  # las venus son GRATIS
+
+    # Comprar la otra cuesta 3 M€ con el resolve_research_phase de siempre.
+    bought = _engine_vos.resolve_research_phase(new_player, ["b_space"], 3)
+    assert bought["mc"] == 7
+    assert bought["hand"] == ["h", "a_venus", "b_space"]
+    assert bought["pending_research"] == []
+
+
+def test_reveal_top_cards_take_tag_both_venus_and_wild_does_not_count():
+    player = {**new_player_state(), "deck": ["v1", "v2", "w"]}
+    tags = {"v1": ["venus"], "v2": ["venus"], "w": ["wild"]}
+    both = _engine_vos.reveal_top_cards_take_tag(player, 2, tags, "venus")
+    assert both["hand"] == ["v1", "v2"] and both["pending_research"] == [] and both["deck"] == ["w"]
+    # El tag "wild" no es un tag venus (solo vale para requisitos).
+    wild = _engine_vos.reveal_top_cards_take_tag({**player, "deck": ["w"]}, 2, tags, "venus")
+    assert wild["hand"] == [] and wild["pending_research"] == ["w"] and wild["deck"] == []
+
+
+def test_reveal_top_cards_take_tag_rejects_with_pending_research():
+    player = {**new_player_state(), "deck": ["a"], "pending_research": ["x"]}
+    with pytest.raises(CardEffectError):
+        _engine_vos.reveal_top_cards_take_tag(player, 2, {}, "venus")
+
+
+def test_venus_orbital_survey_action_spec_without_engine_gains_marks_action_used():
+    # tools.use_card_action saca reveal_top_cards_take_tag de gains antes
+    # de llamar al motor; el motor tiene que aceptar la accion "vacia" y
+    # marcarla usada (una vez por generacion), sin cobrar nada.
+    player = _engine_vos.register_active_card(new_player_state(), "venus_orbital_survey")
+    player = {**player, "mc": 5}
+    new_player, _ = _engine_vos.use_card_action(
+        player, new_global_parameters(), "venus_orbital_survey", {"cost": {}, "gains": {}},
+    )
+    assert new_player["active_cards"]["venus_orbital_survey"]["action_used"] is True
+    assert new_player["mc"] == 5
+
+
+def test_prelude_draw_candidates_excludes_played_and_source():
+    catalog = ["p1", "p2", "p3", "new_partner"]
+    assert _engine_vos.prelude_draw_candidates(catalog, ["p2"], exclude=("new_partner",)) == ["p1", "p3"]
+
+
+def test_prelude_draw_pick_one_of_revealed_and_discard_rest():
+    player = _engine_vos.start_prelude_draw(new_player_state(), "wg_project", ["p1", "p2", "p3"])
+    assert player["pending_prelude_draw"] == {"source": "wg_project", "options": ["p1", "p2", "p3"], "free_play": True}
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(player, "p9", require_free_play=True)
+    taken = _engine_vos.take_pending_prelude(player, "p2", require_free_play=True)
+    assert taken["pending_prelude_draw"] == {}
+    # Sin robo pendiente no hay nada que resolver.
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(taken, "p1")
+    # Descartar todas (prelude_id=None) tambien cierra la mesa.
+    assert _engine_vos.take_pending_prelude(player, None)["pending_prelude_draw"] == {}
+
+
+def test_prelude_draw_blocks_other_source_but_same_source_overwrites():
+    player = _engine_vos.start_prelude_draw(new_player_state(), "valley_trust", ["p1", "p2", "p3"])
+    with pytest.raises(CardEffectError):
+        _engine_vos.start_prelude_draw(player, "board_of_directors", ["p4"], free_play=False)
+    bod = _engine_vos.start_prelude_draw(new_player_state(), "board_of_directors", ["p4"], free_play=False)
+    again = _engine_vos.start_prelude_draw(bod, "board_of_directors", ["p5"], free_play=False)
+    assert again["pending_prelude_draw"]["options"] == ["p5"]
+
+
+def test_board_of_directors_reveal_cannot_be_played_for_free():
+    bod = _engine_vos.start_prelude_draw(new_player_state(), "board_of_directors", ["p4"], free_play=False)
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(bod, "p4", require_free_play=True)
+    # Descartar si se puede.
+    assert _engine_vos.take_pending_prelude(bod, None, require_free_play=True)["pending_prelude_draw"] == {}
+    # Por su propia accion (rama pagar), con su source, si.
+    assert _engine_vos.take_pending_prelude(bod, "p4", source_card_id="board_of_directors")["pending_prelude_draw"] == {}
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(bod, "p4", source_card_id="new_partner")
+
+
+def test_prelude_draw_effect_keys_are_noop_in_apply_card_effect():
+    # WG Project / Valley Trust: las claves las resuelve tools.py; el motor
+    # puro no cambia nada por ellas.
+    player, globals_ = new_player_state(), new_global_parameters()
+    for effects in ({"reveal_random_preludes": {"n": 3}}, {"first_action": {"type": "reveal_preludes", "n": 3}}):
+        new_player, new_globals = _engine_vos.apply_card_effect(player, globals_, effects)
+        assert new_player == player and new_globals == globals_
+
+
+def test_register_corporation_first_action_reveal_preludes_conserva_n():
+    # Valley Trust: la first action de robar preludes es un tipo mas de la
+    # pieza generica; la pendiente guarda cuantas revelar.
+    player = _engine_fa.register_corporation_first_action(
+        new_player_state(), "valley_trust", {"type": "reveal_preludes", "n": 3}
+    )
+    assert player["pending_corporation_first_action"] == {
+        "corporation_id": "valley_trust", "type": "reveal_preludes", "n": 3,
+    }
+    _, pending = _engine_fa.consume_corporation_first_action(player)
+    assert pending["n"] == 3

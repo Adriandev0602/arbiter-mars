@@ -743,16 +743,76 @@ de acción, requisito propio de acción (`effects.action.requirements`), `allow_
 `turmoil.remove_delegate`, y `trade_bump_track_first` parametrizable a N pasos (con retrofit de
 Trade Envoys y Trading Colony a `1`).
 
-**Siguen pendientes por mecánica (2):**
-- **P88 Venus Orbital Survey** — su acción revela el tope del mazo, deja quedarse gratis con las
-  cartas venus y manda el resto a compra/descarte. Hay un diseño concreto propuesto (3
-  primitivas puras nuevas + resolución en `tools.py`), no se implementó en esta tanda por
-  tamaño.
-- **P91 WG Project** — "roba 3 cartas Prelude y jugá 1 gratis". El agente lo evaluó como
-  **feature de tamaño comparable a `reserved_cards`**: hace falta un sub-mazo Prelude
-  identificable (hoy `deck` es indiferenciado; habría que mantener una lista a mano, estilo
-  `COLONY_DEFS`) más un mecanismo de "jugar gratis una carta arbitraria" en dos pasos. Además
-  solo hay ~15 de las ~24 cartas Prelude cargadas, así que conviene cargar el resto antes.
+~~**Siguen pendientes por mecánica (2):**~~ **Las 2 cargadas el 2026-10-02** (ver abajo).
+- ~~**P88 Venus Orbital Survey** — su acción revela el tope del mazo, deja quedarse gratis con las
+  cartas venus y manda el resto a compra/descarte.~~
+- ~~**P91 WG Project** — "roba 3 cartas Prelude y jugá 1 gratis".~~ El diagnóstico de "sub-mazo
+  Prelude identificable" quedó viejo: las 70 preludes ya viven en `prelude_cards`.
+
+**Robo de preludes y Venus Orbital Survey (2026-10-02): P88, P91 y Valley Trust cargadas, y
+Self-Replicating Robots (210) por fin en el seed.** Las 3 cartas de proyecto se re-verificaron
+contra su scan oficial (bajados a `scan_cache/`):
+
+| Carta | Costo | Tags | Requisito | Tipo |
+|---|---|---|---|---|
+| 210 Self-Replicating Robots | 7 | ninguno (esquina vacía) | 2 tags `science` | activa (azul) |
+| P88 Venus Orbital Survey | 18 | `venus`, `space` | ninguno | activa (azul) |
+| P91 WG Project | 9 | `earth` | ser Chairman (`is_chairman`) | automatizada (verde), NO evento |
+
+*Venus Orbital Survey* ("reveal the top 2 cards. Take any Venus cards to hand for free. Any
+other card you either buy or discard"): `gains.reveal_top_cards_take_tag: {"n": 2, "tag":
+"venus"}` en `use_card_action`. Pieza pura `rules_engine.reveal_top_cards_take_tag(player, n,
+card_tags, tag)`: las que tienen el tag van gratis a `hand`, el resto a `pending_research`;
+`tools.use_card_action` solo trae los tags del catálogo. La compra/descarte **reusa
+`resolve_research_phase`** (3 M€ c/u, mismos modificadores de precio de Polyphemos/TerraLabs —
+"buy" es comprar una carta, igual que en la investigación). Rechaza si ya hay una
+investigación pendiente. El tag `wild` no cuenta como venus.
+
+*Pieza genérica "revelá N preludes, elegí 1 y jugala"* — compartida por **New Partner** (n=2),
+**Board of Directors** (n=1, con costo), **WG Project** (n=3) y **Valley Trust** (n=3). Antes,
+New Partner y Board of Directors devolvían las reveladas solo como sugerencia y después
+`play_prelude` aceptaba **cualquier** id. Ahora la "mesa" se persiste:
+- Campo nuevo `players.pending_prelude_draw` (jsonb, `{}` si no hay nada):
+  `{"source": card_id, "options": [ids], "free_play": bool}`.
+- Puras: `prelude_draw_candidates` (catálogo − ya jugadas − la carta que dispara),
+  `start_prelude_draw` (rechaza si hay un robo pendiente de OTRA carta; uno de la misma carta se
+  pisa — es el "discard" implícito de Board of Directors al reusar su acción otra generación) y
+  `take_pending_prelude` (valida que la elegida esté entre las opciones y limpia la mesa;
+  `prelude_id=None` descarta todas).
+- `tools._reveal_random_preludes` hace el sorteo (I/O + azar) y la usan `play_prelude` (New
+  Partner), `play_card` (WG Project, clave `reveal_random_preludes` — la misma de New Partner),
+  `use_card_action` (rama `reveal_prelude` de Board of Directors, con `free_play=False`) y
+  `resolve_corporation_first_action` (Valley Trust, tipo `reveal_preludes`).
+- Tool nueva `resolve_prelude_draw(player_id, prelude_id=None, ...)`: juega GRATIS la elegida vía
+  `play_prelude.func` (mismos parámetros de tiles/elección). Limpia la mesa antes de jugar (así
+  una New Partner elegida desde WG Project puede abrir su propio robo) y la restaura si
+  `play_prelude` falla. No deja jugar gratis lo que reveló Board of Directors (`free_play=False`):
+  eso sigue por su rama "pay 12 M€", que ahora además exige que `target_card_id` sea la prelude
+  que esa misma carta reveló.
+
+*Valley Trust* ("as your first action, draw 3 Prelude cards, and play one of them. Discard the
+other two", re-verificado contra su scan): `effects.first_action: {"type": "reveal_preludes",
+"n": 3}` en `seed_corporations.sql`. Es un tipo más de la pieza genérica de first actions de
+corporación (ver "First actions de corporaciones, RESUELTAS"): `choose_corporation` la anota
+pendiente y `resolve_corporation_first_action(player_id)` revela las 3 (una sola vez); después
+`resolve_prelude_draw` juega gratis la elegida. Lo de "first" (antes que cualquier otra acción)
+no se fuerza: lo ordena el jugador, mismo criterio que el resto de las first actions.
+
+*Self-Replicating Robots*: la mecánica ya existía (ver "Resuelto (2026-09-02)" más abajo); solo
+faltaba confirmar los datos contra el scan. "Double the resources on a card here" =
+`duplicate_reserved_card`.
+
+**Bug preexistente encontrado y corregido de paso:** `tools._load_player` no cargaba
+`tr_raised_this_generation`, `tr_skip_used_this_generation` ni
+`scientists_policy_used_this_generation`, aunque el motor los lee con `player["..."]` directo
+(`run_production_phase` con Pristar, el requisito `requires_tr_raised_this_generation`,
+`use_scientists_ruling_policy`): contra Supabase real eso era un `KeyError`, y además el flag de
+TR que `_raise_tr` guardaba nunca volvía a leerse. Los tests unitarios no lo ven porque no pasan
+por `tools.py`.
+
+Tests: 10 nuevos al final de `test_rules_engine.py` (reparto venus/no-venus con número exacto de
+M€ al comprar, wild, mesa de preludes, bloqueo de fuente distinta, Board of Directors no gratis,
+requisito de 2 science).
 
 ### Bloque 31 (2026-09-04): multi-agente, y por qué la revisión importa
 
@@ -796,12 +856,13 @@ en la cola con `reviewed = false`.
   cartas objetivo distintas (hoy el máximo es 2).
 - **P80 Red Appeasement** — el costo de su acción es gastar 2 delegados propios; falta integrar
   el estado de Turmoil a `use_card_action` (hoy solo `check_card_requirements` lo recibe).
-- **P88 Venus Orbital Survey** — revelar el tope del mazo, quedarse gratis con las que tengan tag
-  venus y comprar/descartar el resto.
+- ~~**P88 Venus Orbital Survey** — revelar el tope del mazo, quedarse gratis con las que tengan tag
+  venus y comprar/descartar el resto.~~ Cargada el 2026-10-02 (`reveal_top_cards_take_tag`).
 - **P89 Venus Shuttles** — costo de acción reducido por cada tag venus (costo dinámico, hoy los
   costos de acción son fijos).
-- **P91 WG Project** — requiere ser Chairman (ya resuelto), pero además un sub-mazo de Prelude
-  separado y un mecanismo para jugar gratis una carta arbitraria revelada.
+- ~~**P91 WG Project** — requiere ser Chairman (ya resuelto), pero además un sub-mazo de Prelude
+  separado y un mecanismo para jugar gratis una carta arbitraria revelada.~~ Cargada el
+  2026-10-02 (`reveal_random_preludes` + `resolve_prelude_draw`).
 
 ### Prelude bloque 2: 26 de 46, y un bug de reglas encontrado
 
@@ -858,7 +919,10 @@ intento separaba "revelar" y "pagar y jugar" en dos llamadas normales a `use_car
 la primera llamada marcaba `action_used = True` y la segunda se rechazaba ("la acción ya se usó
 esta generación") — lo agarró la prueba de humo, no los tests unitarios. Se corrigió reseteando
 `action_used` a `False` específicamente después de la rama `reveal_prelude`, para que la
-resolución (discard o pagar+jugar) siga disponible en la misma generación.
+resolución (discard o pagar+jugar) siga disponible en la misma generación. *(2026-10-02: la
+revelada ahora queda en `pending_prelude_draw` con `free_play=False`; "pagar y jugar" exige que
+`target_card_id` sea esa, y "discard" es `resolve_prelude_draw(prelude_id=None)` o simplemente
+volver a revelar otra generación. Ver "Robo de preludes y Venus Orbital Survey".)*
 
 **Dos bugs preexistentes más, encontrados por la misma prueba de humo:**
 - `tools.use_card_action` nunca declaraba el parámetro `discard_card_id` ni lo pasaba al motor —
@@ -885,7 +949,9 @@ pendientes Ecology Experts (P10) y Board of Directors (P45).
 **Corrección importante sobre el análisis viejo:** la nota que agrupaba Ecology Experts (P10),
 Eccentric Sponsor (P11) y WG Project bajo "jugar otra carta de la mano" estaba mal para 2 de las
 3. Eccentric Sponsor es en realidad `next_card_discount_mc: 25` — idéntica a Indentured Workers,
-ya cargada sin pieza nueva. WG Project ya estaba cargada con otra pieza distinta desde el bloque 3.
+ya cargada sin pieza nueva. ~~WG Project ya estaba cargada con otra pieza distinta desde el bloque 3.~~
+*(Corrección 2026-10-02: falso — `wg_project` no estaba en `seed_cards.sql`. Se cargó recién el
+2026-10-02 con la pieza de robo de preludes, ver "Robo de preludes y Venus Orbital Survey".)*
 **Solo Ecology Experts necesita de verdad la mecánica de "jugar una carta anidada"** — la pieza
 queda pospuesta, pero ahora acotada a una sola carta en vez de tres.
 
@@ -1019,7 +1085,7 @@ patrón que `global_events`. Tool nueva `tools.play_prelude(player_id, prelude_i
 la colocación de tiles por diferencia de contadores, igual que `play_card`.
 
 Esto además destraba parcialmente **P91 WG Project**, que necesitaba justamente un sub-mazo
-Prelude identificable.
+Prelude identificable (cargada el 2026-10-02, ver "Robo de preludes y Venus Orbital Survey").
 
 **Bloque 1 (P01-P24): 22 cargadas, 2 pendientes.** Revisadas por 4 agentes en paralelo. Todas las
 cargadas usan vocabulario existente -- ninguna necesitó pieza nueva de motor.
@@ -1423,8 +1489,10 @@ modeladas como efecto inmediato al elegir la corporación porque no necesitan da
 (Inventrix: robar 3; Morning Star Inc / Splice: revelar hasta un tag; Spire: robar 4 y
 descartar 3). Vitor ("fund an award for free") sigue fuera de alcance (awards). Valley Trust y
 Celestic se resuelven aparte.
-- **Valley Trust**: su "draw 3 Prelude cards and play one" sigue sin modelarse — el sorteo de
-  preludes del setup no existe todavía.
+- **Valley Trust**: completa desde 2026-10-02. Su "draw 3 Prelude cards and play one" es un
+  tipo más de first action (`reveal_preludes`), resuelto por la misma
+  `resolve_corporation_first_action` y cerrado con `resolve_prelude_draw` (ver "Robo de preludes
+  y Venus Orbital Survey").
 - **Polyphemos/TerraLabs**: la cláusula "including the starting hand" no cambia nada acá, porque
   `deal_starting_hand` reparte la mano inicial GRATIS en este motor.
 
@@ -1997,10 +2065,9 @@ Self-Replicating Robots (210) quedó implementada en `rules_engine.py`:
 Tests: `test_reserve_card_in_slot_moves_from_hand_and_stacks_resources`,
 `test_duplicate_reserved_card_resources`, `test_release_reserved_card`,
 `test_self_replicating_robots_action_reserve_or_duplicate_via_use_card_action`
-en `test_rules_engine.py`. La carta todavía no está cargada en
-`seed_cards.sql` (falta releer el scan real y confirmar costo/tags/número
-de tags de ciencia exactos) — queda disponible para el próximo bloque de
-revisión de cartas, ya sin bloqueo de mecánica.
+en `test_rules_engine.py`. **Cargada en `seed_cards.sql` el 2026-10-02**,
+verificada contra el scan: 7 M€, sin tags, requiere 2 tags science (ver
+"Robo de preludes y Venus Orbital Survey").
 
 **Resuelto (2026-09-01):** la pieza "mover/agregar un recurso a una carta específica elegida
 por el jugador, distinta de la que se está jugando/usando" (identificada primero en Local Heat

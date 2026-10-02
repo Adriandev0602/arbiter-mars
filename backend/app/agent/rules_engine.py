@@ -230,6 +230,13 @@ class PlayerState(TypedDict):
     lobby_delegates: int
     reserve_delegates: int
 
+    # pending_prelude_draw: preludes reveladas "sobre la mesa" esperando que
+    # el jugador elija cual jugar ({"source": card_id, "options": [ids],
+    # "free_play": bool}; {} si no hay ninguna). Ver start_prelude_draw /
+    # take_pending_prelude (New Partner, Board of Directors, WG Project,
+    # Valley Trust).
+    pending_prelude_draw: dict
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -271,6 +278,7 @@ def new_player_state() -> PlayerState:
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
         lobby_delegates=1, reserve_delegates=6,
+        pending_prelude_draw={},
     )
 
 
@@ -3729,6 +3737,7 @@ def apply_corporation_start(player: PlayerState, starting_mc: int) -> PlayerStat
 # Communities ("place a community on a non-reserved area").
 CORPORATION_FIRST_ACTION_TYPES = (
     "place_greenery", "place_city", "add_colony_tile", "build_colony", "place_community",
+    "reveal_preludes",
 )
 
 
@@ -3757,7 +3766,7 @@ def register_corporation_first_action(
         )
     return PlayerState(**{
         **player,
-        "pending_corporation_first_action": {"corporation_id": corporation_id, "type": action_type},
+        "pending_corporation_first_action": {**spec, "corporation_id": corporation_id, "type": action_type},
     })  # type: ignore[typeddict-item]
 
 
@@ -4398,6 +4407,127 @@ def resolve_pending_discards(player: PlayerState, card_ids: list[str]) -> Player
     for cid in card_ids:
         new_player = remove_card_from_hand(new_player, cid)
     return {**new_player, "pending_card_discards": 0}  # type: ignore[return-value]
+def reveal_top_cards_take_tag(
+    player: PlayerState, n: int, card_tags: dict[str, list[str]], tag: str,
+) -> PlayerState:
+    """
+    Revela las `n` cartas del tope del mazo: las que tienen `tag` pasan
+    GRATIS a la mano, y el resto queda en `pending_research` para que el
+    jugador decida comprarlas (3 M€ c/u, mismo precio y mismos modificadores
+    que la investigacion -- Polyphemos/TerraLabs) o descartarlas, cerrando
+    con el resolve_research_phase de siempre.
+
+    Ej. Venus Orbital Survey (P88): "Action: reveal the top 2 cards. Take any
+    Venus cards to hand for free. Any other card you either buy or discard."
+
+    `card_tags`: {card_id: [tags]} de (al menos) las cartas reveladas, lo
+    pasa tools.py desde el catalogo -- el motor no lo conoce. El tag "wild"
+    NO cuenta (solo vale para requisitos, ver check_card_requirements). Si el
+    mazo tiene menos de `n` cartas, revela las que queden.
+
+    Lanza CardEffectError si ya hay una investigacion pendiente sin resolver
+    (mismo criterio que start_research_phase: no se mezclan dos "mesas").
+    """
+    if player["pending_research"]:
+        raise CardEffectError(
+            "Ya hay cartas pendientes de comprar/descartar -- resolvelas antes de revelar otras"
+        )
+    revealed = player["deck"][:n]
+    taken = [cid for cid in revealed if tag in (card_tags.get(cid) or [])]
+    rest = [cid for cid in revealed if cid not in taken]
+    return {
+        **player,
+        "deck": player["deck"][n:],
+        "hand": [*player["hand"], *taken],
+        "pending_research": rest,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Robo de preludes "revela N, jugá 1" (New Partner, Board of Directors, WG
+# Project, Valley Trust)
+# ---------------------------------------------------------------------------
+# No hay mazo persistente de preludes: el sorteo sale del catalogo completo
+# (`prelude_cards`) menos las que el jugador ya jugo. Lo que si se persiste
+# es la "mesa": `pending_prelude_draw` = {"source": card_id, "options": [ids],
+# "free_play": bool} ({} si no hay nada pendiente), para que la prelude que
+# despues se juega sea de verdad una de las reveladas. `free_play=False`
+# marca un robo cuyo "jugarla" tiene costo propio (Board of Directors: 12
+# M€ + 1 director) y por lo tanto se resuelve por la accion de esa carta,
+# no gratis.
+
+def prelude_draw_candidates(
+    catalog_prelude_ids: list[str], played_cards: list[str], exclude: tuple[str, ...] = (),
+) -> list[str]:
+    """Preludes que todavia se pueden revelar: el catalogo menos las ya
+    jugadas por el jugador y menos `exclude`, conservando el orden."""
+    blocked = set(played_cards) | set(exclude)
+    return [pid for pid in catalog_prelude_ids if pid not in blocked]
+
+
+def start_prelude_draw(
+    player: PlayerState, source_card_id: str, revealed_ids: list[str], free_play: bool = True,
+) -> PlayerState:
+    """
+    Deja las preludes reveladas "sobre la mesa" (`pending_prelude_draw`).
+    Lanza CardEffectError si ya hay un robo pendiente de OTRA carta: hay que
+    resolverlo antes (resolve_prelude_draw). Un robo pendiente de la MISMA
+    carta se pisa -- es el "discard" implicito de Board of Directors cuando
+    vuelve a usar su accion en otra generacion sin haber jugado la anterior.
+    """
+    pending = player.get("pending_prelude_draw") or {}
+    if pending and pending.get("source") != source_card_id:
+        raise CardEffectError(
+            f"Ya hay preludes reveladas pendientes de '{pending.get('source')}' "
+            f"({pending.get('options')}) -- resolvelas antes de revelar otras"
+        )
+    return {
+        **player,
+        "pending_prelude_draw": {
+            "source": source_card_id, "options": list(revealed_ids), "free_play": free_play,
+        },
+    }
+
+
+def take_pending_prelude(
+    player: PlayerState, prelude_id: str | None, source_card_id: str | None = None,
+    require_free_play: bool | None = None,
+) -> PlayerState:
+    """
+    Cierra el robo pendiente: valida que `prelude_id` sea una de las
+    reveladas y limpia la mesa (las demas se descartan). `prelude_id=None`
+    descarta todas. Jugarla de verdad lo hace tools.py despues
+    (play_prelude), con el camino normal de siempre.
+
+    `source_card_id`: si se pasa, exige que el robo pendiente venga de esa
+    carta (Board of Directors cobrando su rama "pay 12 M€ to play it").
+    `require_free_play`: si se pasa, exige que el flag `free_play` del robo
+    coincida -- resolve_prelude_draw pasa True para no dejar jugar GRATIS lo
+    que Board of Directors revelo con costo.
+
+    Lanza CardEffectError si no hay robo pendiente, si viene de otra carta,
+    si `free_play` no coincide, o si `prelude_id` no esta entre las opciones.
+    """
+    pending = player.get("pending_prelude_draw") or {}
+    if not pending:
+        raise CardEffectError("No hay preludes reveladas pendientes de resolver")
+    if source_card_id is not None and pending.get("source") != source_card_id:
+        raise CardEffectError(
+            f"Las preludes pendientes las revelo '{pending.get('source')}', no '{source_card_id}'"
+        )
+    if (
+        prelude_id is not None and require_free_play is not None
+        and bool(pending.get("free_play", True)) != require_free_play
+    ):
+        raise CardEffectError(
+            f"Las preludes que revelo '{pending.get('source')}' no se juegan gratis -- "
+            f"se resuelven con la accion de esa carta"
+        )
+    if prelude_id is not None and prelude_id not in pending.get("options", []):
+        raise CardEffectError(
+            f"'{prelude_id}' no esta entre las preludes reveladas ({pending.get('options')})"
+        )
+    return {**player, "pending_prelude_draw": {}}
 
 
 def remove_card_from_hand(player: PlayerState, card_id: str) -> PlayerState:

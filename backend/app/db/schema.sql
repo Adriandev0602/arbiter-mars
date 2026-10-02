@@ -109,6 +109,14 @@ do $$ begin
 exception when undefined_table then null;
 end $$;
 
+-- Robo de preludes "revela N, juga 1" (New Partner, Board of Directors, WG
+-- Project, Valley Trust). Ver rules_engine.start_prelude_draw /
+-- take_pending_prelude y tools.resolve_prelude_draw.
+do $$ begin
+    alter table if exists players add column if not exists pending_prelude_draw jsonb not null default '{}'::jsonb;
+exception when undefined_table then null;
+end $$;
+
 create table if not exists players (
     id uuid primary key default gen_random_uuid(),
     display_name text not null,
