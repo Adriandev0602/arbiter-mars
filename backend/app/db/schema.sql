@@ -224,6 +224,18 @@ create table if not exists players (
     pending_prelude_choice jsonb not null default '[]'::jsonb,
     prelude_hand jsonb not null default '[]'::jsonb,
 
+    -- Columnas que hasta ahora solo vivian en las migraciones del principio
+    -- del archivo: en una base NUEVA esos `alter table if exists` corren
+    -- antes de que exista la tabla (no-op), asi que tambien tienen que estar
+    -- aca. Ver PlayerState en rules_engine.py para el significado de cada una.
+    pending_ocean_offers integer not null default 0,
+    pending_card_discards integer not null default 0,
+    pending_corporation_first_action jsonb,
+    pending_prelude_draw jsonb not null default '{}'::jsonb,
+    tr_raised_this_generation boolean not null default false,
+    tr_skip_used_this_generation boolean not null default false,
+    scientists_policy_used_this_generation boolean not null default false,
+
     created_at timestamptz not null default now()
 );
 
