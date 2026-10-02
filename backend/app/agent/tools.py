@@ -54,6 +54,14 @@ def _load_player(player_id: str) -> engine.PlayerState:
         trade_fleets_used=row.get("trade_fleets_used") or 0,
         lobby_delegates=row.get("lobby_delegates") if row.get("lobby_delegates") is not None else 1,
         reserve_delegates=row.get("reserve_delegates") if row.get("reserve_delegates") is not None else 6,
+        # Estos tres los usa el motor (_raise_tr, run_production_phase,
+        # use_scientists_ruling_policy) con player["..."] directo, pero no se
+        # cargaban -- KeyError contra Supabase real.
+        tr_raised_this_generation=bool(row.get("tr_raised_this_generation")),
+        tr_skip_used_this_generation=bool(row.get("tr_skip_used_this_generation")),
+        scientists_policy_used_this_generation=bool(row.get("scientists_policy_used_this_generation")),
+        pending_prelude_draw=row.get("pending_prelude_draw") or {},
+        corporation_first_action_used=bool(row.get("corporation_first_action_used")),
     )
 
 
@@ -1357,6 +1365,14 @@ def play_card(
     new_player = engine.apply_card_played_vp_icon_bonus(new_player, card_id)
     new_player = _apply_reds_ruling_policy(player_before, new_player, turmoil["ruling_party"])
 
+    # WG Project (P91): "draw 3 Prelude cards and play 1 of them. Discard
+    # the other 2." -- misma pieza que New Partner/Valley Trust: las 3 quedan
+    # sobre la mesa y la elegida se juega gratis con resolve_prelude_draw.
+    revealed_preludes: list[str] | None = None
+    prelude_reveal_spec = effects.get("reveal_random_preludes")
+    if prelude_reveal_spec is not None:
+        new_player, revealed_preludes = _reveal_random_preludes(new_player, card_id, prelude_reveal_spec["n"])
+
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
@@ -1377,10 +1393,13 @@ def play_card(
          "colony_id_increase": colony_id_increase, "colony_id_decrease": colony_id_decrease},
     )
 
-    return {
+    result = {
         "is_legal": True, "change_not_refunded": change,
         "player": dict(new_player), "global_parameters": dict(new_globals),
     }
+    if revealed_preludes is not None:
+        result["revealed_preludes"] = revealed_preludes
+    return result
 
 
 @tool
@@ -1586,11 +1605,13 @@ def use_card_action(
     reveal_prelude_spec = resolved_spec.get("gains", {}).get("reveal_prelude")
     revealed_preludes: list[str] | None = None
     if reveal_prelude_spec is not None:
-        already_played = set(player["played_cards"])
-        all_res = supabase.table("prelude_cards").select("id").execute()
-        candidates = [row["id"] for row in (all_res.data or []) if row["id"] not in already_played]
-        random.shuffle(candidates)
-        revealed_preludes = candidates[: reveal_prelude_spec.get("n", 1)]
+        # Queda sobre la mesa con free_play=False: no se puede jugar GRATIS
+        # con resolve_prelude_draw, solo por la rama "pay 12 M€" de abajo.
+        # "Discard" = resolve_prelude_draw(prelude_id=None), o simplemente
+        # volver a usar esta accion otra generacion (pisa el robo anterior).
+        player, revealed_preludes = _reveal_random_preludes(
+            player, card_id, reveal_prelude_spec.get("n", 1), free_play=False,
+        )
         spec_for_engine = {
             **spec_for_engine,
             "gains": {k: v for k, v in spec_for_engine.get("gains", {}).items() if k != "reveal_prelude"},
@@ -1605,6 +1626,9 @@ def use_card_action(
     if play_revealed:
         if target_card_id is None:
             raise ValueError(f"La accion de '{card_id}' requiere target_card_id (la prelude a jugar)")
+        # La prelude tiene que ser la que ESTA carta revelo (antes cualquier
+        # id del catalogo pasaba).
+        player = engine.take_pending_prelude(player, target_card_id, source_card_id=card_id)  # type: ignore[assignment]
         spec_for_engine = {
             **spec_for_engine,
             "gains": {k: v for k, v in spec_for_engine.get("gains", {}).items() if k != "play_revealed_prelude"},
@@ -1671,6 +1695,20 @@ def use_card_action(
             new_gains["card_resource_delta"] = new_gains.get("card_resource_delta", 0) + 1
         spec_for_engine = {**spec_for_engine, "gains": new_gains}
 
+    # Venus Orbital Survey (P88): "reveal the top 2 cards. Take any Venus
+    # cards to hand for free. Any other card you either buy or discard." Se
+    # resuelve aca porque necesita los tags del catalogo; el reparto es la
+    # funcion pura engine.reveal_top_cards_take_tag, y las no-venus quedan en
+    # pending_research para comprarlas/descartarlas con resolve_research_phase
+    # (3 M€ c/u, con los mismos modificadores de precio de siempre).
+    take_tag_spec = resolved_spec.get("gains", {}).get("reveal_top_cards_take_tag")
+    if take_tag_spec is not None:
+        spec_for_engine = {
+            **spec_for_engine,
+            "gains": {k: v for k, v in spec_for_engine.get("gains", {}).items()
+                      if k != "reveal_top_cards_take_tag"},
+        }
+
     # Se asegura cargado (no solo para requisitos de partido): Unity
     # gobernando sube el titanio en CUALQUIER accion que pague con el.
     turmoil = turmoil if turmoil is not None else _load_turmoil()
@@ -1692,6 +1730,22 @@ def use_card_action(
                 **new_player["active_cards"],
                 card_id: {**new_player["active_cards"][card_id], "action_used": False},
             },
+        }
+    take_tag_result = None
+    if take_tag_spec is not None:
+        top_ids = list(new_player["deck"][: take_tag_spec["n"]])
+        card_tags: dict[str, list[str]] = {}
+        if top_ids:
+            tags_res = supabase.table("cards").select("id,tags").in_("id", top_ids).execute()
+            card_tags = {row["id"]: (row.get("tags") or []) for row in (tags_res.data or [])}
+        hand_before = list(new_player["hand"])
+        new_player = dict(engine.reveal_top_cards_take_tag(
+            new_player, take_tag_spec["n"], card_tags, take_tag_spec["tag"],  # type: ignore[arg-type]
+        ))
+        take_tag_result = {
+            "revealed": top_ids,
+            "taken_to_hand": new_player["hand"][len(hand_before):],
+            "pending_research": new_player["pending_research"],
         }
     if remove_delegates_count:
         new_player = {
@@ -1823,6 +1877,8 @@ def use_card_action(
         result.update(trade_result)
     if revealed_preludes is not None:
         result["revealed_preludes"] = revealed_preludes
+    if take_tag_result is not None:
+        result.update(take_tag_result)
     return result
 
 
@@ -2498,6 +2554,112 @@ def play_double_down(
 
 
 @tool
+def resolve_prelude_draw(
+    player_id: str, prelude_id: str | None = None,
+    ocean_hex_ids: list[str] | None = None, city_hex_ids: list[str] | None = None,
+    greenery_hex_id: str | None = None, delegate_party_choices: list[str] | None = None,
+    build_colony_id: str | None = None, discard_card_ids: list[str] | None = None,
+    merger_corporation_id: str | None = None,
+    effect_choice: int | None = None, effect_amount: int | None = None,
+) -> dict:
+    """
+    Cierra un robo de preludes "revela N, juga 1" que quedo pendiente
+    (`player.pending_prelude_draw`): juega GRATIS la prelude elegida y
+    descarta el resto. Lo dejan pendiente New Partner (play_prelude), WG
+    Project (play_card) y Valley Trust (use_corporation_first_action).
+
+    Board of Directors tambien revela, pero su "jugarla" cuesta 12 M€ + 1
+    director: eso se resuelve con su accion (use_card_action, rama pagar);
+    aca solo se puede DESCARTAR lo que revelo (prelude_id=None).
+
+    Args:
+        player_id: id del jugador.
+        prelude_id: una de las preludes reveladas (ver `revealed_preludes`
+            en la respuesta de la tool que las revelo). None = descartarlas
+            todas sin jugar ninguna.
+        ocean_hex_ids/city_hex_ids/greenery_hex_id/delegate_party_choices/
+        build_colony_id/discard_card_ids/merger_corporation_id/effect_choice/
+        effect_amount: igual que play_prelude, si la prelude elegida los pide.
+
+    Returns:
+        La respuesta de play_prelude para la prelude jugada, o
+        {"player": ...} si se descartaron todas.
+
+    Lanza CardEffectError si no hay robo pendiente, si `prelude_id` no esta
+    entre las reveladas, o si el robo es de Board of Directors y se intenta
+    jugar gratis.
+    """
+    player = _load_player(player_id)
+    pending = dict(player.get("pending_prelude_draw") or {})
+    # Valida (puro) y limpia la mesa ANTES de jugar: la prelude elegida
+    # puede abrir su PROPIO robo (ej. New Partner elegida desde WG Project),
+    # y start_prelude_draw rechaza un robo nuevo con otro pendiente.
+    new_player = engine.take_pending_prelude(player, prelude_id, require_free_play=True)
+    _save_player(player_id, new_player)
+    _log_transaction(
+        player_id, "resolve_prelude_draw",
+        {"prelude_id": prelude_id, "source": pending.get("source"), "options": pending.get("options")},
+    )
+    if prelude_id is None:
+        return {"player": dict(new_player)}
+    try:
+        return play_prelude.func(  # type: ignore[attr-defined]
+            player_id, prelude_id,
+            ocean_hex_ids=ocean_hex_ids, city_hex_ids=city_hex_ids, greenery_hex_id=greenery_hex_id,
+            delegate_party_choices=delegate_party_choices, build_colony_id=build_colony_id,
+            discard_card_ids=discard_card_ids, merger_corporation_id=merger_corporation_id,
+            effect_choice=effect_choice, effect_amount=effect_amount,
+        )
+    except Exception:
+        # Un error de parametros (ej. falta un hex_id) no hace perder las
+        # reveladas: play_prelude valida antes de guardar, asi que alcanza
+        # con volver a poner la mesa.
+        _save_player(player_id, {**_load_player(player_id), "pending_prelude_draw": pending})  # type: ignore[typeddict-item]
+        raise
+
+
+@tool
+def use_corporation_first_action(player_id: str) -> dict:
+    """
+    Resuelve la "first action" de la corporacion del jugador cuando esa
+    first action es robar preludes (Valley Trust: "as your first action,
+    draw 3 Prelude cards, and play one of them. Discard the other two.").
+    Revela N preludes al azar (sin repetir las ya jugadas) y las deja sobre
+    la mesa; despues se elige una con resolve_prelude_draw, que la juega
+    gratis. Se puede usar UNA sola vez por partida.
+
+    Args:
+        player_id: id del jugador (ya tiene que haber elegido corporacion con
+            choose_corporation).
+
+    Returns:
+        {"player": ..., "revealed_preludes": [ids]}.
+
+    Lanza ValueError si la corporacion del jugador no tiene una first action
+    de este tipo, CardEffectError si ya la uso.
+    """
+    player = _load_player(player_id)
+    if player.get("corporation_first_action_used"):
+        raise engine.CardEffectError("La first action de la corporacion ya se uso")
+    played = list(player["played_cards"])
+    corp = None
+    if played:
+        corp_res = supabase.table("corporation_cards").select("id,effects").in_("id", played).execute()
+        rows = corp_res.data or []
+        corp = rows[0] if rows else None
+    if corp is None:
+        raise ValueError("El jugador todavia no eligio corporacion (choose_corporation)")
+    spec = (corp.get("effects") or {}).get("first_action_reveal_preludes")
+    if spec is None:
+        raise ValueError(f"La corporacion '{corp['id']}' no tiene una first action de robar preludes")
+    new_player, revealed = _reveal_random_preludes(dict(player), corp["id"], spec["n"])
+    new_player = {**new_player, "corporation_first_action_used": True}
+    _save_player(player_id, new_player)  # type: ignore[arg-type]
+    _log_transaction(player_id, "use_corporation_first_action", {"corporation_id": corp["id"], "revealed": revealed})
+    return {"player": dict(new_player), "revealed_preludes": revealed}
+
+
+@tool
 def place_community(player_id: str, hex_id: str, first_action: bool = False) -> dict:
     """
     Coloca un marcador de "community" de Arcadian Communities en el mapa.
@@ -2671,6 +2833,27 @@ def _draw_cards_matching_requirement(player: dict, n: int, party_requirement: bo
         return player
     remaining = deck[revealed_count:]
     return {**player, "deck": remaining, "hand": [*player["hand"], *drawn]}
+
+
+def _reveal_random_preludes(
+    player: dict, source_card_id: str, n: int, free_play: bool = True,
+) -> tuple[dict, list[str]]:
+    """
+    "Draw N prelude cards": sortea N preludes del catalogo (sin repetir las
+    que el jugador ya jugo, ni la carta que dispara el robo) y las deja
+    sobre la mesa (`pending_prelude_draw`) para que el jugador elija despues
+    con resolve_prelude_draw. Pieza unica para New Partner (n=2), Board of
+    Directors (n=1, free_play=False: jugarla cuesta 12 M€), WG Project (n=3)
+    y Valley Trust (n=3). El sorteo vive aca (I/O + azar); filtrar y anotar
+    la mesa son funciones puras del motor.
+    """
+    all_res = supabase.table("prelude_cards").select("id").execute()
+    catalog_ids = [row["id"] for row in (all_res.data or [])]
+    candidates = engine.prelude_draw_candidates(catalog_ids, player["played_cards"], exclude=(source_card_id,))
+    random.shuffle(candidates)
+    revealed = candidates[:n]
+    new_player = engine.start_prelude_draw(player, source_card_id, revealed, free_play=free_play)  # type: ignore[arg-type]
+    return dict(new_player), revealed
 
 
 def _count_blue_cards_played(played_card_ids: list[str]) -> int:
@@ -3037,11 +3220,10 @@ def play_prelude(
         # (cualquier id del catalogo ya funciona ahi), y la no elegida
         # simplemente no se juega nunca (preludes no tienen descarte real en
         # este motor).
-        already_played = set(new_player["played_cards"]) | {prelude_id}
-        all_res = supabase.table("prelude_cards").select("id").execute()
-        candidates = [row["id"] for row in (all_res.data or []) if row["id"] not in already_played]
-        random.shuffle(candidates)
-        revealed_preludes = candidates[: reveal_spec["n"]]
+        # Desde 2026-10: las reveladas quedan sobre la mesa
+        # (`pending_prelude_draw`) y la elegida se juega con
+        # resolve_prelude_draw, que valida que sea una de ellas.
+        new_player, revealed_preludes = _reveal_random_preludes(new_player, prelude_id, reveal_spec["n"])
 
     new_player = _apply_reds_ruling_policy(player_before, new_player, ruling_party)
 
@@ -3160,4 +3342,5 @@ ALL_TOOLS = [
     get_active_cards_state, resolve_ocean_offer, choose_corporation,
     retire_card_as_event, place_community, play_double_down,
     use_kelvinists_ruling_policy, use_scientists_ruling_policy,
+    resolve_prelude_draw, use_corporation_first_action,
 ]
