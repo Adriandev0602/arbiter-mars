@@ -2365,51 +2365,20 @@ def resolve_ocean_offer(player_id: str, card_id: str, steel_to_pay: int = 0) -> 
         steel_to_pay: cuanto acero declara pagar hacia el costo, si la oferta
             lo permite (`allow_steel`). 0 paga todo en MC.
 
+    Toda la cuenta vive en engine.resolve_ocean_offer (pura, testeada).
+
     Lanza ValueError si no hay ofertas pendientes o la carta no ofrece nada,
     InsufficientResourcesError si no alcanza el pago.
     """
     player = _load_player(player_id)
-    if player["pending_ocean_offers"] < 1:
-        raise ValueError("No hay ofertas pendientes por colocacion de oceano")
-
-    offer = next(
-        (
-            e["on_ocean_placed_offer"] for e in player["passive_effects"]
-            if "on_ocean_placed_offer" in e and e["card_id"] == card_id
-        ),
-        None,
-    )
-    if offer is None:
-        raise ValueError(f"La carta '{card_id}' no tiene una oferta por colocacion de oceano")
-
-    cost_mc = offer.get("cost_mc", 0)
-    if steel_to_pay and not offer.get("allow_steel"):
-        raise ValueError(f"La oferta de '{card_id}' no permite pagar con acero")
-    if player["steel"] < steel_to_pay:
-        raise engine.InsufficientResourcesError(
-            f"El jugador tiene {player['steel']} de acero, declaro pagar {steel_to_pay}"
-        )
-    steel_value_mc, _ = engine.compute_conversion_rates(player)
-    mc_needed = max(0, cost_mc - steel_to_pay * steel_value_mc)
-    if player["mc"] < mc_needed:
-        raise engine.InsufficientResourcesError(f"Se necesitan {mc_needed} MC, hay {player['mc']}")
-
-    new_player: dict = {
-        **player,
-        "mc": player["mc"] - mc_needed,
-        "steel": player["steel"] - steel_to_pay,
-        "pending_ocean_offers": player["pending_ocean_offers"] - 1,
-    }
-    for key, delta in offer.get("production_deltas", {}).items():
-        new_player[key] = engine._apply_production_floor(key, new_player[key] + delta)
-    if offer.get("card_resource_delta"):
-        active = new_player["active_cards"]
-        if card_id not in active:
-            raise ValueError(f"La carta '{card_id}' no esta activa para este jugador")
-        new_player["active_cards"] = {
-            **active,
-            card_id: {**active[card_id], "resources": active[card_id]["resources"] + offer["card_resource_delta"]},
-        }
+    # Mismo patron que play_card/use_card_action: el ruling party se lee de
+    # global_parameters.turmoil, nunca se le pide al LLM. Hoy no cambia el
+    # numero (Unity solo sube el titanio y esta oferta paga con acero), pero
+    # deja este camino de pago igual que los demas.
+    ruling_party = _load_turmoil()["ruling_party"]
+    new_player = dict(engine.resolve_ocean_offer(
+        player, card_id, steel_to_pay=steel_to_pay, ruling_party=ruling_party,
+    ))
 
     _save_player(player_id, new_player)  # type: ignore[arg-type]
     _log_transaction(player_id, "resolve_ocean_offer", {"card_id": card_id, "steel_to_pay": steel_to_pay})

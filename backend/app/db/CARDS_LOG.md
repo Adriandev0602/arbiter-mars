@@ -1618,19 +1618,33 @@ gobierna:
 | Reds | "Whenever a player takes an action that raises their TR, that player must pay 3 M€ per step raised. If you don't have enough M€, you cannot take that action." | `tools._apply_reds_ruling_policy`: NO toca `engine._raise_tr` (que sigue pura, sin conocer Turmoil) -- se resuelve en el BORDE de tools.py, comparando el TR de antes/después de cada tool que representa una acción del jugador (`play_card`, `use_card_action`, `play_prelude`, `use_standard_project`, `convert_resources`). Si el cargo deja MC negativo, lanza `InsufficientResourcesError` antes de guardar (la acción entera se cancela). NO se aplica a la TR Revision ni al propio Ruling Bonus de Reds en `resolve_new_government` -- esos son efectos automáticos, no "una acción que el jugador toma". |
 | Greens | "Gain 4 M€ each time you place a Greenery tile." | Enganchada en `_place_greenery_and_apply_bonus`, mismo criterio que Mars First. |
 | Scientists | "Spend 10 M€ to draw 3 cards -- may only be used once per generation and player." | Tool nueva `use_scientists_ruling_policy`, gateada por el flag nuevo `PlayerState.scientists_policy_used_this_generation` (se limpia en `run_production_phase`, mismo patrón que `tr_skip_used_this_generation`). |
-| Unity | "When performing a Standard Project, or playing a Prelude, Blue or Green card, the price of steel and titanium resource is raised by 1 M€." Este motor solo modela el aumento de titanio (steel no tiene una vía de pago separada aparte de producción/venta que use `compute_conversion_rates`) | `engine.compute_conversion_rates(player, ruling_party)`: +1 M€ al `titanium_value` si `ruling_party == "unity"`. Threadeado a través de `use_card_action`, `play_card`, `resolve_ocean_offer` (parcial, ver nota abajo) y los wrappers de proyecto estándar. |
+| Unity | "Your titanium resources are worth 1 M€ extra." (texto CORREGIDO 2026-10-02: la versión anterior de esta fila citaba "When performing a Standard Project, or playing a Prelude, Blue or Green card, the price of steel and titanium resource is raised by 1 M€", que NO coincide con el docstring de `compute_conversion_rates`, que cita el rulebook p. 6 "Titanium is worth 1 M€ extra", ni con la implementación open-source de referencia, `UnityPolicy01`: "Your titanium resources are worth 1 M€ extra". Solo titanio, sin restricción por tipo de carta.) | `engine.compute_conversion_rates(player, ruling_party)`: +1 M€ al `titanium_value` si `ruling_party == "unity"`; el acero no cambia. Threadeado a través de TODOS los caminos de pago con acero/titanio: `play_card` (incluye la carta anidada de `play_prelude`, que llama `play_card.func`), `use_card_action` (`mc_or_titanium`/`mc_or_steel`) y `resolve_ocean_offer`. Los proyectos estándar no aceptan acero/titanio en este motor, así que no hay nada que threadear ahí. |
 
-**Gap conocido, no bloqueante:** `tools.resolve_ocean_offer` (ofertas opcionales tipo Neptunian
-Power Consultants) no recibe `ruling_party` -- su `compute_conversion_rates(player)` no ve la
-subida de Unity. Caso de borde raro (pagar una oferta de océano parcialmente con acero mientras
-Unity gobierna); documentado acá como deuda técnica menor, no arreglado en esta pasada.
+**~~Gap conocido~~ RESUELTO (2026-10-02): `resolve_ocean_offer` y Unity.** La cuenta de la oferta
+se movió a una función pura, `engine.resolve_ocean_offer(player, card_id, steel_to_pay,
+ruling_party)` (al lado de `place_ocean`, con tests de número exacto); `tools.resolve_ocean_offer`
+quedó como wrapper de I/O y lee el ruling party de `global_parameters.turmoil` (`_load_turmoil()`),
+igual que `play_card`/`use_card_action`. **Conclusión de reglas:** hoy esto NO cambia ningún
+número. Unity solo sube el titanio ("Your titanium resources are worth 1 M€ extra") y Neptunian
+Power Consultants paga "5 M€ (steel may be used)" (verificado contra el scan X61): con Unity
+gobernando, 2 aceros siguen valiendo 4 M€. Si la regla citada antes (acero Y titanio, solo en
+Standard Project/Prelude/carta azul o verde) fuera la correcta, igual quedaría la duda de si la
+acción pasiva de una carta azul ya jugada cuenta como "playing a Blue card" -- pero esa versión no
+coincide con el rulebook ni con la implementación de referencia, así que no se modeló. Se pasa el
+`ruling_party` igual por consistencia: si una oferta futura permitiera titanio, ya vería la subida.
+**Auditoría de otros caminos de pago:** todos los que cobran con titanio ya pasaban el ruling
+party (`play_card`, `use_card_action`, `play_prelude` → `play_card.func`); `use_trade_fleet`/
+`build_colony` cobran cantidades fijas de titanio, no un valor en M€, así que Unity no los toca.
+**Fix lateral:** el aumento de producción de la oferta ahora pasa por `_increase_production` (antes
+usaba `_apply_production_floor` directo y Manutech no cobraba su energía).
 
 **Piezas nuevas en `PlayerState`:** `scientists_policy_used_this_generation: bool` (init `False`,
 reset en `run_production_phase`). Migración en `schema.sql`: columna
 `scientists_policy_used_this_generation boolean not null default false`.
 
 Tests: `tests/test_rules_engine.py` (7 casos de `apply_ruling_bonus`, 1 de `compute_conversion_rates`
-con Unity). 653/653 pasando.
+con Unity). 653/653 pasando. +10 tests el 2026-10-02 (`engine.resolve_ocean_offer` + acero sin
+cambio con Unity): 663/663.
 
 ### Bloque 5 (2026-09-04): las 22 restantes, analizadas en paralelo por 4 agentes
 

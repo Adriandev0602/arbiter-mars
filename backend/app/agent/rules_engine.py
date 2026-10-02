@@ -445,6 +445,76 @@ def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[Player
     return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
 
 
+def resolve_ocean_offer(
+    player: PlayerState, card_id: str, steel_to_pay: int = 0, ruling_party: str | None = None,
+) -> PlayerState:
+    """
+    Cobra UNA de las ofertas opcionales que dejo place_ocean en
+    `pending_ocean_offers` (pasivo "on_ocean_placed_offer" de `card_id`).
+
+    Ej. Neptunian Power Consultants (X61, texto literal del scan): "When any
+    ocean is placed, you MAY spend 5 M€ (steel may be used), to raise your
+    energy production 1 step and add 1 hydroelectric resource here."
+
+    Pago: `steel_to_pay` (solo si la oferta trae `allow_steel`) vale
+    `compute_conversion_rates(player, ruling_party)[0]` M€ cada uno; el resto
+    sale de MC. Sin reembolso por sobrepago (mismo criterio que
+    calculate_card_payment). `ruling_party` se pasa por consistencia con los
+    demas caminos de pago: la Ruling Policy de Unity ("Your titanium
+    resources are worth 1 M€ extra") solo toca el TITANIO, asi que hoy no
+    cambia el valor del acero de esta oferta -- pero si una oferta futura
+    permitiera titanio, ya veria la subida sin otro cableado.
+
+    La produccion sube por `_increase_production` (asi Manutech cobra el
+    recurso de stock correspondiente, igual que en cualquier otro aumento).
+
+    Lanza ValueError si no hay ofertas pendientes, si la carta no ofrece
+    nada, si declara acero en una oferta que no lo permite o si la carta no
+    esta activa; InsufficientResourcesError si no alcanza el pago.
+    """
+    if player["pending_ocean_offers"] < 1:
+        raise ValueError("No hay ofertas pendientes por colocacion de oceano")
+    offer = next(
+        (
+            e["on_ocean_placed_offer"] for e in player["passive_effects"]
+            if "on_ocean_placed_offer" in e and e.get("card_id") == card_id
+        ),
+        None,
+    )
+    if offer is None:
+        raise ValueError(f"La carta '{card_id}' no tiene una oferta por colocacion de oceano")
+    if steel_to_pay < 0:
+        raise ValueError("steel_to_pay no puede ser negativo")
+    if steel_to_pay and not offer.get("allow_steel"):
+        raise ValueError(f"La oferta de '{card_id}' no permite pagar con acero")
+    if player["steel"] < steel_to_pay:
+        raise InsufficientResourcesError(
+            f"El jugador tiene {player['steel']} de acero, declaro pagar {steel_to_pay}"
+        )
+    steel_value_mc, _ = compute_conversion_rates(player, ruling_party)
+    mc_needed = max(0, offer.get("cost_mc", 0) - steel_to_pay * steel_value_mc)
+    if player["mc"] < mc_needed:
+        raise InsufficientResourcesError(f"Se necesitan {mc_needed} MC, hay {player['mc']}")
+
+    new_player: dict = {
+        **player,
+        "mc": player["mc"] - mc_needed,
+        "steel": player["steel"] - steel_to_pay,
+        "pending_ocean_offers": player["pending_ocean_offers"] - 1,
+    }
+    for key, delta in offer.get("production_deltas", {}).items():
+        new_player = _increase_production(new_player, key, delta)
+    if offer.get("card_resource_delta"):
+        active = new_player["active_cards"]
+        if card_id not in active:
+            raise ValueError(f"La carta '{card_id}' no esta activa para este jugador")
+        new_player["active_cards"] = {
+            **active,
+            card_id: {**active[card_id], "resources": active[card_id]["resources"] + offer["card_resource_delta"]},
+        }
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]
+
+
 def place_city_tile(globals_: GlobalParameters) -> GlobalParameters:
     """
     Suma 1 al contador global de tiles de ciudad colocados (por cualquier
@@ -3202,7 +3272,11 @@ def compute_conversion_rates(player: PlayerState, ruling_party: str | None = Non
     `ruling_party`: si es "unity", suma +1 al titanio -- Ruling Policy de
     Turmoil, rulebook oficial pagina 6: "Titanium is worth 1 M€ extra",
     activa solo mientras Unity gobierna. `None` (default) para partidas sin
-    Turmoil o cuando el caller no cargo el estado de Turmoil.
+    Turmoil o cuando el caller no cargo el estado de Turmoil. El ACERO no
+    cambia con Unity (la policy no lo nombra; mismo texto en la
+    implementacion open-source de referencia, UnityPolicy01: "Your titanium
+    resources are worth 1 M€ extra"), ni se restringe a ciertos tipos de
+    carta: aplica a todo pago con titanio.
     """
     steel_value = STEEL_VALUE_MC
     titanium_value = TITANIUM_VALUE_MC

@@ -6454,3 +6454,105 @@ def test_compute_conversion_rates_unity_ruling_raises_titanium_value():
     _, titanium_value = compute_conversion_rates(player)
     _, titanium_value_unity = compute_conversion_rates(player, ruling_party="unity")
     assert titanium_value_unity == titanium_value + 1
+
+
+# --- resolve_ocean_offer (Neptunian Power Consultants) + Ruling Policy de Unity ---
+# Unity: "Your titanium resources are worth 1 M€ extra" -- solo titanio. La
+# oferta de Neptunian paga "5 M€ (steel may be used)", asi que Unity NO
+# cambia su precio; los tests fijan ese numero exacto.
+
+from app.agent.rules_engine import resolve_ocean_offer as engine_resolve_ocean_offer  # noqa: E402
+
+_NEPTUNIAN_OFFER = {
+    "cost_mc": 5, "allow_steel": True,
+    "production_deltas": {"energy_production": 1}, "card_resource_delta": 1,
+}
+
+
+def _neptunian_player(**overrides):
+    player = register_passive_effect(
+        new_player_state(), "neptunian_power_consultants", {"on_ocean_placed_offer": _NEPTUNIAN_OFFER},
+    )
+    return {
+        **player,
+        "active_cards": {"neptunian_power_consultants": {"resources": 0, "action_used": False}},
+        "pending_ocean_offers": 1,
+        **overrides,
+    }
+
+
+def test_compute_conversion_rates_unity_ruling_leaves_steel_unchanged():
+    player = new_player_state()
+    assert compute_conversion_rates(player) == (2, 3)
+    assert compute_conversion_rates(player, ruling_party="unity") == (2, 4)
+
+
+def test_resolve_ocean_offer_pays_5_mc():
+    player = _neptunian_player(mc=10, steel=0, energy_production=0)
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+    assert new_player["mc"] == 5
+    assert new_player["energy_production"] == 1
+    assert new_player["active_cards"]["neptunian_power_consultants"]["resources"] == 1
+    assert new_player["pending_ocean_offers"] == 0
+
+
+def test_resolve_ocean_offer_steel_worth_2_mc_each():
+    player = _neptunian_player(mc=10, steel=2)
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=2)
+    assert new_player["steel"] == 0
+    assert new_player["mc"] == 9  # 5 - 2*2 = 1 MC
+
+
+def test_resolve_ocean_offer_unity_ruling_does_not_raise_steel_value():
+    player = _neptunian_player(mc=10, steel=2)
+    without = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=2)
+    with_unity = engine_resolve_ocean_offer(
+        player, "neptunian_power_consultants", steel_to_pay=2, ruling_party="unity",
+    )
+    assert without["mc"] == 9
+    assert with_unity["mc"] == 9
+
+
+def test_resolve_ocean_offer_advanced_alloys_steel_bonus_applies():
+    player = register_passive_effect(
+        _neptunian_player(mc=10, steel=1), "advanced_alloys", {"steel_value_bonus": 1, "titanium_value_bonus": 1},
+    )
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=1)
+    assert new_player["mc"] == 8  # 5 - 1*3 = 2 MC
+
+
+def test_resolve_ocean_offer_steel_overpayment_not_refunded():
+    player = _neptunian_player(mc=10, steel=3)
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=3)
+    assert new_player["mc"] == 10  # 3*2 = 6 >= 5, sin vuelto
+    assert new_player["steel"] == 0
+
+
+def test_resolve_ocean_offer_triggers_manutech():
+    player = register_passive_effect(
+        _neptunian_player(mc=10, energy=0, energy_production=0), "manutech", {"on_production_increased": True},
+    )
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+    assert new_player["energy_production"] == 1
+    assert new_player["energy"] == 1
+
+
+def test_resolve_ocean_offer_insufficient_mc_raises():
+    player = _neptunian_player(mc=4, steel=0)
+    with pytest.raises(InsufficientResourcesError):
+        engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+
+
+def test_resolve_ocean_offer_without_pending_offer_raises():
+    player = _neptunian_player(mc=10, pending_ocean_offers=0)
+    with pytest.raises(ValueError):
+        engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+
+
+def test_resolve_ocean_offer_steel_not_allowed_raises():
+    player = register_passive_effect(
+        {**new_player_state(), "mc": 10, "steel": 2, "pending_ocean_offers": 1},
+        "some_card", {"on_ocean_placed_offer": {"cost_mc": 5}},
+    )
+    with pytest.raises(ValueError):
+        engine_resolve_ocean_offer(player, "some_card", steel_to_pay=1)
