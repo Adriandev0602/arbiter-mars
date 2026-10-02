@@ -1163,8 +1163,12 @@ tandas seguidas con el mismo patrón):
 **Cláusulas de SETUP, no de motor** (documentadas, no implementadas como efecto):
 - Beginner Corporation: "instead of choosing from 10 cards, you get 10 cards for free" — se
   reparten con `deal_starting_hand` sin cobrar.
-- Aridor: "as your first action, put an additional Colony Tile into play" — se resuelve con
-  `setup_colonies` agregando una colonia más.
+- ~~Aridor: "as your first action, put an additional Colony Tile into play" — se resuelve con
+  `setup_colonies` agregando una colonia más.~~ **Resuelto (2026-10-02)**: `setup_colonies`
+  REEMPLAZA el set entero, así que no servía. Ahora es `first_action: add_colony_tile`, resuelta
+  con `resolve_corporation_first_action(colony_id=...)` sobre `colonies.add_colony_tile`, que
+  AGREGA una tile sin tocar las que ya están. Ver "First actions de corporaciones" más abajo, en
+  "Cargadas parcialmente".
 - Celestic: "reveal cards until 2 with a floater ICON" — **queda sin modelar**: el ícono de
   floater no es un tag, es una marca del arte que el catálogo no guarda.
 - Los VP de Arklight (1 por 2 animales) y Celestic (1 por 3 floaters) no se modelan: el motor no
@@ -1240,8 +1244,9 @@ enganchado en las tres vías de colocación real, y el marcador desaparece solo 
 
 **Nota de alcance sobre la acción de Arcadian:** su `effects` NO lleva `action`. Colocar el
 marcador necesita un `hex_id`, y en este repo las colocaciones en el mapa se piden siempre con su
-propia tool (`place_community`), igual que el greenery de Philares o la ciudad de Tharsis
-Republic. Se cargó primero con un `gains.place_community` que **no estaba cableado en
+propia tool (`place_community`). (El primer marcador, el de la first action, pasa desde
+2026-10-02 por `resolve_corporation_first_action`, igual que el greenery de Philares y la ciudad
+de Tharsis Republic.) Se cargó primero con un `gains.place_community` que **no estaba cableado en
 `use_card_action`** — una vía muerta que se detectó al verificar el JSON contra Supabase y se
 corrigió antes de commitear.
 
@@ -1365,15 +1370,59 @@ Verificar 28 tags costó 3 imágenes en vez de 28 scans completos.
   **ninguna carta del catálogo tiene cargado su VP impreso**, así que el pasivo no tendría de
   dónde leerlo. Necesita un retrofit de `vp_icon` en el catálogo entero primero.
 
-**Cargadas parcialmente, por decisión de alcance (no son "pendientes"):**
-- **Nirgal Enterprises**: su Effect ("awards and milestones always cost 0 M€") no se modela
-  porque milestones/awards están fuera del MVP entero (CLAUDE.md sección 7), no porque falte una
-  pieza de vocabulario.
-- **Philares**: su Effect depende de adyacencia con tiles de OPONENTES → en un jugador nunca
-  dispara, mismo criterio que Mons Insurance/Toll Station. Se cargó con `effects: {}`.
-- **Philares** y **Tharsis Republic** tienen además un "as your first action, place a
-  greenery/city tile" que no entra en `effects`: `choose_corporation` no coloca tiles (no recibe
-  `hex_id`), así que esa colocación la resuelve el jugador con la tool de siempre.
+**Fuera de alcance POR DISEÑO (revalidado contra los scans, 2026-10-02 — ya no son "parciales"):**
+- **Nirgal Enterprises**: su Effect ("AWARDS AND MILESTONES ALWAYS COST 0 M€ FOR YOU") es
+  legítimamente fuera de alcance: milestones/awards están fuera del MVP entero (CLAUDE.md sección
+  7) y el Effect no toca ningún contador del motor. El resto de la carta (30 M€, +1 producción de
+  energía/plantas/acero, tags `power`+`plant`+`building`) ya estaba cargado entero: no queda
+  ninguna parte cargable.
+- **Philares — su Effect**: "each new adjacency between your tile and an OPPONENT's tile gives
+  you a standard resource of your choice (regardless of who just placed a tile)". Exige un tile
+  de OPONENTE en el mapa → en un jugador nunca dispara. Exclusión multijugador legítima, mismo
+  criterio que Mons Insurance/Toll Station.
+
+**First actions de corporaciones, RESUELTAS (2026-10-02).** Antes, el "as your first action..."
+de Philares y Tharsis Republic se resolvía "con la tool de siempre", o sea pagando el proyecto
+estándar (23 M€ el greenery; 25 M€ la ciudad, que además sumaba el +1 de producción de M€ del
+PROYECTO, que no corresponde). Textos verificados contra los scans:
+- **Philares**: "As your first action, place a greenery tile and raise the oxygen 1 step."
+- **Tharsis Republic**: "As your first action in the game, place a city tile."
+- **Aridor**: "As your first action, put an additional Colony Tile of your choice into play."
+- **Poseidon**: "As your first action, place a colony." (antes con `build_colony`, que cobraba
+  los 17 M€ del proyecto estándar).
+- **Arcadian Communities**: "As your first action, place a community (player marker) on a
+  non-reserved area." (antes `place_community(first_action=True)`, que se podía repetir sin
+  límite).
+
+Pieza nueva: `effects.first_action: {"type": ...}` en `corporation_cards` (tipos en
+`rules_engine.CORPORATION_FIRST_ACTION_TYPES`: `place_greenery`, `place_city`,
+`add_colony_tile`, `build_colony`, `place_community`). `choose_corporation` la ANOTA en el campo
+nuevo `player.pending_corporation_first_action` (`register_corporation_first_action`; columna
+jsonb nueva, migración en `schema.sql`) y la tool nueva **`resolve_corporation_first_action(
+player_id, hex_id=None, colony_id=None, target_card_id=None)`** la consume una sola vez
+(`consume_corporation_first_action`), sin costo. Mismo criterio que `pending_ocean_offers`: la
+decisión necesita un dato (hex/colonia) que la tool que la dispara no tiene. Se eligió una tool
+aparte en vez de un parámetro de `choose_corporation` porque la first action es una ACCIÓN del
+jugador, no parte del setup (y así `choose_corporation` no se llena de parámetros que solo usan
+cinco corporaciones).
+- Greenery: `corporation_first_action_greenery` (sube oxígeno 1 paso, +1 TR, sin cobrar; con
+  oxígeno al tope coloca sin TR) + `_place_greenery_and_apply_bonus` (bonus de hex, océanos
+  adyacentes, pasivos de greenery, Mars First +1 acero, Greens +4 M€) + Reds (-3 M€ por el paso
+  de TR, es una acción del jugador).
+- Ciudad: `corporation_first_action_city` (solo suma al contador global) +
+  `_place_city_and_apply_bonus` (bonus de hex, pasivos de ciudad — la propia Tharsis: +1
+  producción de M€ y +3 M€ —, Mars First).
+- Colony tile: `colonies.add_colony_tile` (agrega, no reemplaza; rechaza repetidas).
+- Colonia: `colonies.build_colony` + placement bonus + `on_colony_placed`, sin los 17 M€.
+- Community: `board.place_community(require_adjacency=False)`. `place_community(first_action=
+  True)` ahora delega en la tool nueva (exige la pendiente y la consume).
+
+No se fuerza que sea literalmente la PRIMERA acción (el motor no tiene un contador de acciones
+por generación); la pendiente no expira. Las demás "first action" del catálogo ya estaban bien
+modeladas como efecto inmediato al elegir la corporación porque no necesitan dato del jugador
+(Inventrix: robar 3; Morning Star Inc / Splice: revelar hasta un tag; Spire: robar 4 y
+descartar 3). Vitor ("fund an award for free") sigue fuera de alcance (awards). Valley Trust y
+Celestic se resuelven aparte.
 - **Valley Trust**: su "draw 3 Prelude cards and play one" sigue sin modelarse — el sorteo de
   preludes del setup no existe todavía.
 - **Polyphemos/TerraLabs**: la cláusula "including the starting hand" no cambia nada acá, porque

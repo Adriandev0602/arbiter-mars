@@ -6556,3 +6556,84 @@ def test_resolve_ocean_offer_steel_not_allowed_raises():
     )
     with pytest.raises(ValueError):
         engine_resolve_ocean_offer(player, "some_card", steel_to_pay=1)
+# ---------------------------------------------------------------------------
+# "As your first action..." de corporaciones (Philares, Tharsis Republic,
+# Aridor, Poseidon, Arcadian Communities): se anota como pendiente al elegir
+# la corporacion y se resuelve SIN COSTO (tools.resolve_corporation_first_action).
+# ---------------------------------------------------------------------------
+from app.agent import rules_engine as _engine_fa
+from app.agent import board as _board_fa
+
+
+def test_register_corporation_first_action_anota_pendiente():
+    player = _engine_fa.register_corporation_first_action(
+        new_player_state(), "philares", {"type": "place_greenery"}
+    )
+    assert player["pending_corporation_first_action"] == {
+        "corporation_id": "philares", "type": "place_greenery",
+    }
+
+
+def test_register_corporation_first_action_sin_spec_no_anota_nada():
+    player = new_player_state()
+    assert _engine_fa.register_corporation_first_action(player, "credicor", None) == player
+    assert player["pending_corporation_first_action"] is None
+
+
+def test_register_corporation_first_action_tipo_desconocido_lanza():
+    with pytest.raises(ValueError):
+        _engine_fa.register_corporation_first_action(new_player_state(), "x", {"type": "fund_award"})
+
+
+def test_consume_corporation_first_action_se_usa_una_sola_vez():
+    player = _engine_fa.register_corporation_first_action(
+        new_player_state(), "tharsis_republic", {"type": "place_city"}
+    )
+    new_player, spec = _engine_fa.consume_corporation_first_action(player)
+    assert spec == {"corporation_id": "tharsis_republic", "type": "place_city"}
+    assert new_player["pending_corporation_first_action"] is None
+    with pytest.raises(ValueError):
+        _engine_fa.consume_corporation_first_action(new_player)
+
+
+def test_philares_first_action_greenery_gratis_sube_oxigeno_y_tr():
+    # Philares (scan): "You start with 47 M€. As your first action, place a
+    # greenery tile and raise the oxygen 1 step." Sin pagar los 23 M€.
+    player = _engine_fa.apply_corporation_start(new_player_state(), 47)
+    player = _engine_fa.register_corporation_first_action(player, "philares", {"type": "place_greenery"})
+    player, _ = _engine_fa.consume_corporation_first_action(player)
+    globals_ = new_global_parameters()
+    new_player, new_globals = _engine_fa.corporation_first_action_greenery(player, globals_)
+    assert new_player["mc"] == 47
+    assert new_player["tr"] == 21
+    assert new_globals["oxygen"] == globals_["oxygen"] + 1
+    # Tile en el hex 03 (bonus impreso: 2 acero).
+    _, hex_bonus, ocean_bonus_mc = _board_fa.place_greenery_tile(_board_fa.new_board(), "03", "p1")
+    assert hex_bonus == [("steel", 2)]
+    assert ocean_bonus_mc == 0
+
+
+def test_philares_first_action_greenery_con_oxigeno_al_tope_no_da_tr():
+    globals_ = {**new_global_parameters(), "oxygen": 14}
+    player = new_player_state()
+    new_player, new_globals = _engine_fa.corporation_first_action_greenery(player, globals_)
+    assert new_player["tr"] == player["tr"]
+    assert new_globals["oxygen"] == 14
+
+
+def test_tharsis_first_action_city_gratis_sin_produccion_del_proyecto_estandar():
+    # Tharsis Republic (scan): "You start with 40 M€. As your first action in
+    # the game, place a city tile." Su propio Effect paga +1 produccion de M€
+    # y +3 M€ por esa ciudad; el proyecto estandar (25 M€, +1 produccion
+    # extra) NO entra.
+    player = _engine_fa.apply_corporation_start(new_player_state(), 40)
+    player = register_passive_effect(player, "tharsis_republic", {
+        "on_city_tile_placed_production_delta": {"production": "mc_production", "per_tile": 1},
+        "on_city_tile_placed_resource_delta": {"mc": 3},
+    })
+    globals_ = new_global_parameters()
+    new_player, new_globals = _engine_fa.corporation_first_action_city(player, globals_)
+    new_player = apply_city_placed_bonuses(new_player)
+    assert new_player["mc"] == 43
+    assert new_player["mc_production"] == 1
+    assert new_globals["city_tiles_placed"] == globals_["city_tiles_placed"] + 1

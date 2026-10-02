@@ -164,6 +164,11 @@ class PlayerState(TypedDict):
     # cerrar la generacion, y tools.play_card se niega a jugar cartas
     # mientras quede alguna pendiente.
     pending_card_discards: int
+    # "As your first action..." de la corporacion elegida, todavia sin
+    # resolver: {"corporation_id": str, "type": str} o None. Lo anota
+    # choose_corporation (register_corporation_first_action) y lo consume
+    # tools.resolve_corporation_first_action, SIN COSTO.
+    pending_corporation_first_action: dict | None
     # True si el jugador subio su TR en lo que va de esta generacion.
     # Lo marca _raise_tr y lo limpia run_production_phase (ver ambas).
     tr_raised_this_generation: bool
@@ -260,6 +265,7 @@ def new_player_state() -> PlayerState:
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0, pending_ocean_offers=0,
         pending_card_discards=0,
+        pending_corporation_first_action=None,
         tr_raised_this_generation=False, tr_skip_used_this_generation=False,
         scientists_policy_used_this_generation=False,
         reserved_cards={}, zero_tag_cards_played=0,
@@ -3712,6 +3718,89 @@ def apply_corporation_start(player: PlayerState, starting_mc: int) -> PlayerStat
         "mc_production": 0, "steel_production": 0, "titanium_production": 0,
         "plant_production": 0, "energy_production": 0, "heat_production": 0,
     })  # type: ignore[typeddict-item]
+
+
+# "As your first action..." de una corporacion: tipos que el motor sabe
+# resolver SIN COSTO (ver register_corporation_first_action y
+# tools.resolve_corporation_first_action). Cada uno es el texto literal de un
+# scan: Philares ("place a greenery tile and raise the oxygen 1 step"),
+# Tharsis Republic ("place a city tile"), Aridor ("put an additional Colony
+# Tile of your choice into play"), Poseidon ("place a colony") y Arcadian
+# Communities ("place a community on a non-reserved area").
+CORPORATION_FIRST_ACTION_TYPES = (
+    "place_greenery", "place_city", "add_colony_tile", "build_colony", "place_community",
+)
+
+
+def register_corporation_first_action(
+    player: PlayerState, corporation_id: str, spec: dict | None
+) -> PlayerState:
+    """
+    Anota la "first action" de la corporacion como PENDIENTE en
+    `player.pending_corporation_first_action`. No la resuelve: las cinco
+    necesitan un dato que choose_corporation no tiene (hex_id, colony_id), y
+    son una ACCION del jugador (la primera de la partida), no parte del setup.
+    Mismo criterio que pending_ocean_offers: se anota aca y una tool aparte la
+    cobra despues.
+
+    `spec` es `effects.first_action` de la corporacion ({"type": ...}); None
+    no anota nada. Lanza ValueError si el tipo no es uno de
+    CORPORATION_FIRST_ACTION_TYPES.
+    """
+    if not spec:
+        return player
+    action_type = spec.get("type")
+    if action_type not in CORPORATION_FIRST_ACTION_TYPES:
+        raise ValueError(
+            f"first_action desconocida: '{action_type}' "
+            f"(validas: {', '.join(CORPORATION_FIRST_ACTION_TYPES)})"
+        )
+    return PlayerState(**{
+        **player,
+        "pending_corporation_first_action": {"corporation_id": corporation_id, "type": action_type},
+    })  # type: ignore[typeddict-item]
+
+
+def consume_corporation_first_action(player: PlayerState) -> tuple[PlayerState, dict]:
+    """
+    Saca la first action pendiente del jugador y la devuelve, para que el
+    llamador la resuelva. Se resuelve UNA sola vez: lanza ValueError si no hay
+    ninguna pendiente (ya se uso, o la corporacion no tiene first action).
+    """
+    pending = player.get("pending_corporation_first_action")
+    if not pending:
+        raise ValueError("El jugador no tiene ninguna first action de corporacion pendiente")
+    return PlayerState(**{**player, "pending_corporation_first_action": None}), dict(pending)  # type: ignore[typeddict-item]
+
+
+def corporation_first_action_greenery(
+    player: PlayerState, globals_: GlobalParameters
+) -> tuple[PlayerState, GlobalParameters]:
+    """
+    Philares: "place a greenery tile and raise the oxygen 1 step". Es la
+    mitad de standard_project_greenery que NO cobra: sube el oxigeno 1 paso
+    (+1 TR). El tile, su bonus de hex y los pasivos de greenery los aplica
+    tools._place_greenery_and_apply_bonus, igual que en el proyecto estandar.
+    Si el oxigeno ya estuviera al tope, se coloca el tile igual sin TR (regla
+    base: colocar un tile no depende de que el parametro pueda subir).
+    """
+    if globals_["oxygen"] >= OXYGEN_MAX:
+        return player, globals_
+    return raise_oxygen(player, globals_, steps=1)
+
+
+def corporation_first_action_city(
+    player: PlayerState, globals_: GlobalParameters
+) -> tuple[PlayerState, GlobalParameters]:
+    """
+    Tharsis Republic: "place a city tile". A diferencia de
+    standard_project_city NO cobra 25 M€ ni da el +1 de produccion de M€ del
+    proyecto estandar (esa produccion es del PROYECTO, no de colocar una
+    ciudad). Solo suma la ciudad al contador global; los pasivos de ciudad
+    (el +1 produccion / +3 M€ de la propia Tharsis) los aplica
+    tools._place_city_and_apply_bonus via apply_city_placed_bonuses.
+    """
+    return player, place_city_tile(globals_)
 
 
 OCEAN_ADJACENCY_BONUS_MC = 2   # M€ por cada oceano adyacente al colocar un tile
