@@ -180,6 +180,16 @@ class PlayerState(TypedDict):
     # generation and player"). Limpiado en run_production_phase.
     scientists_policy_used_this_generation: bool
 
+    # Reparto de preludes del SETUP (rulebook de Prelude: "you also deal 4
+    # Prelude cards to each player. The players choose 2 Prelude cards to
+    # keep..."), mismo patron dos-pasos que pending_research/hand:
+    #   pending_prelude_choice: las 4 repartidas, todavia sin elegir
+    #     (deal_prelude_hand).
+    #   prelude_hand: las 2 que el jugador se quedo y todavia no jugo
+    #     (keep_preludes); play_prelude las saca de aca al jugarlas.
+    pending_prelude_choice: list
+    prelude_hand: list
+
     # Igual que pending_mc_discount pero para relajar/endurecer (puede ser
     # negativo) los requisitos de temperatura/oxigeno/oceanos de la
     # PROXIMA carta jugada esta generacion, en pasos (ej. Special Design:
@@ -275,6 +285,7 @@ def new_player_state() -> PlayerState:
         pending_corporation_first_action=None,
         tr_raised_this_generation=False, tr_skip_used_this_generation=False,
         scientists_policy_used_this_generation=False,
+        pending_prelude_choice=[], prelude_hand=[],
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
         lobby_delegates=1, reserve_delegates=6,
@@ -3737,7 +3748,7 @@ def apply_corporation_start(player: PlayerState, starting_mc: int) -> PlayerStat
 # Communities ("place a community on a non-reserved area").
 CORPORATION_FIRST_ACTION_TYPES = (
     "place_greenery", "place_city", "add_colony_tile", "build_colony", "place_community",
-    "reveal_preludes",
+    "reveal_preludes", "reveal_until_matching",
 )
 
 
@@ -4407,6 +4418,8 @@ def resolve_pending_discards(player: PlayerState, card_ids: list[str]) -> Player
     for cid in card_ids:
         new_player = remove_card_from_hand(new_player, cid)
     return {**new_player, "pending_card_discards": 0}  # type: ignore[return-value]
+
+
 def reveal_top_cards_take_tag(
     player: PlayerState, n: int, card_tags: dict[str, list[str]], tag: str,
 ) -> PlayerState:
@@ -4528,6 +4541,146 @@ def take_pending_prelude(
             f"'{prelude_id}' no esta entre las preludes reveladas ({pending.get('options')})"
         )
     return {**player, "pending_prelude_draw": {}}
+def reveal_cards_until_matching(
+    player: PlayerState, matching_card_ids: list[str] | set[str], n: int,
+) -> tuple[PlayerState, list[str], list[str]]:
+    """
+    Revela cartas del tope del mazo (deck[0], deck[1], ...) hasta haber
+    revelado `n` que esten en `matching_card_ids`. Las que coinciden van a la
+    MANO (gratis); las demas reveladas se descartan (salen del mazo y no
+    vuelven -- este motor no modela pila de descarte, mismo criterio que
+    resolve_research_phase). Si el mazo se agota antes, el jugador se queda
+    con las que haya encontrado (no es un error).
+
+    Celestic: "As your first action, reveal cards from the deck until you
+    have revealed 2 cards with a floater icon on it. Take those 2 cards into
+    hand, and discard the rest." El "icono de floater" no es un tag ni vive en
+    `effects`: el predicado llega como una lista CERRADA y verificada contra
+    los scans (`first_action.card_ids` de la fila de la corporacion, tipo
+    `reveal_until_matching`), mismo criterio que `excluded_card_ids` de Vitor.
+
+    Devuelve (player_nuevo, reveladas_en_orden, tomadas).
+    """
+    if n < 0:
+        raise ValueError(f"n debe ser >= 0, se paso {n}")
+    matching = set(matching_card_ids)
+    revealed: list[str] = []
+    kept: list[str] = []
+    for card_id in player["deck"]:
+        if len(kept) >= n:
+            break
+        revealed.append(card_id)
+        if card_id in matching:
+            kept.append(card_id)
+    remaining_deck = player["deck"][len(revealed):]
+    return (
+        {**player, "deck": remaining_deck, "hand": [*player["hand"], *kept]},
+        revealed,
+        kept,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reparto de preludes del setup (expansion Prelude).
+# Rulebook oficial de Prelude (TM_PRELUDE_ENG_RULES, fryxgames.se), "Prelude
+# cards": "When you deal cards in the setup (...step 5), you also deal 4
+# Prelude cards to each player. The players choose 2 Prelude cards to keep at
+# the same time as choosing corporations and project cards (step 6). The
+# Prelude cards do not cost anything to keep. After all corporations have
+# been played (...step 7), there is an extra round (step 7b) where each player
+# plays their pair of picked Prelude cards (...), and discards their
+# remaining 2 Prelude cards."
+# ---------------------------------------------------------------------------
+
+PRELUDES_DEALT_AT_SETUP = 4
+PRELUDES_KEPT_AT_SETUP = 2
+
+
+def draw_random_preludes(
+    candidate_ids: list[str], n: int, exclude: list[str] | set[str] = (),
+    rng: random.Random | None = None,
+) -> list[str]:
+    """
+    Sortea `n` preludes distintas al azar de `candidate_ids` (tipicamente
+    todo `prelude_cards.id`), sin repetir y sin las de `exclude` (ej. las que
+    el jugador ya jugo). Helper chico y aislado a proposito: es el mismo
+    "sorteo" que hacen New Partner / Board of Directors en tools.py, para que
+    se pueda unificar despues. `rng` inyectable para tests deterministicos.
+    Si hay menos candidatas que `n`, devuelve todas las que haya.
+    """
+    excluded = set(exclude)
+    pool = [cid for cid in dict.fromkeys(candidate_ids) if cid not in excluded]
+    (rng or random).shuffle(pool)
+    return pool[:n]
+
+
+def deal_prelude_hand(
+    player: PlayerState, all_prelude_ids: list[str], n: int = PRELUDES_DEALT_AT_SETUP,
+    rng: random.Random | None = None,
+) -> PlayerState:
+    """
+    Reparte `n` preludes al azar (4 por regla oficial) a
+    `pending_prelude_choice`, sin repetir y sin incluir las que el jugador ya
+    jugo. Analoga a deal_starting_hand, pero para el mazo propio de preludes.
+    El jugador elige despues cuales quedarse con keep_preludes.
+
+    Lanza CardEffectError si ya hay un reparto pendiente o preludes en mano
+    (no se reparte dos veces por accidente).
+    """
+    if player["pending_prelude_choice"] or player["prelude_hand"]:
+        raise CardEffectError(
+            "El jugador ya tiene preludes repartidas -- no se puede repartir de nuevo"
+        )
+    dealt = draw_random_preludes(all_prelude_ids, n, exclude=player["played_cards"], rng=rng)
+    return {**player, "pending_prelude_choice": dealt}
+
+
+def keep_preludes(
+    player: PlayerState, prelude_ids: list[str], keep_count: int = PRELUDES_KEPT_AT_SETUP,
+) -> PlayerState:
+    """
+    Cierra el reparto de deal_prelude_hand: el jugador se queda EXACTAMENTE
+    con `keep_count` (2) de las repartidas, gratis ("The Prelude cards do not
+    cost anything to keep"); esas pasan a `prelude_hand` y el resto se
+    descarta. Si se repartieron menos que `keep_count` (catalogo agotado), se
+    exige quedarse con todas.
+
+    Lanza CardEffectError si no hay reparto pendiente, y ValueError si algun
+    id no estaba repartido, si hay repetidos o si la cantidad no es la exacta.
+    """
+    pending = player["pending_prelude_choice"]
+    if not pending:
+        raise CardEffectError("No hay preludes repartidas pendientes de elegir")
+    expected = min(keep_count, len(pending))
+    if len(set(prelude_ids)) != len(prelude_ids):
+        raise ValueError(f"Preludes repetidas en la eleccion: {prelude_ids}")
+    if len(prelude_ids) != expected:
+        raise ValueError(
+            f"Hay que quedarse con exactamente {expected} preludes, se eligieron {len(prelude_ids)}"
+        )
+    for prelude_id in prelude_ids:
+        if prelude_id not in pending:
+            raise ValueError(f"'{prelude_id}' no estaba entre las repartidas ({pending})")
+    return {
+        **player,
+        "prelude_hand": [*player["prelude_hand"], *prelude_ids],
+        "pending_prelude_choice": [],
+    }
+
+
+def remove_prelude_from_hand(player: PlayerState, prelude_id: str) -> PlayerState:
+    """
+    Saca `prelude_id` de `prelude_hand` al jugarla. NO exige que este ahi:
+    play_prelude tambien se usa para preludes que no vienen del reparto del
+    setup (New Partner, Double Down, Board of Directors, partidas sin
+    reparto), asi que si no esta, devuelve el jugador sin cambios.
+    """
+    hand = player.get("prelude_hand") or []
+    if prelude_id not in hand:
+        return player
+    new_hand = list(hand)
+    new_hand.remove(prelude_id)
+    return {**player, "prelude_hand": new_hand}
 
 
 def remove_card_from_hand(player: PlayerState, card_id: str) -> PlayerState:

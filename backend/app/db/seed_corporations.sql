@@ -75,12 +75,29 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
                              "plant_production": 1, "energy_production": 1, "heat_production": 1}}'::jsonb),
 
     -- 42 M€. Guarda floaters. Accion: 1 floater a CUALQUIER carta.
-    -- La clausula de setup ("reveal cards until 2 with a floater ICON") queda
-    -- SIN modelar: el icono de floater no es un tag, es una marca del arte que
-    -- el catalogo no guarda. "1 VP per 3 floaters" tampoco: el motor no puntua.
+    -- Primera accion (2026-10-02): "reveal cards from the deck until you have
+    -- revealed 2 cards with a floater icon on it. Take those 2 cards into
+    -- hand, and discard the rest." -> first_action de tipo
+    -- `reveal_until_matching`, anotada por choose_corporation y resuelta por
+    -- resolve_corporation_first_action (despues de deal_starting_hand). El icono de floater no es un tag: `card_ids` es la
+    -- lista CERRADA de cartas del catalogo cargado con el icono impreso
+    -- (accion, efecto, requisito o caja de VP), verificada scan por scan sobre
+    -- las 208 cartas no-Base/no-Corporate Era del catalogo (los floaters
+    -- nacen en Venus Next) -- mismo criterio que `excluded_card_ids` de
+    -- Vitor. Ver CARDS_LOG.md. "1 VP per 3 floaters" no: el motor no puntua.
     ('celestic', 'Celestic', 'Venus Next', '{venus}', 42,
      '{"becomes_active": true, "active_card_resource_type": "floater",
-       "action": {"cost": {}, "gains": {"target_card_resource_delta_allow_self": 1}}}'::jsonb),
+       "action": {"cost": {}, "gains": {"target_card_resource_delta_allow_self": 1}},
+       "first_action": {"type": "reveal_until_matching", "n": 2, "card_ids": [
+         "aerial_mappers", "aerosport_tournament", "air_scrapping_expedition", "airliners",
+         "atmo_collectors", "atmoscoop", "cloud_tourism", "deuterium_export", "dirigibles",
+         "extractor_balloons", "floater_leasing", "floater_prototypes", "floater_technology",
+         "floating_habs", "floating_refinery", "forced_precipitation", "ghg_shipment",
+         "hydrogen_to_venus", "jet_stream_microscrappers", "jovian_lanterns",
+         "jupiter_floating_station", "local_shading", "nitrogen_from_titan",
+         "red_spot_observatory", "saturn_surfing", "stratopolis", "stratospheric_birds",
+         "stratospheric_expedition", "titan_air_scrapping", "titan_floating_launch_pad",
+         "titan_shuttles", "venus_shuttles", "weather_balloons"]}}'::jsonb),
 
     -- 44 M€, +3 produccion de M€. Effect: las cartas con tag building cuestan
     -- 2 M€ menos (mismo vocabulario que Mass Converter con space).
@@ -291,8 +308,9 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
 
     -- 50 M€, +5 produccion de M€, 5 de titanio. Effect: comprar cartas en la
     -- investigacion cuesta 5 M€ en vez de 3 (`research_cost_delta_mc` +2). La
-    -- clausula "including the starting hand" no cambia nada en este motor:
-    -- deal_starting_hand reparte la mano inicial GRATIS.
+    -- clausula "including the starting hand" se cumple con
+    -- deal_starting_hand(buy_with_research=True) + resolve_research_phase,
+    -- que ya aplica este pasivo (ver CARDS_LOG.md, 2026-10-02).
     ('polyphemos', 'Polyphemos', 'Colonies', '{}', 50,
      '{"production_deltas": {"mc_production": 5}, "resource_deltas": {"titanium": 5},
        "passive": {"research_cost_delta_mc": 2}}'::jsonb),

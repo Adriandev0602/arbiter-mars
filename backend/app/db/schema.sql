@@ -94,6 +94,9 @@ do $$ begin
     alter table if exists players add column if not exists tr_raised_this_generation boolean not null default false;
     alter table if exists players add column if not exists tr_skip_used_this_generation boolean not null default false;
     alter table if exists players add column if not exists scientists_policy_used_this_generation boolean not null default false;
+    -- Reparto de preludes del setup (deal_prelude_hand / keep_preludes).
+    alter table if exists players add column if not exists pending_prelude_choice jsonb not null default '[]'::jsonb;
+    alter table if exists players add column if not exists prelude_hand jsonb not null default '[]'::jsonb;
 exception when undefined_table then null;
 end $$;
 
@@ -215,6 +218,11 @@ create table if not exists players (
     -- reserve_delegates arranca en 6 -- 7 delegados totales, setup oficial.
     lobby_delegates integer not null default 1,
     reserve_delegates integer not null default 6,
+
+    -- Expansion Prelude, reparto del setup: 4 repartidas (pending_prelude_choice),
+    -- 2 elegidas y todavia sin jugar (prelude_hand). Ver rules_engine.deal_prelude_hand.
+    pending_prelude_choice jsonb not null default '[]'::jsonb,
+    prelude_hand jsonb not null default '[]'::jsonb,
 
     created_at timestamptz not null default now()
 );
