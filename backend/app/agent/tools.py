@@ -54,6 +54,11 @@ def _load_player(player_id: str) -> engine.PlayerState:
         trade_fleets_used=row.get("trade_fleets_used") or 0,
         lobby_delegates=row.get("lobby_delegates") if row.get("lobby_delegates") is not None else 1,
         reserve_delegates=row.get("reserve_delegates") if row.get("reserve_delegates") is not None else 6,
+        tr_raised_this_generation=bool(row.get("tr_raised_this_generation")),
+        tr_skip_used_this_generation=bool(row.get("tr_skip_used_this_generation")),
+        scientists_policy_used_this_generation=bool(row.get("scientists_policy_used_this_generation")),
+        pending_prelude_choice=row.get("pending_prelude_choice") or [],
+        prelude_hand=row.get("prelude_hand") or [],
     )
 
 
@@ -1872,7 +1877,7 @@ def get_player_state(player_id: str) -> dict:
 
 
 @tool
-def deal_starting_hand(player_id: str, hand_size: int = 10) -> dict:
+def deal_starting_hand(player_id: str, hand_size: int = 10, buy_with_research: bool = False) -> dict:
     """
     Arma el mazo personal del jugador con TODO el catalogo disponible en
     `cards` (barajado), reparte `hand_size` cartas gratis a la mano inicial
@@ -1886,15 +1891,27 @@ def deal_starting_hand(player_id: str, hand_size: int = 10) -> dict:
     mano vacios) -- lanza CardEffectError si ya se repartio antes, para no
     volver a barajar y perder la mano/mazo actuales por accidente.
 
+    Modo de compra (`buy_with_research=True`, regla oficial del setup con
+    corporaciones: "pay 3 M€ for each card you keep"): las `hand_size` cartas
+    van a `pending_research` en vez de a la mano, y se cierran con
+    resolve_research_phase DESPUES de choose_corporation (el M€ inicial de la
+    corporacion es el que paga). Ese camino ya aplica
+    `research_cost_delta_mc`, asi que la clausula "including the starting
+    hand" de Polyphemos (5 M€ por carta) y TerraLabs Research (1 M€) se
+    cumple sola. El modo por defecto (gratis) equivale a Beginner
+    Corporation ("you get 10 cards for free") y a la partida estandar.
+
     Args:
         player_id: id del jugador.
-        hand_size: cuantas cartas van directo a la mano (10 por regla oficial).
+        hand_size: cuantas cartas se reparten (10 por regla oficial).
+        buy_with_research: True para repartirlas a `pending_research` y
+            comprarlas despues con resolve_research_phase.
 
     Returns:
         dict con el estado actualizado del jugador.
     """
     player = _load_player(player_id)
-    if player["deck"] or player["hand"]:
+    if player["deck"] or player["hand"] or player["pending_research"]:
         raise engine.CardEffectError(
             "El jugador ya tiene mazo/mano armados -- no se puede repartir de nuevo"
         )
@@ -1902,12 +1919,111 @@ def deal_starting_hand(player_id: str, hand_size: int = 10) -> dict:
     all_card_ids = [row["id"] for row in supabase.table("cards").select("id").execute().data]
     deck = engine.initialize_deck(all_card_ids)
     new_player = {**player, "deck": deck}
-    new_player = engine.draw_cards_to_hand(new_player, hand_size)
+    if buy_with_research:
+        new_player = engine.start_research_phase(new_player, hand_size)
+    else:
+        new_player = engine.draw_cards_to_hand(new_player, hand_size)
 
     _save_player(player_id, new_player)
-    _log_transaction(player_id, "deal_starting_hand", {"hand_size": hand_size, "deck_size": len(all_card_ids)})
+    _log_transaction(
+        player_id, "deal_starting_hand",
+        {"hand_size": hand_size, "deck_size": len(all_card_ids), "buy_with_research": buy_with_research},
+    )
 
-    return {"player": dict(new_player)}
+    return {"player": dict(new_player), "pending_research": new_player["pending_research"]}
+
+
+@tool
+def deal_prelude_hand(player_id: str, n: int = engine.PRELUDES_DEALT_AT_SETUP) -> dict:
+    """
+    Reparte al jugador `n` preludes al azar (4 por regla oficial del
+    rulebook de Prelude) desde el catalogo `prelude_cards`, sin repetir y sin
+    las que ya jugo. Quedan en `pending_prelude_choice` hasta que el jugador
+    elija cuales quedarse con keep_preludes. Se llama UNA vez en el setup,
+    junto con deal_starting_hand.
+
+    Args:
+        player_id: id del jugador.
+        n: cuantas preludes repartir (4 por regla oficial).
+
+    Returns:
+        {"player": ..., "pending_prelude_choice": [ids repartidos]} para que
+        el LLM se las muestre al usuario y le pregunte con cuales 2 se queda.
+    """
+    player = _load_player(player_id)
+    all_res = supabase.table("prelude_cards").select("id").execute()
+    all_prelude_ids = [row["id"] for row in (all_res.data or [])]
+    new_player = engine.deal_prelude_hand(player, all_prelude_ids, n)
+
+    _save_player(player_id, new_player)
+    _log_transaction(player_id, "deal_prelude_hand", {"dealt": new_player["pending_prelude_choice"]})
+
+    return {"player": dict(new_player), "pending_prelude_choice": new_player["pending_prelude_choice"]}
+
+
+@tool
+def keep_preludes(player_id: str, prelude_ids: list[str]) -> dict:
+    """
+    Cierra el reparto de deal_prelude_hand: el jugador se queda con
+    EXACTAMENTE 2 de las preludes repartidas (gratis, regla oficial) y
+    descarta las otras. Las elegidas quedan en `prelude_hand` y se juegan
+    despues, una por una, con play_prelude (que las saca de ahi).
+
+    Args:
+        player_id: id del jugador.
+        prelude_ids: los 2 ids elegidos (deben estar en pending_prelude_choice).
+
+    Returns:
+        {"player": ..., "prelude_hand": [...]}
+    """
+    player = _load_player(player_id)
+    new_player = engine.keep_preludes(player, prelude_ids)
+
+    _save_player(player_id, new_player)
+    _log_transaction(player_id, "keep_preludes", {"kept": prelude_ids})
+
+    return {"player": dict(new_player), "prelude_hand": new_player["prelude_hand"]}
+
+
+@tool
+def resolve_corporation_first_action_reveal(player_id: str, corporation_id: str) -> dict:
+    """
+    Resuelve la primera accion de una corporacion que revela cartas del mazo
+    hasta encontrar N que cumplan una condicion impresa (hoy solo Celestic:
+    "reveal cards from the deck until you have revealed 2 cards with a
+    floater icon on it. Take those 2 cards into hand, and discard the
+    rest."). La condicion viene de `effects.first_action_reveal_until_matching`
+    de la corporacion: una lista cerrada de ids verificada contra los scans.
+    Se puede usar UNA sola vez por partida. Llamarla despues de
+    choose_corporation y de deal_starting_hand (necesita el mazo armado).
+
+    Args:
+        player_id: id del jugador.
+        corporation_id: id de la corporacion en juego (ej. "celestic").
+
+    Returns:
+        {"player": ..., "revealed": [ids revelados en orden], "kept": [ids a la mano]}
+    """
+    corp_res = supabase.table("corporation_cards").select("*").eq("id", corporation_id).maybe_single().execute()
+    corp = corp_res.data if corp_res else None
+    if corp is None:
+        raise ValueError(f"Corporacion '{corporation_id}' no encontrada en el catalogo")
+    spec = (corp.get("effects") or {}).get("first_action_reveal_until_matching")
+    if spec is None:
+        raise engine.CardEffectError(
+            f"'{corporation_id}' no tiene una primera accion de revelar cartas"
+        )
+
+    player = _load_player(player_id)
+    new_player, revealed, kept = engine.resolve_first_action_reveal(player, corporation_id, spec)
+
+    _save_player(player_id, new_player)
+    _log_transaction(
+        player_id, "resolve_corporation_first_action_reveal",
+        {"corporation_id": corporation_id, "revealed": revealed, "kept": kept},
+    )
+
+    return {"player": dict(new_player), "revealed": revealed, "kept": kept}
 
 
 @tool
@@ -2487,6 +2603,7 @@ def play_double_down(
         )
 
     new_player = engine.register_played_card(new_player, "double_down")
+    new_player = engine.remove_prelude_from_hand(new_player, "double_down")
     _save_player(player_id, new_player)
     if new_globals != globals_:
         _save_global_parameters(new_globals)
@@ -2886,6 +3003,7 @@ def play_prelude(
             )
         new_player = {**new_player, "mc": new_player["mc"] - extra_cost}
         new_player = engine.register_played_card(engine.PlayerState(**new_player), prelude_id)  # type: ignore[arg-type]
+        new_player = engine.remove_prelude_from_hand(new_player, prelude_id)
         _save_player(player_id, new_player)
         _log_transaction(player_id, "play_prelude", {"prelude_id": prelude_id, "merger_corporation_id": merger_corporation_id})
         return {"player": dict(new_player), "globals": result["globals"], "corporation": result["corporation"]}
@@ -3026,6 +3144,8 @@ def play_prelude(
     # afectaba nada antes porque ninguna pieza leia played_cards para
     # preludes -- pero Double Down y New Partner (este bloque) si.
     new_player = engine.register_played_card(new_player, prelude_id)
+    # Si vino del reparto del setup (keep_preludes), sale de prelude_hand.
+    new_player = engine.remove_prelude_from_hand(new_player, prelude_id)
 
     revealed_preludes: list[str] | None = None
     reveal_spec = effects.get("reveal_random_preludes")
@@ -3155,6 +3275,7 @@ ALL_TOOLS = [
     use_standard_project, convert_resources, run_production_phase,
     play_card, use_card_action, get_player_state, get_board_state,
     deal_starting_hand, start_research_phase, resolve_research_phase,
+    deal_prelude_hand, keep_preludes, resolve_corporation_first_action_reveal,
     setup_colonies, build_colony, use_trade_fleet,
     lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
     get_active_cards_state, resolve_ocean_offer, choose_corporation,

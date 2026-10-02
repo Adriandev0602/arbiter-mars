@@ -6454,3 +6454,108 @@ def test_compute_conversion_rates_unity_ruling_raises_titanium_value():
     _, titanium_value = compute_conversion_rates(player)
     _, titanium_value_unity = compute_conversion_rates(player, ruling_party="unity")
     assert titanium_value_unity == titanium_value + 1
+
+
+# ---------------------------------------------------------------------------
+# Clausulas de SETUP: Celestic (revelar hasta N cartas con icono de floater)
+# y reparto de preludes (4 repartidas, 2 elegidas).
+# ---------------------------------------------------------------------------
+
+def test_reveal_cards_until_matching_keeps_first_n_matches_and_discards_rest():
+    from app.agent.rules_engine import reveal_cards_until_matching
+    player = {**new_player_state(), "deck": ["a", "f1", "b", "c", "f2", "f3", "d"], "hand": ["x"]}
+    new_player, revealed, kept = reveal_cards_until_matching(player, {"f1", "f2", "f3"}, 2)
+    assert revealed == ["a", "f1", "b", "c", "f2"]
+    assert kept == ["f1", "f2"]
+    assert new_player["hand"] == ["x", "f1", "f2"]
+    # f3 (una tercera coincidencia) y d NO se revelan: quedan en el mazo.
+    assert new_player["deck"] == ["f3", "d"]
+
+
+def test_reveal_cards_until_matching_exhausted_deck_keeps_what_it_found():
+    from app.agent.rules_engine import reveal_cards_until_matching
+    player = {**new_player_state(), "deck": ["a", "f1", "b"]}
+    new_player, revealed, kept = reveal_cards_until_matching(player, ["f1", "f2"], 2)
+    assert revealed == ["a", "f1", "b"]
+    assert kept == ["f1"]
+    assert new_player["deck"] == []
+    assert new_player["hand"] == ["f1"]
+
+
+def test_resolve_first_action_reveal_is_once_per_game_and_survives_production():
+    from app.agent.rules_engine import (
+        resolve_first_action_reveal, register_active_card, run_production_phase,
+    )
+    spec = {"n": 2, "card_ids": ["f1", "f2"]}
+    player = register_active_card(new_player_state(), "celestic", resource_type="floater")
+    player = {**player, "deck": ["f1", "a", "f2", "b"]}
+    new_player, revealed, kept = resolve_first_action_reveal(player, "celestic", spec)
+    assert revealed == ["f1", "a", "f2"]
+    assert kept == ["f1", "f2"]
+    assert new_player["deck"] == ["b"]
+    assert new_player["active_cards"]["celestic"]["first_action_used"] is True
+    assert new_player["active_cards"]["celestic"]["resources"] == 0
+
+    # El reset de action_used de la fase de produccion conserva la marca.
+    after_production = run_production_phase(new_player)
+    assert after_production["active_cards"]["celestic"]["first_action_used"] is True
+    with pytest.raises(CardEffectError):
+        resolve_first_action_reveal(after_production, "celestic", spec)
+
+
+def test_resolve_first_action_reveal_requires_corporation_in_play():
+    from app.agent.rules_engine import resolve_first_action_reveal
+    with pytest.raises(CardEffectError):
+        resolve_first_action_reveal(new_player_state(), "celestic", {"n": 2, "card_ids": []})
+
+
+def test_draw_random_preludes_is_seeded_distinct_and_respects_exclude():
+    import random
+    from app.agent.rules_engine import draw_random_preludes
+    ids = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
+    assert draw_random_preludes(ids, 4, rng=random.Random(42)) == ["p4", "p5", "p7", "p8"]
+    # Con exclude que deja exactamente 2 candidatas, salen esas 2 y nada mas.
+    drawn = draw_random_preludes(ids, 4, exclude=ids[:6], rng=random.Random(1))
+    assert sorted(drawn) == ["p7", "p8"]
+    # Ids duplicados en el catalogo no producen una prelude repetida.
+    assert sorted(draw_random_preludes(["p1", "p1", "p2"], 4, rng=random.Random(3))) == ["p1", "p2"]
+
+
+def test_deal_prelude_hand_deals_4_excluding_played_and_refuses_twice():
+    import random
+    from app.agent.rules_engine import deal_prelude_hand, PRELUDES_DEALT_AT_SETUP
+    assert PRELUDES_DEALT_AT_SETUP == 4
+    ids = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
+    player = {**new_player_state(), "played_cards": ["p2", "p5"]}
+    dealt_player = deal_prelude_hand(player, ids, rng=random.Random(42))
+    assert dealt_player["pending_prelude_choice"] == ["p6", "p3", "p4", "p7"]
+    assert dealt_player["prelude_hand"] == []
+    with pytest.raises(CardEffectError):
+        deal_prelude_hand(dealt_player, ids, rng=random.Random(42))
+
+
+def test_keep_preludes_keeps_exactly_2_and_discards_the_rest():
+    from app.agent.rules_engine import keep_preludes
+    player = {**new_player_state(), "pending_prelude_choice": ["p6", "p3", "p4", "p7"]}
+    kept = keep_preludes(player, ["p3", "p7"])
+    assert kept["prelude_hand"] == ["p3", "p7"]
+    assert kept["pending_prelude_choice"] == []
+
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3"])              # menos de 2
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3", "p4", "p7"])  # mas de 2
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3", "p3"])        # repetida
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3", "p1"])        # no repartida
+    with pytest.raises(CardEffectError):
+        keep_preludes(new_player_state(), ["p3", "p7"])  # sin reparto
+
+
+def test_remove_prelude_from_hand_only_touches_dealt_preludes():
+    from app.agent.rules_engine import remove_prelude_from_hand
+    player = {**new_player_state(), "prelude_hand": ["p3", "p7"]}
+    assert remove_prelude_from_hand(player, "p3")["prelude_hand"] == ["p7"]
+    # Una prelude jugada por otra via (New Partner, etc.) no rompe nada.
+    assert remove_prelude_from_hand(player, "p9")["prelude_hand"] == ["p3", "p7"]

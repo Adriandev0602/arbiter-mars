@@ -314,7 +314,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `trading_colony` | Trading Colony | C47 | 18 MC | Tag power. Mismo pasivo que Trade Envoys, construye 1 colonia |
 | `urban_decomposers` | Urban Decomposers | C48 | 6 MC | Tags building+microbe. Requiere 1 ciudad y 1 colonia en juego. +1 producción plantas, +2 microbios a OTRA carta activa elegida |
 | `warp_drive` | Warp Drive | C49 | 14 MC | Tag science. Requiere 5 tags de ciencia. Pasivo: cartas con tag space cuestan 4 MC menos |
-| `house_printing` | House Printing | P36 | 10 MC | Tag building, expansión **Prelude** (primera carta cargada de esta expansión — no necesita mecánica propia, se dealt 2 gratis en el setup real, no modelado todavía). +1 producción steel |
+| `house_printing` | House Printing | P36 | 10 MC | Tag building, expansión **Prelude** (primera carta cargada de esta expansión — no necesita mecánica propia, se dealt 2 gratis en el setup real; el reparto de 4/elegir 2 quedó modelado el 2026-10-02 con `deal_prelude_hand`/`keep_preludes`, ver "Prelude: mazo propio"). +1 producción steel |
 | `titan_floating_launch_pad` | Titan Floating Launch-Pad | C44 | 18 MC | Tag jovian. +2 floaters a cualquier carta Jovian elegida. Acción con elección: +1 floater a OTRA carta Jovian elegida, O gastar 1 floater propio → comerciar GRATIS (pieza nueva `free_trade`, resuelta 2026-09-03 — ver sección dedicada abajo) |
 | `lava_tube_settlement` | Lava Tube Settlement | P37 | 15 MC | Tags city+building, expansión **Prelude**. -1 producción energía, +2 producción MC. Coloca 1 ciudad EN UN HEXÁGONO VOLCÁNICO, ignorando la regla normal de no-adyacencia a otras ciudades (pieza nueva `board.can_place_city_on_volcanic` + flag `city_placement_on_volcanic` en `play_card`) |
 | `martian_survey` | Martian Survey | P38 | 9 MC | Tag science. Requiere oxígeno ≤4%. Roba 2 cartas |
@@ -1021,6 +1021,27 @@ la colocación de tiles por diferencia de contadores, igual que `play_card`.
 Esto además destraba parcialmente **P91 WG Project**, que necesitaba justamente un sub-mazo
 Prelude identificable.
 
+**Reparto del setup, modelado (2026-10-02).** Regla exacta, del rulebook oficial de Prelude
+(`TM_PRELUDE_ENG_RULESi.pdf`, fryxgames.se, sección "Prelude cards"): *"When you deal cards in
+the setup (...step 5), you also deal 4 Prelude cards to each player. The players choose 2
+Prelude cards to keep at the same time as choosing corporations and project cards (step 6). The
+Prelude cards do not cost anything to keep. After all corporations have been played (...step 7),
+there is an extra round (step 7b) where each player plays their pair of picked Prelude cards
+(...), and discards their remaining 2 Prelude cards."* Mismo patrón dos-pasos que
+`pending_research`/`hand`:
+- Campos nuevos en `players`: `pending_prelude_choice` (las 4 repartidas) y `prelude_hand` (las 2
+  elegidas, todavía sin jugar). Migración idempotente en `schema.sql`.
+- `rules_engine.draw_random_preludes(candidate_ids, n, exclude, rng)`: el sorteo puro, sin
+  repetir, aislado a propósito para unificarlo con los sorteos de New Partner / Board of
+  Directors (que hoy usan `random.shuffle` inline en `tools.py`).
+- `rules_engine.deal_prelude_hand(player, all_prelude_ids, n=4, rng)`: excluye las ya jugadas,
+  rechaza un segundo reparto. `rules_engine.keep_preludes(player, ids, keep_count=2)`: exige
+  EXACTAMENTE 2 de las repartidas, gratis; el resto se descarta.
+- `rules_engine.remove_prelude_from_hand`: `play_prelude` (camino normal y Merger) y
+  `play_double_down` la sacan de `prelude_hand` al jugarla. **No es obligatorio** que venga de
+  ahí: New Partner, Board of Directors y las partidas sin reparto siguen jugando preludes por id.
+- Tools: `deal_prelude_hand(player_id, n=4)` y `keep_preludes(player_id, prelude_ids)`.
+
 **Bloque 1 (P01-P24): 22 cargadas, 2 pendientes.** Revisadas por 4 agentes en paralelo. Todas las
 cargadas usan vocabulario existente -- ninguna necesitó pieza nueva de motor.
 
@@ -1162,11 +1183,42 @@ tandas seguidas con el mismo patrón):
 
 **Cláusulas de SETUP, no de motor** (documentadas, no implementadas como efecto):
 - Beginner Corporation: "instead of choosing from 10 cards, you get 10 cards for free" — se
-  reparten con `deal_starting_hand` sin cobrar.
+  reparten con `deal_starting_hand` sin cobrar. (Correcto. Desde 2026-10-02 el resto de las
+  corporaciones tiene el camino oficial "pay 3 M€ for each card you keep" con
+  `deal_starting_hand(..., buy_with_research=True)` — ver Polyphemos/TerraLabs más abajo.)
 - Aridor: "as your first action, put an additional Colony Tile into play" — se resuelve con
   `setup_colonies` agregando una colonia más.
-- Celestic: "reveal cards until 2 with a floater ICON" — **queda sin modelar**: el ícono de
-  floater no es un tag, es una marca del arte que el catálogo no guarda.
+- Celestic: "reveal cards until 2 with a floater ICON" — ~~queda sin modelar~~ **RESUELTA
+  (2026-10-02).** Texto exacto del scan: *"As your first action, reveal cards from the deck until
+  you have revealed 2 cards with a floater icon on it. Take those 2 cards into hand, and discard
+  the rest."* El ícono no es un tag ni vive en `effects`, así que se resolvió con el mismo
+  criterio que Vitor (`excluded_card_ids`): una lista CERRADA y verificada en
+  `effects.first_action_reveal_until_matching = {"n": 2, "card_ids": [...]}` de la corporación.
+  **Cómo se armó la lista (no de memoria):** se bajaron/reusaron los scans de las 208 cartas del
+  catálogo cargado que no son Base ni Corporate Era (los floaters nacen en Venus Next; el resto
+  no puede tener el ícono) y se revisaron en hojas de contacto de carta COMPLETA (el ícono puede
+  estar en la acción, el efecto inmediato, el recuadro de requisito o la caja de VP). Criterio:
+  cuadrado amarillo con nube blanca impreso en cualquier parte. **33 cartas:** aerial_mappers,
+  aerosport_tournament (solo en el requisito), air_scrapping_expedition, airliners,
+  atmo_collectors, atmoscoop, cloud_tourism, deuterium_export, dirigibles, extractor_balloons,
+  floater_leasing, floater_prototypes, floater_technology, floating_habs, floating_refinery,
+  forced_precipitation, ghg_shipment, hydrogen_to_venus, jet_stream_microscrappers,
+  jovian_lanterns, jupiter_floating_station, local_shading, nitrogen_from_titan,
+  red_spot_observatory, saturn_surfing, stratopolis, stratospheric_birds,
+  stratospheric_expedition, titan_air_scrapping, titan_floating_launch_pad, titan_shuttles,
+  venus_shuttles, weather_balloons. **Descartadas a propósito:** Corroder Suits, Maxwell Base y
+  L1 Trade Terminal muestran un recurso genérico "?" (no la nube), y Mars Nomads un cubo dorado
+  sin nube. Si se cargan cartas nuevas con floaters, hay que sumarlas a la lista.
+  Piezas: `rules_engine.reveal_cards_until_matching` (puro: revela del tope hasta N
+  coincidencias, esas a la mano, el resto se descarta; si el mazo se agota se queda con las que
+  haya), `rules_engine.resolve_first_action_reveal` (una sola vez por partida: marca
+  `first_action_used` en la entrada de la corporación en `active_cards`, que el reset de
+  `action_used` de la fase de producción conserva) y la tool
+  `resolve_corporation_first_action_reveal(player_id, corporation_id)`. **No se toca
+  `choose_corporation`**: se llama aparte, después de elegir la corporación y de
+  `deal_starting_hand` (necesita el mazo armado).
+  *Hallazgo lateral:* Stratopolis guarda floaters ("1 VP per 3 floaters on this card") pero no
+  está en el retrofit de `active_card_resource_type: "floater"`; no se tocó acá.
 - Los VP de Arklight (1 por 2 animales) y Celestic (1 por 3 floaters) no se modelan: el motor no
   puntúa.
 
@@ -1374,10 +1426,29 @@ Verificar 28 tags costó 3 imágenes en vez de 28 scans completos.
 - **Philares** y **Tharsis Republic** tienen además un "as your first action, place a
   greenery/city tile" que no entra en `effects`: `choose_corporation` no coloca tiles (no recibe
   `hex_id`), así que esa colocación la resuelve el jugador con la tool de siempre.
-- **Valley Trust**: su "draw 3 Prelude cards and play one" sigue sin modelarse — el sorteo de
-  preludes del setup no existe todavía.
-- **Polyphemos/TerraLabs**: la cláusula "including the starting hand" no cambia nada acá, porque
-  `deal_starting_hand` reparte la mano inicial GRATIS en este motor.
+  **Revisado 2026-10-02: ese manejo NO es correcto.** La "tool de siempre" es el proyecto
+  estándar (`use_standard_project` city 25 M€ / greenery 23 M€), y la primera acción de estas
+  corporaciones es GRATIS. Lo mismo pasa con **Poseidon** ("as your first action, place a
+  colony"): `build_colony` cobra siempre los 17 M€. No hay hoy ninguna tool que coloque una
+  ciudad/greenery/colonia sin costo fuera de una carta. Queda documentado como hueco, no
+  arreglado en esta pasada (lo natural es una variante de
+  `resolve_corporation_first_action_reveal` para "colocar tile/colonia gratis una vez", con la
+  misma marca `first_action_used`; ver el informe del 2026-10-02).
+- **Valley Trust**: su "draw 3 Prelude cards and play one" sigue sin modelarse en esta sección.
+  (2026-10-02: el sorteo de preludes del SETUP ya existe — `rules_engine.draw_random_preludes`,
+  helper chico y aislado, ver "Prelude: mazo propio" — y se puede reusar para esta carta.)
+- **Polyphemos/TerraLabs**: la cláusula "including the starting hand" ~~no cambia nada acá,
+  porque `deal_starting_hand` reparte la mano inicial GRATIS~~. **Revisado 2026-10-02: ese
+  manejo NO era fiel al reglamento.** El setup oficial con corporaciones dice "pay 3 M€ for each
+  card you keep" de las 10 repartidas; solo Beginner Corporation las recibe gratis ("you get 10
+  cards for free"). Regalarlas siempre le ahorraba a Polyphemos sus 5 M€ por carta y le quitaba a
+  TerraLabs su precio de 1 M€. **Resuelto sin romper el modo gratis:**
+  `deal_starting_hand(..., buy_with_research=True)` reparte las 10 a `pending_research` en vez de
+  a la mano, y se cierran con `resolve_research_phase` DESPUÉS de `choose_corporation` (paga el
+  M€ inicial de la corporación). Ese camino ya aplica `compute_research_cost_per_card`
+  (`research_cost_delta_mc`), así que 5 M€ (Polyphemos) / 1 M€ (TerraLabs) / 3 M€ (resto) salen
+  solos, sin pieza nueva. El modo por defecto (gratis) queda para Beginner Corporation y la
+  partida estándar sin corporaciones.
 
 **Bug encontrado y corregido:** el seed del bloque 2 tenía, después de cargar Manutech, un
 `update ... set corporation_id = null where name = 'Manutech'` sobrante del estado anterior (era
