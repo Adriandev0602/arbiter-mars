@@ -203,9 +203,35 @@ prueba de humo contra la base real.**
 commitea siempre**. Cada nodo de feature lleva `status` (done/pending/known_gap/tech_debt/
 out_of_scope). Refrescarlo con `/graphify . --update` después de cada cambio.
 
-**Lo que queda:** el **frontend** (100% mockeado), README.md desactualizado (todavía dice 340
-cartas), T11 Recruitment con la cantidad fija de 2 neutrales (deuda técnica ya señalada) y
-Stratopolis sin `active_card_resource_type: "floater"` (hallazgo lateral de E).
+**Segunda tanda, misma fecha (2026-10-02):**
+- **T11 / delegados neutrales con el mecanismo OFICIAL.** El supuesto de "2 neutrales fijos por
+  partido" se reemplazó: el rulebook (`TM_TURMOIL_ENG_RULESi.pdf`, pp. 2/5/6/7/8) dice 14
+  neutrales, 1 de Chairman y 13 en la Neutral Reserve, y que entran SOLO vía Global Events.
+  - Los neutrales son un "jugador" más (`turmoil.NEUTRAL` en `PartyState.delegates`): pueden ser
+    Party Leader y Chairman.
+  - Track de eventos: tool `setup_global_events`, y "Changing Times" dentro de
+    `resolve_new_government`. `resolve_global_event` sin `event_id` resuelve el Current.
+  - Columnas nuevas `global_events.revealed_party` / `current_party`, verificadas con 36 scans +
+    la implementación open-source de referencia (72 de 72 coinciden).
+  - **Bug preexistente:** el +1 TR del nuevo Chairman nunca se daba; ahora sí.
+  - Las filas viejas de `turmoil` se normalizan solas al cargarse (`normalize_turmoil`), así que ya
+    no hace falta el parche manual.
+- **Stratopolis corregida contra el scan:** guarda floaters y su acción es "Add 2 floaters to ANY
+  VENUS card" (incluida ella misma, no "a OTRA"). Piezas: `target_resource_type` (motor) y
+  `target_required_tag` (tools.py).
+- **README.md actualizado** con los números reales: 412 cartas de proyecto, 48 corporaciones,
+  70 preludes, 36 Global Events, 11 colonias, 715 tests.
+- **Supabase: migrado a un proyecto NUEVO** (`bjwcddblngnntgqdxjyg`); el viejo
+  (`trczrhbmhgiklwrlzkjw`) da NXDOMAIN. **El proyecto nuevo se COMPARTE con otra app**: en `public`
+  vive `raw_notifications` (de otra app, con RLS propio). **No tocarla.**
+  - Schema y catálogo aplicados con `python3 scripts/apply_db.py`: 412 cartas, 48 corporaciones,
+    70 preludes y 36 Global Events.
+  - **RLS activo en las 11 tablas de arbiter, sin policies** (bloque al final de `schema.sql`).
+    El backend usa la **clave secret** (`SUPABASE_KEY=sb_secret_...`, rol service_role), que
+    saltea RLS; con la publishable, el backend no ve nada.
+  - Prueba de humo contra Supabase real: **19 de 19**. Los datos de prueba quedaron limpios.
+
+**Lo que queda:** el **frontend** (100% mockeado, próxima iteración).
 
 ### 📍 Punto de retoma anterior (2026-09-10, Turmoil: TR Revision + Ruling Bonus + las 6 Ruling Policy, COMPLETO)
 
@@ -669,7 +695,7 @@ NEUTRALES por partido, que `turmoil.py` no trackea hoy (ver "Pendientes" en `CAR
 de Energy Market usó la clave equivocada y quedaba en un no-op silencioso (ver nota en
 `CARDS_LOG.md`).
 
-**Nota operativa:** el host de Supabase resuelve **solo por IPv6**. Si la máquina pierde
+**Nota operativa:** el host de la base de Supabase (`db.<ref>.supabase.co`) resuelve **solo por IPv6**. Si la máquina pierde
 conectividad IPv6, la base queda inalcanzable aunque IPv4 ande bien (pasó una vez, 2026-09-04) --
 `ip -6 addr show scope global` lo diagnostica en un segundo. Por eso los seeds se escriben
 idempotentes (`on conflict do update`) e incluyen el marcado de sus colas: si un apply falla, se
@@ -957,9 +983,9 @@ el **núcleo político de Turmoil** (decisión explícita del usuario, 2026-09-0
 `backend/app/agent/turmoil.py`, verificado contra el rulebook oficial -- 6 partidos, delegados,
 acción Lobbying, Party Leader/partido Dominante, requisitos `ruling_or_delegates`, Influencia,
 "New Government" (acotado a un solo jugador) -- ver "Turmoil: núcleo político" en `CARDS_LOG.md`.
-**Explícitamente FUERA de esta primera pasada** (cada uno del tamaño de una feature aparte, no
-decidido todavía si se construyen): las Ruling Bonus/Ruling Policy de los 6 partidos, el mazo de
-31 Global Event cards, y la revisión de TR (-1 a todos cada generación).
+Lo que esta primera pasada dejaba afuera ya está hecho: las Ruling Bonus/Ruling Policy de los 6
+partidos y la revisión de TR (2026-09-10), el mazo de Global Events (36 de 36) y los delegados
+neutrales con su track Distant/Coming/Current (2026-10-02).
 
 **Fuera de alcance (MVP):** una IA que juegue de forma autónoma contra humanos, soporte para
 múltiples juegos simultáneos, milestones y awards (incluidos los nuevos de Venus Next: Hoverlord
@@ -1003,6 +1029,11 @@ cur = conn.cursor()
 cur.execute(open('app/db/schema.sql').read())
 cur.execute(open('app/db/seed_cards.sql').read())
 "
+
+# Forma recomendada: schema + los 4 seeds en orden, idempotente, parsea bien la password con `@`
+# (lee SUPABASE_DB_URL de .env; --check solo conecta y cuenta filas)
+python3 scripts/apply_db.py
+python3 scripts/apply_db.py --check
 
 # Scripts de mantenimiento del catálogo (ver seccion 4)
 python3 scripts/enqueue_card_review_queue.py --pending-md app/db/CARDS_PENDING_REVIEW.md --cards-json <index.html cacheado> --db-url "$SUPABASE_DB_URL"

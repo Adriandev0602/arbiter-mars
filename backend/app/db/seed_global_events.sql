@@ -265,3 +265,54 @@ insert into global_events (id, name, effects) values
 on conflict (id) do update set
     name = excluded.name,
     effects = excluded.effects;
+
+-- Delegados neutrales de cada Global Event (2026-10-02, T11 con el mecanismo
+-- oficial): revealed_party = partido de la esquina superior izquierda (un
+-- neutral entra ahi cuando la carta se revela como Distant); current_party =
+-- partido de la mitad derecha (un neutral entra ahi cuando pasa de Coming a
+-- Current). Verificado con DOS fuentes independientes: los 36 scans oficiales
+-- (hoja de contacto de los dos iconos, leyenda: Mars First = simbolo de Marte
+-- dorado, Reds = bandera amarilla sobre rojo, Unity = anillos azules, Greens =
+-- arbol verde, Kelvinists = llama sobre negro, Scientists = matraz blanco) y
+-- la implementacion open-source de referencia (terraforming-mars/
+-- terraforming-mars, revealedDelegate/currentDelegate). 72 de 72 coinciden.
+update global_events as g set revealed_party = v.revealed_party, current_party = v.current_party
+from (values
+    ('aquifer_released_by_public_council', 'mars_first', 'greens'),
+    ('asteroid_mining', 'reds', 'unity'),
+    ('celebrity_leaders', 'unity', 'greens'),
+    ('cloud_societies', 'unity', 'reds'),
+    ('corrosive_rain', 'kelvinists', 'greens'),
+    ('diversity', 'scientists', 'scientists'),
+    ('dry_deserts', 'reds', 'unity'),
+    ('eco_sabotage', 'greens', 'reds'),
+    ('election', 'greens', 'mars_first'),
+    ('generous_funding', 'kelvinists', 'unity'),
+    ('global_dust_storm', 'kelvinists', 'greens'),
+    ('homeworld_support', 'reds', 'unity'),
+    ('improved_energy_templates', 'scientists', 'kelvinists'),
+    ('interplanetary_trade', 'unity', 'unity'),
+    ('jovian_tax_rights', 'scientists', 'unity'),
+    ('microgravity_health_problems', 'mars_first', 'scientists'),
+    ('miners_on_strike', 'mars_first', 'greens'),
+    ('mud_slides', 'kelvinists', 'greens'),
+    ('pandemic', 'greens', 'mars_first'),
+    ('paradigm_breakdown', 'kelvinists', 'reds'),
+    ('productivity', 'scientists', 'mars_first'),
+    ('red_influence', 'kelvinists', 'reds'),
+    ('revolution', 'unity', 'mars_first'),
+    ('riots', 'mars_first', 'reds'),
+    ('sabotage', 'unity', 'reds'),
+    ('scientific_community', 'reds', 'scientists'),
+    ('snow_cover', 'kelvinists', 'kelvinists'),
+    ('solar_flare', 'unity', 'kelvinists'),
+    ('solarnet_shutdown', 'scientists', 'mars_first'),
+    ('spin_off_products', 'greens', 'scientists'),
+    ('sponsored_projects', 'scientists', 'greens'),
+    ('strong_society', 'reds', 'mars_first'),
+    ('successful_organisms', 'mars_first', 'scientists'),
+    ('venus_infrastructure', 'mars_first', 'unity'),
+    ('volcanic_eruptions', 'scientists', 'kelvinists'),
+    ('war_on_earth', 'mars_first', 'kelvinists')
+) as v(id, revealed_party, current_party)
+where g.id = v.id;

@@ -42,26 +42,34 @@ fuente primaria. Verificado ahi:
     partidos restantes (empate se rompe en sentido horario a partir del
     partido que se acaba de volver Ruling).
 
-ALCANCE DE ESTA PRIMERA PASADA (decision explicita del usuario,
-2026-09-04): se implementa el NUCLEO politico -- partidos, delegados,
-Lobbying, Party Leader/Dominante/Chairman, Influencia -- lo suficiente
-para que Colonial Envoys y Colonial Representation (las 2 cartas
-pendientes que dependian de esto, ver CARDS_LOG.md) funcionen de verdad.
-QUEDAN EXPLICITAMENTE PENDIENTES, cada uno del tamano de una feature
-aparte:
-  - Las Ruling Bonus / Ruling Policy de los 6 partidos (12 efectos
-    distintos sobre recursos/producciones de TODOS los jugadores, ej.
-    Reds: "Lose 3 M€ for each step your TR is raised").
-  - El mazo de 31 Global Event cards (afectan a todos los jugadores cada
-    generacion, usan Influencia para escalar contadores con tope 5).
-  - La revision de TR (-1 a TODOS los jugadores cada generacion).
-  - `resolve_new_government` esta ACOTADO a un solo jugador (modo un
-    jugador de este proyecto, ver CLAUDE.md seccion 7 -- delegados
-    neutrales/de otros jugadores en el partido Dominante no se simulan
-    aparte, mismo criterio que el resto del proyecto en single-player):
-    calcula cuantos delegados PROPIOS de `player_id` vuelven a su
-    reserva y si `player_id` se vuelve Chairman, pero no itera sobre
-    otros jugadores ni aplica el TR gratis del Chairman.
+ALCANCE (actualizado 2026-10-02): nucleo politico completo -- partidos,
+delegados, Lobbying, Party Leader/Dominante/Chairman, Influencia -- mas las
+Ruling Bonus/Policy y la revision de TR (2026-09-10, ver CARDS_LOG.md) y,
+desde 2026-10-02, los DELEGADOS NEUTRALES con el mecanismo oficial
+(rulebook paginas 2, 5, 6 y 7):
+  - 14 delegados neutrales en total ("14 Neutral delegates", componentes,
+    pagina 8). Setup: 1 en la silla de Chairman y el resto (13) en la
+    Neutral Reserve. `chairman is None` representa ese Chairman neutral.
+  - Los neutrales "do not belong to any player, but they do count as a
+    separate player. These neutral delegates can become Party Leader and
+    Chairman" (pagina 5). Se modelan como un jugador mas dentro de
+    `PartyState.delegates`, bajo la clave reservada NEUTRAL: misma regla de
+    Party Leader y de Dominante que cualquier delegado.
+  - Entran SOLO via Global Events: setup (la carta Coming pone un neutral
+    como Party Leader en el partido de arriba a la izquierda; la Distant,
+    otro en el de arriba a la izquierda) y "Changing Times" (la que pasa de
+    Coming a Current agrega uno en el partido de la mitad derecha; la nueva
+    Distant, uno en el de arriba a la izquierda). Ver setup_global_events /
+    changing_times. Los dos partidos de cada carta viven en el catalogo
+    (`global_events.revealed_party` / `current_party`), verificados contra
+    los 36 scans y contra la implementacion open-source de referencia.
+  - New Government: el Chairman anterior y los delegados no-lider del
+    partido Dominante vuelven a SU reserva -- los neutrales, a la Neutral
+    Reserve. Si el Party Leader es neutral, el nuevo Chairman es neutral.
+  - `resolve_new_government` sigue ACOTADO a un solo jugador humano (modo
+    un jugador de este proyecto, ver CLAUDE.md seccion 7): calcula cuantos
+    delegados PROPIOS de `player_id` vuelven a su reserva; los neutrales se
+    mueven aca mismo porque su reserva vive en el estado de Turmoil.
 """
 from typing import TypedDict
 
@@ -69,35 +77,38 @@ PARTY_NAMES = ["mars_first", "kelvinists", "reds", "greens", "unity", "scientist
 STARTING_LOBBY_DELEGATES = 1
 STARTING_RESERVE_DELEGATES = 6
 LOBBY_FROM_RESERVE_COST_MC = 5
-# Cuantos delegados NEUTRALES arranca cada partido, solo para que Recruitment
-# (T11) tenga algo que intercambiar. El setup oficial de Turmoil llena cada
-# partido con neutrales segun la cantidad de jugadores (regla que este
-# modulo, deliberadamente, no modela -- ver docstring de arriba, "delegados
-# neutrales/de otros jugadores... no se simulan"). Esto NO es ese numero
-# verificado: es una cantidad fija elegida como supuesto de diseño razonable
-# para que la carta tenga efecto en el modo un jugador, sin pretender
-# reproducir el setup real de una partida de N jugadores. Documentado como
-# tal en vez de presentarlo como dato del reglamento.
-STARTING_NEUTRAL_DELEGATES = 2
+# "14 Neutral delegates" (rulebook, componentes, pagina 8). En el setup uno va
+# a la silla de Chairman y el resto a la Neutral Reserve (pagina 2).
+TOTAL_NEUTRAL_DELEGATES = 14
+# Clave reservada de los delegados neutrales dentro de PartyState.delegates:
+# "they do count as a separate player" (pagina 5). Ningun player_id real
+# puede valer esto (los jugadores son uuid).
+NEUTRAL = "neutral"
 
 
 class PartyState(TypedDict):
-    delegates: dict[str, int]  # player_id -> cantidad de delegados propios en este partido
-    leader: str | None  # player_id del Party Leader, None si el partido esta vacio
-    # Delegados NEUTRALES (de nadie): solo existen para Recruitment (T11,
-    # "exchange one NEUTRAL NON-LEADER delegate with one of your own from
-    # the reserve"). Un neutral NUNCA es leader (leader siempre es un
-    # player_id o None), asi que "no-leader" ya esta garantizado con solo
-    # pedir neutral >= 1 -- no hace falta distinguirlos entre si.
-    # STARTING_NEUTRAL_DELEGATES documenta de donde sale el numero inicial.
-    neutral: int
+    # owner -> cantidad de delegados en este partido. `owner` es un player_id
+    # o NEUTRAL para los delegados neutrales.
+    delegates: dict[str, int]
+    leader: str | None  # owner del Party Leader (player_id o NEUTRAL), None si esta vacio
 
 
 class TurmoilState(TypedDict):
     parties: dict[str, PartyState]
     dominant_party: str | None
     ruling_party: str
+    # player_id del Chairman, o None si la silla la ocupa un neutral.
     chairman: str | None
+    # Delegados neutrales que todavia no estan en la mesa (ni en partidos ni
+    # en la silla de Chairman).
+    neutral_reserve: int
+    # Track de Global Events (pagina 6): Distant (recien revelada), Coming y
+    # Current (la que se ejecuta en la fase Turmoil). None = vacio.
+    distant_event: str | None
+    coming_event: str | None
+    current_event: str | None
+    # Mazo de Global Events boca abajo, ya mezclado (lo mezcla tools.py).
+    global_event_deck: list[str]
 
 
 class UnknownPartyError(Exception):
@@ -105,16 +116,44 @@ class UnknownPartyError(Exception):
 
 
 def new_turmoil() -> TurmoilState:
-    """Setup: ver rulebook pagina 2 -- GREENS arranca Ruling, sin Dominante todavia."""
+    """
+    Setup (rulebook pagina 2): GREENS arranca Ruling; un neutral en la silla
+    de Chairman y los otros 13 en la Neutral Reserve; sin Dominante hasta que
+    se arme el track de Global Events (setup_global_events).
+    """
     return TurmoilState(
-        parties={
-            name: PartyState(delegates={}, leader=None, neutral=STARTING_NEUTRAL_DELEGATES)
-            for name in PARTY_NAMES
-        },
+        parties={name: PartyState(delegates={}, leader=None) for name in PARTY_NAMES},
         dominant_party=None,
         ruling_party="greens",
         chairman=None,
+        neutral_reserve=TOTAL_NEUTRAL_DELEGATES - 1,
+        distant_event=None,
+        coming_event=None,
+        current_event=None,
+        global_event_deck=[],
     )
+
+
+def normalize_turmoil(turmoil: dict) -> TurmoilState:
+    """
+    Lleva un estado de Turmoil guardado con una forma vieja a la actual, sin
+    tocar lo que ya esta bien. Hasta 2026-10-02 cada partido traia un campo
+    `neutral: 2` FIJO (supuesto de diseno para Recruitment, no la regla
+    oficial): se descarta, porque los neutrales oficiales solo entran via
+    Global Events. Las claves nuevas de TurmoilState toman su valor inicial.
+    """
+    base = new_turmoil()
+    if not turmoil:
+        return base
+    parties = {}
+    for name in PARTY_NAMES:
+        p = (turmoil.get("parties") or {}).get(name) or {}
+        parties[name] = PartyState(delegates=dict(p.get("delegates") or {}), leader=p.get("leader"))
+    return TurmoilState(**{  # type: ignore[typeddict-item]
+        **base,
+        **{k: v for k, v in turmoil.items() if k in base and k != "parties"},
+        "parties": parties,
+    })
 
 
 def _party_total(party: PartyState) -> int:
@@ -123,9 +162,10 @@ def _party_total(party: PartyState) -> int:
 
 def _recompute_dominant(parties: dict[str, PartyState], from_party: str) -> str | None:
     """
-    Partido con mas delegados totales entre TODOS. Empate: el primero en
-    sentido horario a partir de `from_party` (PARTY_NAMES ya esta en ese
-    orden). Ninguno si todos estan vacios.
+    Partido con mas delegados totales (de cualquier dueno, neutrales
+    incluidos). Empate: el primero en sentido horario a partir de
+    `from_party` (PARTY_NAMES ya esta en ese orden). Ninguno si todos estan
+    vacios.
     """
     totals = {name: _party_total(p) for name, p in parties.items()}
     max_total = max(totals.values())
@@ -136,76 +176,98 @@ def _recompute_dominant(parties: dict[str, PartyState], from_party: str) -> str 
     return next(name for name in rotated if totals[name] == max_total)
 
 
-def place_delegate(turmoil: TurmoilState, party: str, player_id: str) -> TurmoilState:
-    """
-    Coloca 1 delegado de `player_id` en `party`. Actualiza el Party Leader
-    (si `player_id` termina con MAS delegados ahi que el lider actual, lo
-    reemplaza -- el primer delegado en un partido vacio es lider
-    automatico) y el partido Dominante (si el nuevo total de `party`
-    supera estrictamente al del Dominante actual, o si todavia no habia
-    Dominante). NO cobra nada -- el caller (tools.py) es responsable del
-    costo (Lobbying: gratis desde el Lobby, 5 MC desde la Reserva;
-    Colonial Envoys: gratis, sale de la Reserva sin pasar por Lobbying).
-    """
+def _check_party(turmoil: TurmoilState, party: str) -> None:
     if party not in turmoil["parties"]:
         raise UnknownPartyError(f"Partido '{party}' no existe")
+
+
+def _add_to_party(turmoil: TurmoilState, party: str, owner: str) -> TurmoilState:
+    """
+    Suma 1 delegado de `owner` (player_id o NEUTRAL) a `party` y actualiza
+    Party Leader y Dominante. Party Leader: el primer delegado de un partido
+    vacio es lider automatico; quien tenga MAS delegados que el lider actual
+    lo reemplaza ("If a player (including the neutral 'player') ever has more
+    delegates in a party than the current Party Leader", pagina 4).
+    Dominante: cambia si el total de `party` supera ESTRICTAMENTE al del
+    Dominante actual, o si todavia no habia.
+    """
     p = turmoil["parties"][party]
-    new_delegates = {**p["delegates"], player_id: p["delegates"].get(player_id, 0) + 1}
+    new_delegates = {**p["delegates"], owner: p["delegates"].get(owner, 0) + 1}
     new_leader = p["leader"]
-    if new_leader is None or new_delegates[player_id] > new_delegates.get(new_leader, 0):
-        new_leader = player_id
-    new_party = PartyState(delegates=new_delegates, leader=new_leader, neutral=p["neutral"])
+    if new_leader is None or new_delegates[owner] > new_delegates.get(new_leader, 0):
+        new_leader = owner
+    new_party = PartyState(delegates=new_delegates, leader=new_leader)
     new_parties = {**turmoil["parties"], party: new_party}
 
     new_dominant = turmoil["dominant_party"]
-    new_total = _party_total(new_party)
     dominant_total = _party_total(new_parties[new_dominant]) if new_dominant is not None else -1
-    if new_dominant is None or new_total > dominant_total:
+    if new_dominant is None or _party_total(new_party) > dominant_total:
         new_dominant = party
+    return TurmoilState(**{**turmoil, "parties": new_parties, "dominant_party": new_dominant})  # type: ignore[typeddict-item]
 
-    return TurmoilState(
-        parties=new_parties, dominant_party=new_dominant,
-        ruling_party=turmoil["ruling_party"], chairman=turmoil["chairman"],
-    )
+
+def place_delegate(turmoil: TurmoilState, party: str, player_id: str) -> TurmoilState:
+    """
+    Coloca 1 delegado de `player_id` en `party` (ver _add_to_party para el
+    Party Leader y el Dominante). NO cobra nada -- el caller (tools.py) es
+    responsable del costo (Lobbying: gratis desde el Lobby, 5 MC desde la
+    Reserva; Colonial Envoys: gratis, sale de la Reserva sin pasar por
+    Lobbying).
+    """
+    _check_party(turmoil, party)
+    return _add_to_party(turmoil, party, player_id)
+
+
+def place_neutral_delegate(turmoil: TurmoilState, party: str) -> TurmoilState:
+    """
+    Un Global Event agrega un delegado neutral a `party`, sacandolo de la
+    Neutral Reserve. Puede volverse Party Leader y cambiar el Dominante como
+    cualquier delegado. Si la Neutral Reserve esta vacia no pasa nada (el
+    rulebook no preve reponerla).
+    """
+    _check_party(turmoil, party)
+    if turmoil["neutral_reserve"] < 1:
+        return turmoil
+    placed = _add_to_party(turmoil, party, NEUTRAL)
+    return TurmoilState(**{**placed, "neutral_reserve": turmoil["neutral_reserve"] - 1})  # type: ignore[typeddict-item]
+
+
+def neutral_non_leader_count(turmoil: TurmoilState, party: str) -> int:
+    """Delegados neutrales de `party` que NO son su Party Leader."""
+    _check_party(turmoil, party)
+    p = turmoil["parties"][party]
+    return p["delegates"].get(NEUTRAL, 0) - (1 if p["leader"] == NEUTRAL else 0)
 
 
 def exchange_neutral_delegate(turmoil: TurmoilState, party: str, player_id: str) -> TurmoilState:
     """
     Recruitment (T11): "exchange one NEUTRAL NON-LEADER delegate with one of
-    your own from the reserve" -- un delegado neutral de `party` sale de
-    juego (no vuelve a ninguna reserva: los neutrales no le pertenecen a
-    nadie) y uno propio de `player_id` ocupa su lugar. Un neutral NUNCA es
-    leader (ver PartyState.neutral), asi que alcanza con exigir `neutral`
-    >= 1 -- no hace falta distinguir "cual" neutral se intercambia.
+    your own from the reserve" -- un neutral NO-lider de `party` vuelve a la
+    Neutral Reserve y uno propio de `player_id` ocupa su lugar (puede
+    volverlo Party Leader, con la regla de siempre). El total del partido no
+    cambia, asi que el Dominante tampoco.
 
-    Mismo efecto de tablero que place_delegate (puede volver a `player_id`
-    Party Leader, puede cambiar el partido Dominante), pero SIN sacar el
-    delegado de la Reserva del jugador -- el caller (tools.py) es quien
-    debita `player.reserve_delegates`, igual criterio que place_delegate no
-    cobra MC.
+    No saca el delegado de la Reserva del jugador -- el caller (tools.py) es
+    quien debita `player.reserve_delegates`, igual criterio que
+    place_delegate no cobra MC.
+
+    Lanza UnknownPartyError si el partido no existe o no tiene neutrales
+    no-lider.
     """
-    if party not in turmoil["parties"]:
-        raise UnknownPartyError(f"Partido '{party}' no existe")
+    if neutral_non_leader_count(turmoil, party) < 1:
+        raise UnknownPartyError(f"'{party}' no tiene delegados neutrales NO-lider para intercambiar")
     p = turmoil["parties"][party]
-    if p["neutral"] < 1:
-        raise UnknownPartyError(f"'{party}' no tiene delegados neutrales para intercambiar")
-    new_delegates = {**p["delegates"], player_id: p["delegates"].get(player_id, 0) + 1}
+    new_delegates = {**p["delegates"], NEUTRAL: p["delegates"][NEUTRAL] - 1}
+    if new_delegates[NEUTRAL] == 0:
+        del new_delegates[NEUTRAL]
+    new_delegates[player_id] = new_delegates.get(player_id, 0) + 1
     new_leader = p["leader"]
     if new_leader is None or new_delegates[player_id] > new_delegates.get(new_leader, 0):
         new_leader = player_id
-    new_party = PartyState(delegates=new_delegates, leader=new_leader, neutral=p["neutral"] - 1)
-    new_parties = {**turmoil["parties"], party: new_party}
-
-    new_dominant = turmoil["dominant_party"]
-    new_total = _party_total(new_party)
-    dominant_total = _party_total(new_parties[new_dominant]) if new_dominant is not None else -1
-    if new_dominant is None or new_total > dominant_total:
-        new_dominant = party
-
-    return TurmoilState(
-        parties=new_parties, dominant_party=new_dominant,
-        ruling_party=turmoil["ruling_party"], chairman=turmoil["chairman"],
-    )
+    new_parties = {**turmoil["parties"], party: PartyState(delegates=new_delegates, leader=new_leader)}
+    return TurmoilState(**{  # type: ignore[typeddict-item]
+        **turmoil, "parties": new_parties, "neutral_reserve": turmoil["neutral_reserve"] + 1,
+    })
 
 
 def remove_delegate(
@@ -218,16 +280,13 @@ def remove_delegate(
     ese partido, se rechaza (Banned Delegate dice "remove any NON-LEADER
     delegate"). `allow_leader=True` levanta esa restriccion para cartas que NO
     la imprimen (ej. Red Appeasement, cuya accion cuesta 2 delegados propios:
-    con exactamente 2 en un partido, uno es forzosamente el lider). Recalcula el partido Dominante despues de sacarlo -- el FAQ
-    oficial confirma que la remocion puede cambiar el Dominante AL INSTANTE,
-    con el mismo desempate horario de _recompute_dominant.
-
-    En modo un jugador solo tiene sentido remover delegados PROPIOS (no se
-    simulan neutrales ni de otros jugadores) -- mismo alcance que el resto
-    del modulo.
+    con exactamente 2 en un partido, uno es forzosamente el lider). Si el
+    lider se queda sin delegados ahi, el liderazgo pasa a quien tenga mas
+    (neutrales incluidos). Recalcula el partido Dominante -- el FAQ oficial
+    confirma que la remocion puede cambiarlo AL INSTANTE, con el mismo
+    desempate horario de _recompute_dominant.
     """
-    if party not in turmoil["parties"]:
-        raise UnknownPartyError(f"Partido '{party}' no existe")
+    _check_party(turmoil, party)
     p = turmoil["parties"][party]
     if p["delegates"].get(player_id, 0) < 1:
         raise UnknownPartyError(f"El jugador no tiene delegados en '{party}'")
@@ -240,20 +299,12 @@ def remove_delegate(
     if new_delegates[player_id] == 0:
         del new_delegates[player_id]
         if new_leader == player_id:
-            # Se quedo sin delegados ahi: el liderazgo pasa a quien quede (en
-            # modo un jugador, normalmente a nadie).
-            new_leader = next(iter(new_delegates), None)
-    new_parties = {
-        **turmoil["parties"],
-        party: PartyState(delegates=new_delegates, leader=new_leader, neutral=p["neutral"]),
-    }
+            new_leader = max(new_delegates, key=lambda owner: new_delegates[owner], default=None)
+    new_parties = {**turmoil["parties"], party: PartyState(delegates=new_delegates, leader=new_leader)}
     from_party = turmoil["dominant_party"] or party
-    return TurmoilState(
-        parties=new_parties,
-        dominant_party=_recompute_dominant(new_parties, from_party),
-        ruling_party=turmoil["ruling_party"],
-        chairman=turmoil["chairman"],
-    )
+    return TurmoilState(**{  # type: ignore[typeddict-item]
+        **turmoil, "parties": new_parties, "dominant_party": _recompute_dominant(new_parties, from_party),
+    })
 
 
 def can_play_party_gated_card(turmoil: TurmoilState, party: str, player_id: str, min_delegates: int = 2) -> bool:
@@ -263,8 +314,7 @@ def can_play_party_gated_card(turmoil: TurmoilState, party: str, player_id: str,
     actual, o si `player_id` tiene al menos `min_delegates` delegados
     propios ahi (ej. Colonial Envoys: partido Unity, min_delegates=2).
     """
-    if party not in turmoil["parties"]:
-        raise UnknownPartyError(f"Partido '{party}' no existe")
+    _check_party(turmoil, party)
     if turmoil["ruling_party"] == party:
         return True
     return turmoil["parties"][party]["delegates"].get(player_id, 0) >= min_delegates
@@ -295,21 +345,25 @@ def compute_influence(turmoil: TurmoilState, player_id: str, bonus: int = 0) -> 
 
 def resolve_new_government(turmoil: TurmoilState, player_id: str) -> tuple[TurmoilState, int]:
     """
-    Paso "New Government" (rulebook pagina 4/7), ACOTADO a un solo jugador
-    -- ver nota de alcance arriba del modulo. No hace nada (devuelve 0
-    delegados) si todavia no hay partido Dominante.
+    Paso "New Government" (rulebook paginas 4 y 7, pasos 3a-3e). No hace
+    nada (devuelve 0 delegados) si todavia no hay partido Dominante.
 
-    El partido Dominante pasa a ser el Ruling. Si `player_id` era su
-    Party Leader, se vuelve el nuevo Chairman (su delegado se mueve a la
-    silla de Chairman, no vuelve a la reserva). El resto de los delegados
-    PROPIOS de `player_id` en ese partido, mas su delegado de Chairman
-    ANTERIOR si lo tenia, vuelven a su Reserva -- el caller (tools.py) es
-    quien de verdad suma ese numero a `player["reserve_delegates"]`, esta
-    funcion solo lo calcula. El partido Dominante se recalcula entre los
-    partidos restantes (ver _recompute_dominant).
-
-    No aplica Ruling Bonus/Ruling Policy ni la revision de TR -- fuera de
-    alcance de esta primera pasada.
+    El partido Dominante pasa a ser el Ruling. "Return the former Chairman
+    and all non-leader delegates from Dominant party to reserve" y "Party
+    Leader from the Dominant party becomes new Chairman":
+      - Los delegados PROPIOS de `player_id` que vuelven a su reserva (sus
+        no-lider del Dominante, mas el Chairman anterior si era suyo) se
+        DEVUELVEN como numero: el caller (tools.py) los suma a
+        `player["reserve_delegates"]`.
+      - Los NEUTRALES se mueven aca mismo, porque su reserva vive en este
+        estado: los no-lider del Dominante y el Chairman anterior si era
+        neutral vuelven a `neutral_reserve`.
+      - Si el Party Leader es neutral, la silla queda neutral
+        (`chairman = None`); si es un jugador, ese jugador es el Chairman
+        (el +1 TR lo aplica tools.py).
+    El partido Dominante se recalcula entre los partidos restantes (ver
+    _recompute_dominant). Los delegados de OTROS jugadores no se simulan
+    (modo un jugador).
 
     Devuelve (turmoil actualizado, delegados de `player_id` que vuelven a
     su reserva).
@@ -318,16 +372,79 @@ def resolve_new_government(turmoil: TurmoilState, player_id: str) -> tuple[Turmo
     if dominant is None:
         return turmoil, 0
     dom = turmoil["parties"][dominant]
+    leader = dom["leader"]
+
     own_in_dominant = dom["delegates"].get(player_id, 0)
-    was_leader = dom["leader"] == player_id
-    was_old_chairman = turmoil["chairman"] == player_id
+    returned = (own_in_dominant - (1 if leader == player_id else 0)) + (1 if turmoil["chairman"] == player_id else 0)
 
-    returned = (own_in_dominant - (1 if was_leader else 0)) + (1 if was_old_chairman else 0)
-    new_chairman = dom["leader"]
+    neutral_in_dominant = dom["delegates"].get(NEUTRAL, 0)
+    neutral_returned = neutral_in_dominant - (1 if leader == NEUTRAL else 0)
+    if turmoil["chairman"] is None:
+        neutral_returned += 1  # el Chairman anterior era neutral
 
-    new_parties = {**turmoil["parties"], dominant: PartyState(delegates={}, leader=None, neutral=dom["neutral"])}
-    new_dominant = _recompute_dominant(new_parties, dominant)
+    new_chairman = None if leader in (None, NEUTRAL) else leader
+    new_parties = {**turmoil["parties"], dominant: PartyState(delegates={}, leader=None)}
+    return TurmoilState(**{  # type: ignore[typeddict-item]
+        **turmoil,
+        "parties": new_parties,
+        "dominant_party": _recompute_dominant(new_parties, dominant),
+        "ruling_party": dominant,
+        "chairman": new_chairman,
+        "neutral_reserve": turmoil["neutral_reserve"] + neutral_returned,
+    }), returned
 
-    return TurmoilState(
-        parties=new_parties, dominant_party=new_dominant, ruling_party=dominant, chairman=new_chairman,
-    ), returned
+
+def setup_global_events(
+    turmoil: TurmoilState, shuffled_deck: list[str], event_parties: dict[str, tuple[str, str]],
+) -> TurmoilState:
+    """
+    Paso 3 del setup de Turmoil (rulebook pagina 2): con el mazo ya mezclado,
+    la primera carta va a COMING y pone un neutral (como Party Leader, el
+    partido esta vacio) en el partido de su esquina superior izquierda -- ese
+    partido pasa a ser el Dominante; la segunda va a DISTANT y pone otro
+    neutral en el partido de su esquina superior izquierda ("If it is in the
+    same party as the other neutral delegate, place it in the area for
+    delegates instead" -- sale solo de la regla de Party Leader). No hay
+    Current en la primera generacion.
+
+    `event_parties`: {event_id: (revealed_party, current_party)} -- arriba a
+    la izquierda y mitad derecha de cada carta (catalogo `global_events`).
+    Lanza ValueError si el mazo tiene menos de 2 cartas o ya hay un track.
+    """
+    if turmoil["coming_event"] is not None or turmoil["distant_event"] is not None:
+        raise ValueError("El track de Global Events ya esta armado")
+    if len(shuffled_deck) < 2:
+        raise ValueError("Hacen falta al menos 2 Global Events para el setup")
+    coming, distant, *rest = shuffled_deck
+    new_turmoil = place_neutral_delegate(turmoil, event_parties[coming][0])
+    new_turmoil = place_neutral_delegate(new_turmoil, event_parties[distant][0])
+    return TurmoilState(**{  # type: ignore[typeddict-item]
+        **new_turmoil, "coming_event": coming, "distant_event": distant,
+        "current_event": None, "global_event_deck": rest,
+    })
+
+
+def changing_times(turmoil: TurmoilState, event_parties: dict[str, tuple[str, str]]) -> TurmoilState:
+    """
+    Paso 4 de la fase Turmoil, "Changing Times" (rulebook pagina 7), despues
+    del New Government:
+      a) la Coming pasa a Current y agrega un neutral en el partido de su
+         mitad derecha;
+      b) la Distant pasa a Coming;
+      c) se da vuelta la primera del mazo como nueva Distant y agrega un
+         neutral en el partido de su esquina superior izquierda.
+    Si el mazo se agoto, la Distant queda vacia (el rulebook no preve
+    remezclar). Lanza ValueError si el track no esta armado.
+    """
+    if turmoil["coming_event"] is None:
+        raise ValueError("No hay Global Event en Coming: arma el track con setup_global_events")
+    current = turmoil["coming_event"]
+    new_turmoil = place_neutral_delegate(turmoil, event_parties[current][1])
+    deck = list(turmoil["global_event_deck"])
+    distant = deck.pop(0) if deck else None
+    if distant is not None:
+        new_turmoil = place_neutral_delegate(new_turmoil, event_parties[distant][0])
+    return TurmoilState(**{  # type: ignore[typeddict-item]
+        **new_turmoil, "current_event": current, "coming_event": turmoil["distant_event"],
+        "distant_event": distant, "global_event_deck": deck,
+    })

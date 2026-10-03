@@ -1058,7 +1058,9 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         'stratopolis', 'Stratopolis', 22, '{venus,city}',
         '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
         '{"production_deltas": {"mc_production": 2}, "place_city_tiles": 1, "becomes_active": true,
-          "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"target_card_resource_delta": 2}}}'::jsonb
+          "active_card_resource_type": "floater", "active_card_starting_resources": 0,
+          "action": {"cost": {}, "gains": {"target_card_resource_delta_allow_self": 2,
+            "target_resource_type": "floater", "target_required_tag": "venus"}}}'::jsonb
     ),
     (
         'stratospheric_birds', 'Stratospheric Birds', 12, '{venus,animal}', '{"min_venus": 12}'::jsonb,
@@ -1647,7 +1649,7 @@ where id in (
     'red_spot_observatory', 'titan_air_scrapping', 'titan_shuttles', 'cloud_tourism',
     'dirigibles', 'deuterium_export', 'floating_habs', 'forced_precipitation',
     'jet_stream_microscrappers', 'local_shading', 'jupiter_floating_station',
-    'titan_floating_launch_pad'
+    'titan_floating_launch_pad', 'stratopolis'
 );
 
 -- Bloque de revision 31 (2026-09-04): 16 de 30 cargadas, analizadas en

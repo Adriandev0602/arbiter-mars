@@ -321,8 +321,19 @@ create table if not exists card_review_queue (
 create table if not exists global_events (
     id text primary key,
     name text not null,
-    effects jsonb not null default '{}'::jsonb
+    effects jsonb not null default '{}'::jsonb,
+    -- Partidos impresos en la carta donde entran delegados NEUTRALES:
+    -- esquina superior izquierda (al revelarse) y mitad derecha (al volverse
+    -- Current). Ver turmoil.setup_global_events / changing_times.
+    revealed_party text,
+    current_party text
 );
+
+-- Migracion idempotente para bases donde global_events ya existia sin esas
+-- columnas (va DESPUES del create table: antes seria un no-op en una base
+-- nueva, ver la nota del create table de players).
+alter table global_events add column if not exists revealed_party text;
+alter table global_events add column if not exists current_party text;
 
 -- Cola de revision de Global Events, mismo patron que card_review_queue pero
 -- sin scan_number (el sitio fuente no numera esta categoria, solo el nombre
@@ -400,3 +411,21 @@ create table if not exists transactions (
 -- Seed inicial de parametros globales para que exista la fila 'default'
 insert into global_parameters (game_id) values ('default')
 on conflict (game_id) do nothing;
+
+-- Row Level Security (2026-10-02, decisión del usuario): RLS ACTIVO en todas las
+-- tablas de arbiter y SIN policies. El backend (tools.py) se conecta con la clave
+-- SECRET de Supabase (`sb_secret_...`, rol service_role), que saltea RLS; la clave
+-- publishable/anon no lee ni escribe nada. Así el proyecto se puede compartir con
+-- otras apps sin exponer el estado del juego ni el catálogo a quien tenga la clave
+-- pública. Idempotente (activar RLS dos veces no hace nada).
+alter table players enable row level security;
+alter table global_parameters enable row level security;
+alter table cards enable row level security;
+alter table card_review_queue enable row level security;
+alter table global_events enable row level security;
+alter table global_event_review_queue enable row level security;
+alter table prelude_cards enable row level security;
+alter table prelude_review_queue enable row level security;
+alter table corporation_cards enable row level security;
+alter table corporation_review_queue enable row level security;
+alter table transactions enable row level security;

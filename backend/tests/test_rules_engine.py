@@ -6856,3 +6856,35 @@ def test_remove_prelude_from_hand_only_touches_dealt_preludes():
     assert remove_prelude_from_hand(player, "p3")["prelude_hand"] == ["p7"]
     # Una prelude jugada por otra via (New Partner, etc.) no rompe nada.
     assert remove_prelude_from_hand(player, "p9")["prelude_hand"] == ["p3", "p7"]
+
+
+# --- Stratopolis (248): "Action: Add 2 floaters to ANY VENUS card" ---
+_STRATOPOLIS_GAINS = {
+    "target_card_resource_delta_allow_self": 2, "target_resource_type": "floater", "target_required_tag": "venus",
+}
+
+
+def _stratopolis_player():
+    player = register_active_card(new_player_state(), "stratopolis", resource_type="floater")
+    player = register_active_card(player, "dirigibles", resource_type="floater")
+    return register_active_card(player, "birds", resource_type="animal")
+
+
+def test_stratopolis_puede_agregarse_floaters_a_si_misma():
+    player, _ = use_card_action(_stratopolis_player(), new_global_parameters(), "stratopolis", {"cost": {}, "gains": _STRATOPOLIS_GAINS})
+    assert player["active_cards"]["stratopolis"]["resources"] == 2
+
+
+def test_stratopolis_agrega_2_floaters_a_otra_carta_de_floaters():
+    player, _ = use_card_action(
+        _stratopolis_player(), new_global_parameters(), "stratopolis", {"cost": {}, "gains": _STRATOPOLIS_GAINS}, target_card_id="dirigibles",
+    )
+    assert player["active_cards"]["dirigibles"]["resources"] == 2
+    assert player["active_cards"]["stratopolis"]["resources"] == 0
+
+
+def test_stratopolis_rechaza_destino_que_no_guarda_floaters():
+    with pytest.raises(CardEffectError):
+        use_card_action(
+            _stratopolis_player(), new_global_parameters(), "stratopolis", {"cost": {}, "gains": _STRATOPOLIS_GAINS}, target_card_id="birds",
+        )
