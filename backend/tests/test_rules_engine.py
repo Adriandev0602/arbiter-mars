@@ -928,6 +928,18 @@ def test_space_elevator_action_trades_steel_for_5_mc():
     assert new_player["mc"] == 5
 
 
+def test_water_import_from_europa_action_acepta_titanio():
+    # "Pay 12 M€ to place an ocean tile. TITANIUM MAY BE USED" (scan 012).
+    player = register_active_card({**new_player_state(), "mc": 6, "titanium": 2}, "water_import_from_europa")
+    action_spec = {"cost": {"mc_or_titanium": 12}, "gains": {"place_oceans": 1}}
+    new_player, new_globals = use_card_action(
+        player, new_global_parameters(), "water_import_from_europa", action_spec, titanium_to_pay=2,
+    )
+    assert new_player["titanium"] == 0
+    assert new_player["mc"] == 0  # 12 - 2*3
+    assert new_globals["oceans_placed"] == 1
+
+
 def test_water_import_from_europa_action_places_ocean_for_12_mc():
     player = register_active_card({**new_player_state(), "mc": 12}, "water_import_from_europa")
     globals_ = new_global_parameters()

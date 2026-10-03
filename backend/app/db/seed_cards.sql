@@ -100,8 +100,10 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"becomes_active": true, "action": {"cost": {"energy_production": 1}, "gains": {"tr_delta": 1}}}'::jsonb
     ),
     (
-        'water_import_from_europa', 'Water Import from Europa', 25, '{jovian}', null,
-        '{"becomes_active": true, "action": {"cost": {"mc": 12}, "gains": {"place_oceans": 1}}}'::jsonb
+        -- Corregida 2026-10-02 contra el scan: tags jovian + SPACE (faltaba el sol
+        -- dorado) y "TITANIUM MAY BE USED as if playing a space card" en la accion.
+        'water_import_from_europa', 'Water Import from Europa', 25, '{jovian,space}', null,
+        '{"becomes_active": true, "action": {"cost": {"mc_or_titanium": 12}, "gains": {"place_oceans": 1}}}'::jsonb
     ),
     (
         'advanced_alloys', 'Advanced Alloys', 9, '{science}', null,
@@ -1228,7 +1230,9 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_delta_per_tag": {"tag": "jovian", "production": "mc_production", "per_tag": 1}}'::jsonb
     ),
     (
-        'heavy_taxation', 'Heavy Taxation', 3, '{earth,earth}',
+        -- Corregida 2026-10-02 contra el scan: UN solo tag earth (el segundo era
+        -- el requisito "Requires 2 Earth tags" leido como tag). Imprime -1 VP.
+        'heavy_taxation', 'Heavy Taxation', 3, '{earth}',
         '{"min_tag_count": {"tag": "earth", "count": 2}}'::jsonb,
         '{"resource_deltas": {"mc": 4}, "production_deltas": {"mc_production": 2}}'::jsonb
     ),
