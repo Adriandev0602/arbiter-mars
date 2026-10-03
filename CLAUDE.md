@@ -138,7 +138,36 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-10-02, frontend v1, rama `feat/frontend-v1`)
+### 📍 Punto de retoma (última sesión: 2026-10-02, auditoría completa del catálogo, rama `feat/auditoria-catalogo`)
+
+**Se auditó el catálogo entero antes de seguir con el frontend** (pedido del usuario: "audita el
+catálogo para descartar fallas futuras"). Rama `feat/auditoria-catalogo`, sobre `feat/frontend-v1`.
+Detalle completo en `CARDS_LOG.md`, sección "Auditoría del catálogo (2026-10-02)".
+
+- **Método:** dos fuentes, y el scan decide.
+  - `scripts/audit_catalog.py` (herramienta nueva y permanente) cruza todas las cartas contra la
+    implementación open-source de referencia: costo, tags, evento, VP negativo.
+  - Cada diferencia se verificó contra el scan oficial.
+  - Una pasada aparte comparó los valores de los requisitos y los efectos numéricos.
+- **Resultado:** 81 diferencias.
+  - **78 cartas corregidas:** 55 de tags, 16 eventos sin marcar, Kaguya Tech costaba 2 y cuesta
+    10, 9 VP negativos que faltaban en la lista de Vitor, y 3 efectos (Red Appeasement, Mass
+    Converter, Nitrogen-Rich Asteroid).
+  - **En 3 la referencia se equivocaba:** quedan en `KNOWN_OK`.
+- **Errores típicos** (para no repetirlos):
+  - Requisito leído como tag.
+  - Falta el tag `city` en las ciudades.
+  - Falta el tag `space`.
+  - Eventos sin marcar.
+  - Costo leído del recuadro de producción.
+  - Efectos inventados a partir del texto del requisito.
+- **Hallazgo de motor:** `choice` y `tag_count_choice` ignoran en silencio las claves hermanas
+  (`return` temprano). Se barrió el catálogo y ninguna carta pierde efectos por eso.
+- **Ya aplicado a Supabase.** Prueba de humo contra la base real: 19 de 19. Tests: 718 de 718.
+- **Regla nueva del flujo de catálogo:** después de cargar o tocar cartas, correr
+  `scripts/audit_catalog.py` y verificar cada diferencia contra el scan.
+
+### 📍 Punto de retoma anterior (2026-10-02, frontend v1, rama `feat/frontend-v1`)
 
 **Primera iteración del frontend: genérica pero funcional** (pedido del usuario: "empezar con un
 diseño genérico pero funcional e ir iterando"). Rama `feat/frontend-v1`, sobre
@@ -917,7 +946,8 @@ El flujo de trabajo, si vuelve a haber cartas para revisar: consultar la cola en
 `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que rompe el parseo de
 `psycopg2.connect(url)` con un solo string), descargar los scans espaciados 3s, leer cada uno,
 decidir vocabulario (extender el motor si hace falta), cargar en `seed_cards.sql` + tests,
-probar contra Supabase real, marcar `card_review_queue`, actualizar `CARDS_LOG.md`, commitear.
+probar contra Supabase real, **correr `scripts/audit_catalog.py` y verificar contra el scan
+cada diferencia que reporte**, marcar `card_review_queue`, actualizar `CARDS_LOG.md`, commitear.
 
 ## 5. Stack tecnológico
 

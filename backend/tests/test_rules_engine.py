@@ -6900,3 +6900,28 @@ def test_stratopolis_rechaza_destino_que_no_guarda_floaters():
         use_card_action(
             _stratopolis_player(), new_global_parameters(), "stratopolis", {"cost": {}, "gains": _STRATOPOLIS_GAINS}, target_card_id="birds",
         )
+
+
+# --- Auditoria del catalogo (2026-10-02): efectos corregidos contra el scan ---
+
+def test_nitrogen_rich_asteroid_da_2_tr_mas_el_paso_de_temperatura():
+    # "Raise your terraform rating 2 steps and temperature 1 step. Increase your
+    # plant production 1 step, or 4 steps if you have 3 plant tags."
+    effects = {
+        "tag_count_choice": {
+            "tag": "plant", "count": 3,
+            "if_met": {"tr_delta": 2, "raise_temperature_steps": 1, "production_deltas": {"plant_production": 4}},
+            "else": {"tr_delta": 2, "raise_temperature_steps": 1, "production_deltas": {"plant_production": 1}},
+        },
+    }
+    new_player, new_globals = apply_card_effect(new_player_state(), new_global_parameters(), effects)
+    assert new_player["tr"] == TR_START + 3
+    assert new_player["plant_production"] == 2
+    assert new_globals["temperature"] == TEMPERATURE_MIN + TEMPERATURE_STEP
+
+
+def test_mass_converter_sube_6_la_produccion_de_energia_al_jugarla():
+    # "Requires 5 science tags. Increase your energy production 6 steps."
+    effects = {"production_deltas": {"energy_production": 6}, "passive": {"tag_filter": "space", "card_cost_discount_mc": 2}}
+    new_player, _ = apply_card_effect(new_player_state(), new_global_parameters(), effects)
+    assert new_player["energy_production"] == 7

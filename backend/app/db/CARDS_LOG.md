@@ -2437,3 +2437,115 @@ por "sistema de mazo/mano".
 Scans oficiales vía https://tm.hadronikle.com (base de datos no oficial de cartas,
 668 escaneos full-res). Cada carta se lee directamente del scan antes de cargarla —
 nunca de memoria — para no romper el objetivo de "100% de precisión" del PRD.
+
+
+## Auditoría del catálogo (2026-10-02)
+
+**Por qué:** al mostrar la mano en el frontend aparecieron dos cartas mal cargadas (Heavy Taxation y
+Water Import from Europa). Dos errores en 10 cartas al azar justificaban revisar el catálogo
+entero antes de seguir.
+
+**Método (dos fuentes, el scan decide):**
+1. `scripts/audit_catalog.py` cruza todas las cartas de Supabase (412 de proyecto, 48
+   corporaciones, 70 preludes) contra los datos de la implementación open-source de referencia
+   (`terraforming-mars/terraforming-mars`): costo, tags, tipo evento y VP negativo. Los valores de
+   los requisitos se compararon en una pasada aparte y coincidían todos.
+2. **Cada una de las 81 diferencias se decidió contra el scan oficial**, con hojas de verificación
+   (banda superior ampliada + carta completa). Se bajaron 55 scans que faltaban, de a uno.
+3. Segunda pasada sobre los **efectos numéricos** (producción, recursos, parámetros globales,
+   océanos, TR) contra el bloque `behavior` de la referencia: 26 diferencias, 24 de ellas solo
+   notación (`mc_delta`, `choice`, costos de plantas).
+
+**Resultado:** el scan le dio la razón a la referencia en 78 cartas y al seed en 3 (Mining Rights
+y Mining Area tienen tag `building`; Pharmacy Union tiene 2 tags `microbe`: la referencia los
+define por parámetro del constructor y el parser no los ve; quedan en `KNOWN_OK`).
+
+**Patrones de error encontrados** (para no repetirlos al cargar cartas nuevas):
+- **Requisito leído como tag** (11): Gene Repair, Luxury Foods, Mining Quota, Omnicourt, Solarnet,
+  Rad-Chem Factory, Conscription, Plantation, Quantum Communications, Urban Decomposers y
+  Aerosport Tournament. Mismo error que ya estaba documentado para Mercurian Alloys.
+- **Faltaba el tag `city`** en todas las ciudades del juego base (Capital, Domed Crater, Noctis
+  City, Cupola City, Underground City, Open City, Urbanized Area, Corporate Stronghold, Research
+  Outpost, Phobos Space Haven, Ganymede Colony) y **faltaba `space`** en varias cartas espaciales.
+- **`wild` en vez de `space`** (Space Lanes, Venus L1 Shade) y **`venus` en vez de `space`**
+  (Giant Solar Collector, Strategic Base Planning).
+- **16 eventos sin marcar como evento** (banner rojo + flecha): colonial_envoys, conscription, deimos_down, giant_ice_asteroid, ice_asteroid, interstellar_colony_ship, invention_contest, land_claim, martian_survey, mineral_deposit, mining_expedition, nitrogen_rich_asteroid, political_alliance, red_appeasement, towing_a_comet, virus.
+- **Costo leído del recuadro de producción:** Kaguya Tech cuesta 10, no 2.
+- **Efectos inventados o incompletos:**
+  - Red Appeasement estaba como carta activa con una acción que "gastaba 2 delegados"; es un
+    evento con requisito (Reds gobernando o 2 delegados) y efecto +2 de producción de M€.
+  - Mass Converter tenía una acción inventada; da +6 de producción de energía al jugarla.
+  - A Nitrogen-Rich Asteroid le faltaban los +2 TR.
+- **VP negativo:** la lista `excluded_card_ids` de Vitor tenía 4 cartas y ahora tiene 13 (todas
+  las que imprimen VP negativo: se sumaron Hackers, Indentured Workers, Conscription, Heat
+  Trappers, Corporate Stronghold, Energy Tapping, Flooding, Biomass Combustors y Aerial Lenses).
+
+**Hallazgo de motor:** `apply_card_effect` resuelve `choice` y `tag_count_choice` con un `return`
+temprano, así que **ignora en silencio cualquier clave hermana**. Por eso el TR de Nitrogen-Rich
+Asteroid va dentro de cada rama. Se barrió el catálogo entero buscando ese patrón: la única carta
+con claves hermanas es Atmospheric Enhancers, y esa clave la resuelve `tools.play_prelude`
+aparte, así que no se pierde nada.
+
+**Decisiones de diseño que la auditoría revisó y se mantienen:** Mining Expedition resta 2
+plantas propias ("remove 2 plants", sin "up to", se trata como obligatorio), y Hackers y Energy
+Tapping cancelan el canje de producción "de cualquier jugador" en single-player.
+
+**Tags corregidos** (valor final, verificado contra el scan):
+- `acquired_company`: {earth}
+- `aerobraked_ammonia_asteroid`: {space}
+- `aerosport_tournament`: sin tags
+- `anti_desertification_techniques`: {microbe, plant}
+- `asteroid_mining`: {jovian, space}
+- `callisto_penal_mines`: {jovian, space}
+- `capital`: {building, city}
+- `conscription`: {earth}
+- `corona_extractor`: {power, space}
+- `corporate_stronghold`: {building, city}
+- `cupola_city`: {building, city}
+- `domed_crater`: {building, city}
+- `early_settlement`: {building, city}
+- `ganymede_colony`: {city, jovian, space}
+- `gene_repair`: {science}
+- `ghg_producing_bacteria`: {microbe, science}
+- `giant_solar_collector`: {power, space}
+- `hackers`: sin tags
+- `immigration_shuttles`: {earth, space}
+- `impactor_swarm`: {space}
+- `interstellar_colony_ship`: {earth, space}
+- `investment_loan`: {earth}
+- `io_mining_industries`: {jovian, space}
+- `kaguya_tech`: {city, plant}
+- `luxury_foods`: sin tags
+- `mass_converter`: {power, science}
+- `media_group`: {earth}
+- `mining_quota`: {building}
+- `natural_preserve`: {building, science}
+- `noctis_city`: {building, city}
+- `olympus_conference`: {building, earth, science}
+- `omnicourt`: {building}
+- `open_city`: {building, city}
+- `optimal_aerobraking`: {space}
+- `phobos_space_haven`: {city, space}
+- `plantation`: {plant}
+- `quantum_communications`: sin tags
+- `rad_chem_factory`: {building}
+- `research_outpost`: {building, city, science}
+- `solarnet`: sin tags
+- `space_elevator`: {building, space}
+- `space_hotels`: {earth, space}
+- `space_lanes`: {space}
+- `sponsored_academies`: {earth, science}
+- `sponsors`: {earth}
+- `strategic_base_planning`: {building, city, space}
+- `sulphur_exports`: {space, venus}
+- `terraforming_ganymede`: {jovian, space}
+- `titanium_mine`: {building}
+- `underground_city`: {building, city}
+- `urban_decomposers`: {microbe}
+- `urbanized_area`: {building, city}
+- `venus_allies`: {space, venus}
+- `venus_l1_shade`: {space}
+- `venus_trade_hub`: {space, venus}
+
+**Para cartas nuevas:** después de cargarlas, correr `python3 scripts/audit_catalog.py --ref-dir
+<clon>` (sale con código 1 si hay diferencias nuevas) y verificar cada diferencia contra el scan.

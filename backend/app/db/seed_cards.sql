@@ -12,15 +12,15 @@
 
 insert into cards (id, name, cost, tags, requirements, effects) values
     (
-        'sponsors', 'Sponsors', 6, '{}', null,
+        'sponsors', 'Sponsors', 6, '{earth}', null,
         '{"mc_production_delta": 2}'::jsonb
     ),
     (
-        'acquired_company', 'Acquired Company', 10, '{}', null,
+        'acquired_company', 'Acquired Company', 10, '{earth}', null,
         '{"mc_production_delta": 3}'::jsonb
     ),
     (
-        'investment_loan', 'Investment Loan', 3, '{}', null,
+        'investment_loan', 'Investment Loan', 3, '{earth}', null,
         '{"mc_production_delta": -1, "mc_delta": 10}'::jsonb
     ),
     (
@@ -36,7 +36,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_deltas": {"energy_production": 1}}'::jsonb
     ),
     (
-        'titanium_mine', 'Titanium Mine', 7, '{space}', null,
+        'titanium_mine', 'Titanium Mine', 7, '{building}', null,
         '{"production_deltas": {"titanium_production": 1}}'::jsonb
     ),
     (
@@ -84,7 +84,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"raise_temperature_steps": 2, "resource_deltas": {"titanium": 4}}'::jsonb
     ),
     (
-        'capital', 'Capital', 26, '{building}', '{"min_oceans": 4}'::jsonb,
+        'capital', 'Capital', 26, '{building,city}', '{"min_oceans": 4}'::jsonb,
         '{"production_deltas": {"energy_production": -2, "mc_production": 5}, "place_city_tiles": 1}'::jsonb
     ),
     (
@@ -92,7 +92,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"becomes_active": true, "action": {"cost": {"energy": 1}, "gains": {"mc_per_counter": "city_tiles_placed"}}}'::jsonb
     ),
     (
-        'space_elevator', 'Space Elevator', 27, '{building}', null,
+        'space_elevator', 'Space Elevator', 27, '{building,space}', null,
         '{"becomes_active": true, "action": {"cost": {"steel": 1}, "gains": {"resource_deltas": {"mc": 5}}}, "production_deltas": {"titanium_production": 1}}'::jsonb
     ),
     (
@@ -110,16 +110,18 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"passive": {"steel_value_bonus": 1, "titanium_value_bonus": 1}}'::jsonb
     ),
     (
-        'media_group', 'Media Group', 6, '{}', null,
+        'media_group', 'Media Group', 6, '{earth}', null,
         '{"passive": {"on_event_played": {"mc_delta": 3}}}'::jsonb
     ),
     (
-        'optimal_aerobraking', 'Optimal Aerobraking', 7, '{}', null,
+        'optimal_aerobraking', 'Optimal Aerobraking', 7, '{space}', null,
         '{"passive": {"tag_filter": "space", "on_event_played": {"mc_delta": 3, "heat_delta": 3}}}'::jsonb
     ),
     (
-        'mass_converter', 'Mass Converter', 8, '{science}', '{"min_tag_count": {"tag": "science", "count": 5}}'::jsonb,
-        '{"passive": {"tag_filter": "space", "card_cost_discount_mc": 2}, "becomes_active": true, "action": {"cost": {"energy": 6}, "gains": {"production_deltas": {"energy_production": 6}}}}'::jsonb
+        'mass_converter', 'Mass Converter', 8, '{power,science}', '{"min_tag_count": {"tag": "science", "count": 5}}'::jsonb,
+        -- Corregida 2026-10-02 contra el scan: "Increase your energy production 6
+        -- steps" al jugarla (no era una accion "gastar 6 energia -> +6 produccion").
+        '{"production_deltas": {"energy_production": 6}, "passive": {"tag_filter": "space", "card_cost_discount_mc": 2}}'::jsonb
     ),
     (
         'inventors_guild', 'Inventors'' Guild', 9, '{science}', null,
@@ -130,11 +132,11 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"becomes_active": true, "action": {"cost": {"energy": 1}, "gains": {"draw_cards": 1}}}'::jsonb
     ),
     (
-        'domed_crater', 'Domed Crater', 24, '{building}', '{"max_oxygen": 7}'::jsonb,
+        'domed_crater', 'Domed Crater', 24, '{building,city}', '{"max_oxygen": 7}'::jsonb,
         '{"resource_deltas": {"plants": 3}, "production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
     ),
     (
-        'noctis_city', 'Noctis City', 18, '{building}', null,
+        'noctis_city', 'Noctis City', 18, '{building,city}', null,
         '{"production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
     ),
     (
@@ -142,11 +144,11 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_deltas": {"heat_production": 2, "plant_production": 2}}'::jsonb
     ),
     (
-        'research_outpost', 'Research Outpost', 18, '{science,building}', null,
+        'research_outpost', 'Research Outpost', 18, '{building,city,science}', null,
         '{"passive": {"card_cost_discount_mc": 1}, "place_city_tiles": 1}'::jsonb
     ),
     (
-        'phobos_space_haven', 'Phobos Space Haven', 25, '{space}', null,
+        'phobos_space_haven', 'Phobos Space Haven', 25, '{city,space}', null,
         '{"production_deltas": {"titanium_production": 1}, "place_city_tiles": 1}'::jsonb
     ),
     (
@@ -162,7 +164,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"passive": {"tag_filter": "space", "card_cost_discount_mc": 2}}'::jsonb
     ),
     (
-        'interstellar_colony_ship', 'Interstellar Colony Ship', 24, '{science,earth}',
+        'interstellar_colony_ship', 'Interstellar Colony Ship', 24, '{earth,space}',
         '{"min_tag_count": {"tag": "science", "count": 5}}'::jsonb,
         '{}'::jsonb
     ),
@@ -171,7 +173,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"becomes_active": true, "action": {"cost": {"titanium": 1}, "gains": {"card_resource_delta": 1}}}'::jsonb
     ),
     (
-        'cupola_city', 'Cupola City', 16, '{building}', '{"max_oxygen": 9}'::jsonb,
+        'cupola_city', 'Cupola City', 16, '{building,city}', '{"max_oxygen": 9}'::jsonb,
         '{"production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
     ),
     (
@@ -179,11 +181,11 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_deltas": {"mc_production": -2, "heat_production": 2, "energy_production": 2}}'::jsonb
     ),
     (
-        'underground_city', 'Underground City', 18, '{building}', null,
+        'underground_city', 'Underground City', 18, '{building,city}', null,
         '{"production_deltas": {"energy_production": -2, "steel_production": 2}, "place_city_tiles": 1}'::jsonb
     ),
     (
-        'ghg_producing_bacteria', 'GHG Producing Bacteria', 8, '{science}', '{"min_oxygen": 4}'::jsonb,
+        'ghg_producing_bacteria', 'GHG Producing Bacteria', 8, '{microbe,science}', '{"min_oxygen": 4}'::jsonb,
         '{"becomes_active": true, "action": {"choice": [{"cost": {}, "gains": {"card_resource_delta": 1}}, {"cost": {"card_resource": 2}, "gains": {"raise_temperature_steps": 1}}]}}'::jsonb
     ),
     (
@@ -192,16 +194,19 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     ),
     (
         'nitrogen_rich_asteroid', 'Nitrogen-Rich Asteroid', 31, '{space}', null,
+        -- Corregida 2026-10-02 contra el scan: "Raise your terraform rating 2 steps
+        -- and temperature 1 step" -- faltaban los +2 TR. Van DENTRO de cada rama:
+        -- tag_count_choice resuelve la rama y no mira claves hermanas.
         '{"tag_count_choice": {"tag": "plant", "count": 3,
-            "if_met": {"raise_temperature_steps": 1, "production_deltas": {"plant_production": 4}},
-            "else": {"raise_temperature_steps": 1, "production_deltas": {"plant_production": 1}}}}'::jsonb
+            "if_met": {"tr_delta": 2, "raise_temperature_steps": 1, "production_deltas": {"plant_production": 4}},
+            "else": {"tr_delta": 2, "raise_temperature_steps": 1, "production_deltas": {"plant_production": 1}}}}'::jsonb
     ),
     (
         'deimos_down', 'Deimos Down', 31, '{space}', null,
         '{"raise_temperature_steps": 3, "resource_deltas": {"steel": 4}}'::jsonb
     ),
     (
-        'asteroid_mining', 'Asteroid Mining', 30, '{jovian}', null,
+        'asteroid_mining', 'Asteroid Mining', 30, '{jovian,space}', null,
         '{"production_deltas": {"titanium_production": 2}}'::jsonb
     ),
     (
@@ -217,7 +222,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_deltas": {"energy_production": -1, "heat_production": 3}}'::jsonb
     ),
     (
-        'natural_preserve', 'Natural Preserve', 9, '{building}', '{"max_oxygen": 4}'::jsonb,
+        'natural_preserve', 'Natural Preserve', 9, '{building,science}', '{"max_oxygen": 4}'::jsonb,
         '{"production_deltas": {"mc_production": 1}}'::jsonb
     ),
     (
@@ -352,11 +357,11 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"raise_temperature_steps": 2, "place_oceans": 2}'::jsonb
     ),
     (
-        'ganymede_colony', 'Ganymede Colony', 20, '{jovian}', null,
+        'ganymede_colony', 'Ganymede Colony', 20, '{city,jovian,space}', null,
         '{}'::jsonb
     ),
     (
-        'callisto_penal_mines', 'Callisto Penal Mines', 24, '{jovian}', null,
+        'callisto_penal_mines', 'Callisto Penal Mines', 24, '{jovian,space}', null,
         '{"production_deltas": {"mc_production": 3}}'::jsonb
     ),
     (
@@ -392,12 +397,12 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"duplicate_production": {"requires_tag": "building"}}'::jsonb
     ),
     (
-        'gene_repair', 'Gene Repair', 12, '{science,science,science}',
+        'gene_repair', 'Gene Repair', 12, '{science}',
         '{"min_tag_count": {"tag": "science", "count": 3}}'::jsonb,
         '{"production_deltas": {"mc_production": 2}}'::jsonb
     ),
     (
-        'io_mining_industries', 'IO Mining Industries', 41, '{jovian}', null,
+        'io_mining_industries', 'IO Mining Industries', 41, '{jovian,space}', null,
         '{"production_deltas": {"titanium_production": 2, "mc_production": 2}}'::jsonb
     ),
     (
@@ -446,7 +451,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"resource_delta_per_counter": {"resource": "mc", "counter": "events_played"}}'::jsonb
     ),
     (
-        'open_city', 'Open City', 23, '{building}', '{"min_oxygen": 12}'::jsonb,
+        'open_city', 'Open City', 23, '{building,city}', '{"min_oxygen": 12}'::jsonb,
         '{"production_deltas": {"energy_production": -1, "mc_production": 4},
           "resource_deltas": {"plants": 2}, "place_city_tiles": 1}'::jsonb
     ),
@@ -480,7 +485,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{}'::jsonb
     ),
     (
-        'urbanized_area', 'Urbanized Area', 10, '{building}', null,
+        'urbanized_area', 'Urbanized Area', 10, '{building,city}', null,
         '{"production_deltas": {"energy_production": -1, "mc_production": 2},
           "place_city_tiles": 1, "city_placement_requires_adjacent_cities": 2}'::jsonb
     ),
@@ -502,7 +507,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{}'::jsonb
     ),
     (
-        'hackers', 'Hackers', 3, '{science}', null,
+        'hackers', 'Hackers', 3, '{}', null,
         '{"production_deltas": {"energy_production": -1}}'::jsonb
     ),
     (
@@ -682,7 +687,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_deltas": {"plant_production": 1, "mc_production": 2}, "resource_deltas": {"plants": 1}}'::jsonb
     ),
     (
-        'aerobraked_ammonia_asteroid', 'Aerobraked Ammonia Asteroid', 26, '{space,space}', null,
+        'aerobraked_ammonia_asteroid', 'Aerobraked Ammonia Asteroid', 26, '{space}', null,
         '{"target_card_resource_delta": 2, "production_deltas": {"heat_production": 3, "plant_production": 1}}'::jsonb
     ),
     (
@@ -730,7 +735,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"place_oceans": 1}'::jsonb
     ),
     (
-        'corporate_stronghold', 'Corporate Stronghold', 11, '{building}', null,
+        'corporate_stronghold', 'Corporate Stronghold', 11, '{building,city}', null,
         '{"production_deltas": {"energy_production": -1, "mc_production": 3}, "place_city_tiles": 1}'::jsonb
     ),
     (
@@ -742,7 +747,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_deltas": {"plant_production": -1, "mc_production": 2}, "becomes_active": true, "action": {"cost": {}, "gains": {"card_resource_delta": 1}}}'::jsonb
     ),
     (
-        'olympus_conference', 'Olympus Conference', 10, '{science,earth}', null,
+        'olympus_conference', 'Olympus Conference', 10, '{building,earth,science}', null,
         '{"becomes_active": true, "passive": {"on_tag_played_choice": {"matching_tags": ["science"], "add_resource_choice": {"resource_delta": 1}, "spend_resource_choice": {"card_resource": 1, "draw_cards": 1}}}}'::jsonb
     ),
     (
@@ -770,7 +775,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"start_research": {"n": 3}}'::jsonb
     ),
     (
-        'plantation', 'Plantation', 15, '{science,science}', '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        'plantation', 'Plantation', 15, '{plant}', '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
         '{"raise_oxygen_steps": 1, "place_greenery": {}}'::jsonb
     ),
     (
@@ -786,11 +791,11 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"draw_cards": 1}'::jsonb
     ),
     (
-        'terraforming_ganymede', 'Terraforming Ganymede', 33, '{earth,jovian}', null,
+        'terraforming_ganymede', 'Terraforming Ganymede', 33, '{jovian,space}', null,
         '{"tr_delta_per_tag": {"tag": "jovian", "per_tag": 1, "include_this": true}}'::jsonb
     ),
     (
-        'immigration_shuttles', 'Immigration Shuttles', 31, '{earth,earth}', null,
+        'immigration_shuttles', 'Immigration Shuttles', 31, '{earth,space}', null,
         '{"production_deltas": {"mc_production": 5}}'::jsonb
     ),
     (
@@ -818,7 +823,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"draw_cards": 2}'::jsonb
     ),
     (
-        'rad_chem_factory', 'Rad-Chem Factory', 8, '{building,earth,earth}', null,
+        'rad_chem_factory', 'Rad-Chem Factory', 8, '{building}', null,
         '{"production_deltas": {"energy_production": -1}, "tr_delta": 2}'::jsonb
     ),
     (
@@ -989,7 +994,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     (
         -- Sin efecto numerico modelado -- el texto real solo exige los 3 tags,
         -- sin ningun cambio de estado (VP no trackeado, ver CLAUDE.md seccion 4).
-        'luxury_foods', 'Luxury Foods', 8, '{venus,earth,jovian}',
+        'luxury_foods', 'Luxury Foods', 8, '{}',
         '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
         '{}'::jsonb
     ),
@@ -999,7 +1004,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
           "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"target_card_resource_delta": 1}}}'::jsonb
     ),
     (
-        'mining_quota', 'Mining Quota', 5, '{venus,earth,jovian,building}',
+        'mining_quota', 'Mining Quota', 5, '{building}',
         '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
         '{"production_deltas": {"steel_production": 2}}'::jsonb
     ),
@@ -1008,7 +1013,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"raise_venus_steps": 1}'::jsonb
     ),
     (
-        'omnicourt', 'Omnicourt', 11, '{venus,earth,jovian,building}',
+        'omnicourt', 'Omnicourt', 11, '{building}',
         '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
         '{"tr_delta": 2}'::jsonb
     )
@@ -1042,7 +1047,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_deltas": {"mc_production": 3}}'::jsonb
     ),
     (
-        'solarnet', 'Solarnet', 7, '{venus,earth,jovian}',
+        'solarnet', 'Solarnet', 7, '{}',
         '{"min_tag_count": [{"tag": "venus", "count": 1}, {"tag": "earth", "count": 1}, {"tag": "jovian", "count": 1}]}'::jsonb,
         '{"draw_cards": 2}'::jsonb
     ),
@@ -1052,7 +1057,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     ),
     (
         -- "each opponent draws 1" omitida (no afecta al jugador en single-player).
-        'sponsored_academies', 'Sponsored Academies', 9, '{}',
+        'sponsored_academies', 'Sponsored Academies', 9, '{earth,science}',
         '{"min_tag_count": [{"tag": "science", "count": 1}, {"tag": "earth", "count": 1}]}'::jsonb,
         '{"discard_card_then_draw": {"draw": 3}}'::jsonb
     ),
@@ -1069,7 +1074,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"becomes_active": true, "active_card_starting_resources": 0, "action": {"cost": {}, "gains": {"move_from_target_card_resource_delta": 1}}}'::jsonb
     ),
     (
-        'sulphur_exports', 'Sulphur Exports', 21, '{venus}', null,
+        'sulphur_exports', 'Sulphur Exports', 21, '{space,venus}', null,
         '{"raise_venus_steps": 1, "production_delta_per_tag": {"tag": "venus", "production": "mc_production", "per_tag": 1, "include_this": true}}'::jsonb
     ),
     (
@@ -1181,12 +1186,12 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"production_delta_per_zero_tag_card": {"production": "mc_production", "per_card": 1, "include_this": true}}'::jsonb
     ),
     (
-        'conscription', 'Conscription', 5, '{earth,earth}',
+        'conscription', 'Conscription', 5, '{earth}',
         '{"min_tag_count": {"tag": "earth", "count": 2}}'::jsonb,
         '{"next_card_discount_mc": 16}'::jsonb
     ),
     (
-        'corona_extractor', 'Corona Extractor', 10, '{science}',
+        'corona_extractor', 'Corona Extractor', 10, '{power,space}',
         '{"min_tag_count": {"tag": "science", "count": 4}}'::jsonb,
         '{"production_deltas": {"energy_production": 4}}'::jsonb
     ),
@@ -1242,7 +1247,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
     ),
     (
         -- "remove up to 2 plants from any player" omitida (regla de oro single-player).
-        'impactor_swarm', 'Impactor Swarm', 11, '{jovian,jovian}',
+        'impactor_swarm', 'Impactor Swarm', 11, '{space}',
         '{"min_tag_count": {"tag": "jovian", "count": 2}}'::jsonb,
         '{"resource_deltas": {"heat": 12}}'::jsonb
     ),
@@ -1348,7 +1353,7 @@ update cards set is_event = true where id in ('market_manipulation');
 -- colonia por jugador por tile, ver colonies.build_colony).
 insert into cards (id, name, cost, tags, requirements, effects) values
     (
-        'quantum_communications', 'Quantum Communications', 8, '{science}',
+        'quantum_communications', 'Quantum Communications', 8, '{}',
         '{"min_tag_count": {"tag": "science", "count": 4}}'::jsonb,
         '{"production_delta_per_colony_in_play": {"production": "mc_production", "per_colony": 1}}'::jsonb
     ),
@@ -1443,7 +1448,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"passive": {"trade_bump_track_first": true}, "build_colony": true}'::jsonb
     ),
     (
-        'urban_decomposers', 'Urban Decomposers', 6, '{building,microbe}',
+        'urban_decomposers', 'Urban Decomposers', 6, '{microbe}',
         '{"min_city_tiles": 1, "min_colonies_owned": 1}'::jsonb,
         '{"production_deltas": {"plant_production": 1}, "target_card_resource_delta": 2}'::jsonb
     ),
@@ -1505,7 +1510,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"draw_cards": 1}'::jsonb
     ),
     (
-        'space_hotels', 'Space Hotels', 12, '{earth,earth}',
+        'space_hotels', 'Space Hotels', 12, '{earth,space}',
         '{"min_tag_count": {"tag": "earth", "count": 2}}'::jsonb,
         '{"production_deltas": {"mc_production": 4}}'::jsonb
     ),
@@ -1618,7 +1623,7 @@ on conflict (id) do update set
 -- seed_global_events.sql).
 insert into cards (id, name, cost, tags, requirements, effects) values
     (
-        'aerosport_tournament', 'Aerosport Tournament', 7, '{venus}',
+        'aerosport_tournament', 'Aerosport Tournament', 7, '{}',
         '{"min_total_card_resources": {"resource_type": "floater", "count": 5}}'::jsonb,
         '{"mc_per_counter": "city_tiles_placed"}'::jsonb
     ),
@@ -1729,11 +1734,11 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"discard_card_then_draw": {"draw": 0}, "raise_venus_steps": 1}'::jsonb
     ),
     (
-        'venus_allies', 'Venus Allies', 30, '{venus}', null,
+        'venus_allies', 'Venus Allies', 30, '{space,venus}', null,
         '{"raise_venus_steps": 2, "resource_delta_per_colony": {"resource": "mc", "per_colony": 4}}'::jsonb
     ),
     (
-        'venus_trade_hub', 'Venus Trade Hub', 12, '{venus,venus}',
+        'venus_trade_hub', 'Venus Trade Hub', 12, '{space,venus}',
         '{"min_tag_count": {"tag": "venus", "count": 2}}'::jsonb,
         '{"passive": {"mc_delta_on_trade": 3}}'::jsonb
     ),
@@ -1836,11 +1841,14 @@ insert into cards (id, name, cost, tags, requirements, effects) values
                      "gains": {"raise_venus_steps": 1}}}'::jsonb
     ),
     (
-        'red_appeasement', 'Red Appeasement', 0, '{}', null,
-        '{"becomes_active": true,
-          "action": {"requirements": {"ruling_or_delegates": {"party": "reds", "min_delegates": 2}},
-                     "cost": {"remove_own_delegates": 2},
-                     "gains": {"production_deltas": {"mc_production": 2}}}}'::jsonb
+        -- Corregida 2026-10-02 contra el scan: es un EVENTO de efecto inmediato,
+        -- no una carta activa. "Requires that Reds are ruling or that you have 2
+        -- delegates there [...]. Increase M€ production 2 steps. THIS COUNTS AS
+        -- PASSING" -- los 2 delegados son el REQUISITO, no un costo. "Counts as
+        -- passing" y "no other player has passed" no son observables en un jugador.
+        'red_appeasement', 'Red Appeasement', 0, '{}',
+        '{"ruling_or_delegates": {"party": "reds", "min_delegates": 2}}'::jsonb,
+        '{"production_deltas": {"mc_production": 2}}'::jsonb
     )
 on conflict (id) do update set
     name = excluded.name, cost = excluded.cost, tags = excluded.tags,
@@ -2247,7 +2255,7 @@ insert into cards (id, name, cost, tags, requirements, effects) values
         '{"tr_delta": 1}'::jsonb
     ),
     (
-        'kaguya_tech', 'Kaguya Tech', 2, '{}', null,
+        'kaguya_tech', 'Kaguya Tech', 10, '{city,plant}', null,
         '{"production_deltas": {"mc_production": 2}, "draw_cards": 1,
           "convert_own_greenery_to_city": true}'::jsonb
     ),
@@ -2534,3 +2542,17 @@ on conflict (id) do update set
 update card_review_queue set reviewed = true, card_id = 'self_replicating_robots' where scan_number = '210';
 update card_review_queue set reviewed = true, card_id = 'venus_orbital_survey' where scan_number = 'P88';
 update card_review_queue set reviewed = true, card_id = 'wg_project' where scan_number = 'P91';
+
+
+-- ---------------------------------------------------------------------------
+-- Auditoria del catalogo (2026-10-02). Se cruzo el catalogo entero contra los
+-- datos de la implementacion open-source de referencia (terraforming-mars/
+-- terraforming-mars: costo, tags, tipo de carta, requisitos, VP) y CADA
+-- discrepancia se decidio contra el scan oficial (no contra la referencia).
+-- Resultado: 78 cartas corregidas (tags corregidos en su fila; Kaguya Tech:
+-- costo 10, no 2; Red Appeasement: evento, ver su fila), 3 donde el seed
+-- estaba bien (Mining Rights, Mining Area, Pharmacy Union). Detalle en
+-- CARDS_LOG.md, seccion "Auditoria del catalogo (2026-10-02)".
+--
+-- Estas 16 son EVENTOS (banner rojo + flecha en el scan) y no estaban marcadas:
+update cards set is_event = true where id in ('colonial_envoys', 'conscription', 'deimos_down', 'giant_ice_asteroid', 'ice_asteroid', 'interstellar_colony_ship', 'invention_contest', 'land_claim', 'martian_survey', 'mineral_deposit', 'mining_expedition', 'nitrogen_rich_asteroid', 'political_alliance', 'red_appeasement', 'towing_a_comet', 'virus');
