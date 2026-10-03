@@ -64,24 +64,40 @@ and passes it to the engine as plain values.
 
 | | |
 |---|---|
-| Project cards loaded | **340** |
-| Global Events (Turmoil) | **36 / 36** — full deck |
-| Prelude cards loaded | **48** |
-| Cards pending review | 71 |
+| Project cards | **412** |
+| Corporations | **48 / 48** |
+| Prelude cards | **70 / 70** |
+| Global Events (Turmoil) | **36 / 36**, each with its neutral-delegate parties |
+| Colony tiles | **11 / 11** |
+| Cards pending a mechanic | **0** |
+| Tests | **715**, all passing |
 
-Expansions with cards loaded: Base, Venus Next, Colonies, Corporate Era, Prelude, Turmoil (Global
-Events + political core), Promo.
+Expansions covered: Base, Corporate Era, Venus Next, Colonies, Prelude (including the setup draw:
+4 dealt, keep 2), Turmoil, and Promo.
 
-**Implemented mechanics:** all 4 global parameters (temperature, oxygen, oceans, Venus scale), the
-6 standard projects, deck/hand/research system, passive effects and repeatable card actions, the
-full Tharsis map, colony building and trading, and Turmoil's political core (parties, delegates,
-lobbying, party leader, dominant party, chairman, and influence).
+**Implemented mechanics:**
+- **Global parameters and base rules:** all 4 global parameters (temperature, oxygen, oceans,
+  Venus scale), the standard projects, and the deck/hand/research system.
+- **Cards:** passive effects and repeatable card actions.
+- **Board and colonies:** the full Tharsis map, plus colony building and trading.
+- **Corporations:** starting effects and every "as your first action" clause, resolved for free.
+- **Turmoil:** the full political system:
+  - parties, delegates, lobbying, party leader, dominant party, chairman, and influence;
+  - the TR revision, the Ruling Bonus, and the Ruling Policy of all 6 parties;
+  - the Global Event track (Distant → Coming → Current), with the official neutral-delegate
+    rules (14 neutrals, placed by Global Events).
 
-**Explicitly out of scope:** an AI that plays autonomously, simultaneous games, milestones and
-awards, alternate maps (Hellas/Elysium), and — within Turmoil — the Ruling Policies of the 6
-parties. Single-player mode is treated as a standard game (TR 20), not the official rulebook's
-solo variant. Corporations (the Corporation and Automa card categories) are a known gap not yet
-modeled.
+**Explicitly out of scope:**
+- An AI that plays autonomously, and simultaneous games.
+- Milestones and awards.
+- Alternate maps (Hellas/Elysium) and Ares cross-payment.
+- The Venus Next Solar Phase.
+- Card clauses that only make sense against opponents.
+
+Single-player mode is treated as a standard game (TR 20), not the official rulebook's solo
+variant.
+
+**Next iteration:** the frontend. The Next.js dashboard and chat are still wired to mock data.
 
 ## How the catalog is built (and why it matters)
 
@@ -119,6 +135,9 @@ npm install && npm run dev
 
 # Tests
 cd backend && PYTHONPATH=. pytest tests/ -v
+
+# Database (Supabase/Postgres): apply the schema, then the catalog seeds
+# schema.sql → seed_cards.sql → seed_corporations.sql → seed_preludes.sql → seed_global_events.sql
 ```
 
 ## Stack
@@ -139,3 +158,7 @@ cd backend && PYTHONPATH=. pytest tests/ -v
   out-of-scope cards, with the effect vocabulary each one consumes.
 - [`backend/app/db/HEX_MAP_RESEARCH.md`](./backend/app/db/HEX_MAP_RESEARCH.md) — research on the
   hex map and its sources.
+- [`graphify-out/`](./graphify-out/) — a knowledge graph of the whole repo (code, SQL, and docs).
+  Open `graph.html` in a browser, or read `GRAPH_REPORT.md`. Every feature node carries a
+  `status` (done / pending / known_gap / tech_debt / out_of_scope), so the graph doubles as a
+  map of what's finished and what's left.

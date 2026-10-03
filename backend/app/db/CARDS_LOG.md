@@ -640,36 +640,51 @@ explícitamente NO modelaba delegados neutrales (`delegates: {player_id: N}`, si
 "neutral" — el propio docstring del módulo decía "neutrales/de otros jugadores... no se
 simulan").
 
-**Decisión de alcance, consultada con el usuario antes de tocar código** (no es un dato
-verificado contra el reglamento, es un supuesto de diseño explícito): el reglamento oficial fija
-la cantidad de delegados neutrales por partido según el número de jugadores, algo que este
-proyecto no modela. Con las opciones sobre la mesa (cantidad fija razonable / marcar T11 fuera de
-alcance / re-verificar el reglamento primero), el usuario eligió una **cantidad fija de 2
-delegados neutrales por partido** al arrancar — documentado como tal en el código
-(`turmoil.STARTING_NEUTRAL_DELEGATES`), no presentado como número oficial.
+~~**Decisión de alcance:** cantidad fija de 2 delegados neutrales por partido
+(`turmoil.STARTING_NEUTRAL_DELEGATES`), supuesto de diseño, no regla oficial.~~ **Reemplazada el
+2026-10-02 por el mecanismo OFICIAL** (pedido explícito del usuario). La premisa del supuesto
+("el reglamento fija los neutrales por partido según el número de jugadores") era falsa:
+releyendo el rulebook (`TM_TURMOIL_ENG_RULESi.pdf`, fryxgames.se, páginas 2, 5, 6, 7 y 8), los
+neutrales **no dependen del número de jugadores y ningún partido arranca con neutrales**:
 
-**Piezas nuevas:**
-- `PartyState.neutral: int` — nuevo campo, inicializado en `new_turmoil()` y preservado en los
-  demás constructores de `PartyState` (`place_delegate`, `remove_delegate`,
-  `resolve_new_government`).
-- `turmoil.exchange_neutral_delegate(turmoil, party, player_id)`: un neutral sale de juego (no
-  vuelve a ninguna reserva, a nadie le pertenecía), uno propio de `player_id` ocupa su lugar.
-  Un neutral NUNCA es Party Leader, así que alcanza con exigir `neutral >= 1` — no hace falta
-  distinguir "cuál" se intercambia. Mismo efecto de tablero que `place_delegate` (puede volver al
-  jugador Party Leader, puede cambiar el partido Dominante), pero sin cobrar MC.
-- `effects.exchange_neutral_delegate: true` en `apply_card_effect`/`play_card`, resuelto en
-  `tools.py` (reutiliza el parámetro `removal_party` que ya existía para `remove_own_delegate`,
-  en vez de agregar uno nuevo). Sale de la Reserva del jugador, sin costo de MC.
+- **14 delegados neutrales** ("14 Neutral delegates", componentes, p.8). Setup: "Place a gray
+  neutral delegate in the Chairman seat, and the rest of the gray neutral delegates in the Neutral
+  Reserve" (p.2) → Chairman neutral (`chairman is None`) + `neutral_reserve = 13`.
+- "The gray neutral delegate markers do not belong to any player, but they do count as a separate
+  player. These neutral delegates can become Party Leader and Chairman" (p.5). Se modelan como un
+  jugador más en `PartyState.delegates` bajo la clave reservada `turmoil.NEUTRAL` — misma regla de
+  Party Leader y Dominante que cualquier delegado. `PartyState.neutral` se eliminó.
+- **Entran solo vía Global Events.** Setup (p.2, paso 3): la carta COMING pone un neutral como
+  Party Leader en el partido de su **esquina superior izquierda** (y ese partido queda Dominante);
+  la DISTANT, otro en el de su esquina superior izquierda. "Changing Times" (p.7, paso 4): la que
+  pasa de Coming a Current agrega uno en el partido de su **mitad derecha**; la nueva Distant, uno
+  en el de su esquina superior izquierda.
+- **New Government** (p.7, paso 3c-3d): "Return the former Chairman and all non-leader delegates
+  from Dominant party to reserve" — los neutrales vuelven a `neutral_reserve`; "Party Leader from
+  the Dominant party becomes new Chairman, earning 1 TR" — si el leader es neutral, la silla queda
+  neutral. **El +1 TR del Chairman no se aplicaba antes**: ahora lo da `tools.resolve_new_government`.
 
-**Migración de estado compartido necesaria:** `global_parameters.turmoil` es estado COMPARTIDO
-(fila única `game_id='default'`, no por jugador) y ya existía guardado en Supabase de sesiones
-anteriores, con los partidos en la forma vieja (sin `neutral`). Agregar el campo al `TypedDict`
-no alcanza para el dato YA persistido — hubo que parchear la fila existente sumando
-`neutral: 2` a cada partido antes de que `exchange_neutral_delegate` pudiera leerla (si no,
-`KeyError: 'neutral'`). Se verificó que los 6 partidos estaban vacíos (ningún delegado colocado
-por ninguna partida real) antes de tocar la fila. **Cualquier otro entorno con una fila
-`global_parameters.turmoil` vieja va a necesitar el mismo parche** — no es algo que
-`schema.sql` resuelva solo, porque `turmoil` es una columna jsonb sin sub-esquema.
+**Datos nuevos de catálogo:** columnas `global_events.revealed_party` (esquina superior
+izquierda) y `current_party` (mitad derecha), cargadas para los 36 eventos en
+`seed_global_events.sql`. Verificadas con **dos fuentes independientes**, 72 de 72 iconos
+coincidentes: los 36 scans oficiales (hoja de contacto de los dos iconos por carta; leyenda: Mars
+First = símbolo de Marte dorado, Reds = bandera amarilla sobre rojo, Unity = anillos azules,
+Greens = árbol verde, Kelvinists = llama sobre negro, Scientists = matraz blanco) y la
+implementación open-source de referencia (`terraforming-mars/terraforming-mars`,
+`revealedDelegate`/`currentDelegate`).
+
+**Piezas nuevas (2026-10-02):** `turmoil.place_neutral_delegate`, `neutral_non_leader_count`,
+`setup_global_events`, `changing_times`, `normalize_turmoil`; campos `neutral_reserve`,
+`distant_event`, `coming_event`, `current_event`, `global_event_deck` en `TurmoilState`; tool
+nueva `setup_global_events`; `resolve_new_government` corre "Changing Times" solo cuando el track
+está armado; `resolve_global_event` sin `event_id` resuelve el Current del track.
+`exchange_neutral_delegate` (Recruitment) ahora exige un neutral **no-líder** y lo devuelve a la
+Neutral Reserve (antes "salía de juego"). Vote of No Confidence devuelve el Chairman neutral a la
+reserva.
+
+**Migración de estado compartido: ya no hace falta parchear a mano.** `tools._load_turmoil` pasa
+la fila por `normalize_turmoil`, que descarta el `neutral: 2` fijo viejo y completa las claves
+nuevas con su valor inicial.
 
 ### Turmoil: núcleo político (Colonial Envoys, Colonial Representation)
 
@@ -1899,9 +1914,9 @@ puro `rules_engine.is_blue_card`.
 | `mud_slides` | Mud Slides | -4 M€ por cada tile del mapa adyacente a océano, contando cada tile UNA vez (tope 5) − Influencia |
 | `solarnet_shutdown` | Solarnet Shutdown | -3 M€ por cada carta AZUL jugada (tope 5) − Influencia. El color se deriva del catálogo, sin columna nueva |
 
-**Alcance no resuelto todavía, documentado para cuando aparezca en una carta real:** el reparto
-de delegados neutrales al revelar la carta (Distant → Coming → Current) y el ciclo de
-generaciones no están automatizados (`resolve_global_event` es de disparo manual, no forma parte
+**~~Alcance no resuelto todavía~~ — resuelto el reparto de neutrales (2026-10-02, ver "T11
+Recruitment"): `setup_global_events` + "Changing Times" dentro de `resolve_new_government`.** Lo
+que sigue sin automatizarse es el ciclo de generaciones (`resolve_global_event` es de disparo manual, no forma parte
 de un `run_production_phase`/fase Turmoil todavía) — mismo criterio de alcance que
 `resolve_new_government`. El tablero hexagonal tampoco está wireado a Global Events (ver Dry
 Deserts arriba).

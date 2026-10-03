@@ -11,7 +11,8 @@ from app.agent.turmoil import (
     STARTING_LOBBY_DELEGATES,
     STARTING_RESERVE_DELEGATES,
     LOBBY_FROM_RESERVE_COST_MC,
-    STARTING_NEUTRAL_DELEGATES,
+    TOTAL_NEUTRAL_DELEGATES,
+    NEUTRAL,
     UnknownPartyError,
     new_turmoil,
     place_delegate,
@@ -20,6 +21,11 @@ from app.agent.turmoil import (
     resolve_new_government,
     remove_delegate,
     exchange_neutral_delegate,
+    place_neutral_delegate,
+    neutral_non_leader_count,
+    normalize_turmoil,
+    setup_global_events,
+    changing_times,
 )
 
 
@@ -36,49 +42,136 @@ def test_new_turmoil_starts_with_greens_ruling_no_dominant_no_chairman():
     assert t["dominant_party"] is None
     assert t["chairman"] is None
     assert all(p["leader"] is None and p["delegates"] == {} for p in t["parties"].values())
-    # Recruitment (T11) necesita delegados neutrales para intercambiar --
-    # cantidad fija, supuesto de diseño documentado en turmoil.py, no un
-    # dato verificado contra el reglamento oficial (que sí lo especifica
-    # según cantidad de jugadores, algo que este modulo no modela).
-    assert all(p["neutral"] == STARTING_NEUTRAL_DELEGATES for p in t["parties"].values())
+    # Setup oficial (rulebook p.2): 14 neutrales, 1 en la silla de Chairman
+    # (chairman None) y 13 en la Neutral Reserve; ningun partido arranca con
+    # neutrales -- entran solo via Global Events.
+    assert TOTAL_NEUTRAL_DELEGATES == 14
+    assert t["neutral_reserve"] == 13
+    assert (t["distant_event"], t["coming_event"], t["current_event"]) == (None, None, None)
 
 
-def test_exchange_neutral_delegate_gana_presencia_sin_gastar_mc():
+# --- Delegados neutrales (mecanismo oficial, rulebook p.2/5/6/7) ---
+
+_EVENT_PARTIES = {
+    "e1": ("mars_first", "reds"),
+    "e2": ("greens", "unity"),
+    "e3": ("mars_first", "scientists"),
+    "e4": ("kelvinists", "greens"),
+}
+
+
+def test_neutral_delegate_sale_de_la_reserva_y_puede_ser_leader_y_dominante():
+    t = place_neutral_delegate(new_turmoil(), "reds")
+    assert t["neutral_reserve"] == 12
+    assert t["parties"]["reds"] == {"delegates": {NEUTRAL: 1}, "leader": NEUTRAL}
+    assert t["dominant_party"] == "reds"
+
+
+def test_neutral_delegate_con_reserva_vacia_no_hace_nada():
+    t = {**new_turmoil(), "neutral_reserve": 0}
+    assert place_neutral_delegate(t, "reds") == t
+
+
+def test_jugador_con_mas_delegados_reemplaza_al_leader_neutral():
+    t = place_neutral_delegate(new_turmoil(), "reds")
+    t = place_delegate(t, "reds", "p1")
+    assert t["parties"]["reds"]["leader"] == NEUTRAL  # empate 1-1: no reemplaza
+    t = place_delegate(t, "reds", "p1")
+    assert t["parties"]["reds"]["leader"] == "p1"
+
+
+def test_setup_global_events_coming_y_distant_ponen_neutrales_arriba_a_la_izquierda():
+    t = setup_global_events(new_turmoil(), ["e1", "e2", "e3", "e4"], _EVENT_PARTIES)
+    assert (t["coming_event"], t["distant_event"], t["current_event"]) == ("e1", "e2", None)
+    assert t["global_event_deck"] == ["e3", "e4"]
+    assert t["parties"]["mars_first"]["leader"] == NEUTRAL
+    assert t["parties"]["greens"]["leader"] == NEUTRAL
+    assert t["dominant_party"] == "mars_first"  # la Coming define el Dominante
+    assert t["neutral_reserve"] == 11
+
+
+def test_setup_global_events_mismo_partido_el_segundo_va_a_delegados():
+    t = setup_global_events(new_turmoil(), ["e1", "e3", "e2"], _EVENT_PARTIES)
+    assert t["parties"]["mars_first"] == {"delegates": {NEUTRAL: 2}, "leader": NEUTRAL}
+
+
+def test_setup_global_events_rechaza_track_ya_armado_o_mazo_corto():
+    t = setup_global_events(new_turmoil(), ["e1", "e2"], _EVENT_PARTIES)
+    with pytest.raises(ValueError):
+        setup_global_events(t, ["e3", "e4"], _EVENT_PARTIES)
+    with pytest.raises(ValueError):
+        setup_global_events(new_turmoil(), ["e1"], _EVENT_PARTIES)
+
+
+def test_changing_times_avanza_el_track_y_reparte_neutrales():
+    t = setup_global_events(new_turmoil(), ["e1", "e2", "e3", "e4"], _EVENT_PARTIES)
+    t = changing_times(t, _EVENT_PARTIES)
+    # e1 pasa a Current: neutral en su mitad derecha (reds); e3 es la nueva
+    # Distant: neutral en su esquina superior izquierda (mars_first).
+    assert (t["current_event"], t["coming_event"], t["distant_event"]) == ("e1", "e2", "e3")
+    assert t["parties"]["reds"]["delegates"] == {NEUTRAL: 1}
+    assert t["parties"]["mars_first"]["delegates"] == {NEUTRAL: 2}
+    assert t["global_event_deck"] == ["e4"]
+    assert t["neutral_reserve"] == 9
+
+
+def test_changing_times_con_mazo_vacio_deja_distant_vacia():
+    t = setup_global_events(new_turmoil(), ["e1", "e2"], _EVENT_PARTIES)
+    t = changing_times(t, _EVENT_PARTIES)
+    assert (t["current_event"], t["coming_event"], t["distant_event"]) == ("e1", "e2", None)
+    with pytest.raises(ValueError):
+        changing_times(new_turmoil(), _EVENT_PARTIES)
+
+
+def test_exchange_neutral_delegate_cambia_un_neutral_no_lider_por_uno_propio():
     # Recruitment (T11): "exchange one NEUTRAL NON-LEADER delegate with one
-    # of your own from the reserve" -- un neutral sale, uno propio entra.
-    t = new_turmoil()
-    antes = t["parties"]["unity"]["neutral"]
+    # of your own from the reserve" -- el neutral vuelve a la Neutral Reserve.
+    t = place_neutral_delegate(place_neutral_delegate(new_turmoil(), "unity"), "unity")
+    assert neutral_non_leader_count(t, "unity") == 1
     t = exchange_neutral_delegate(t, "unity", "p1")
-    assert t["parties"]["unity"]["neutral"] == antes - 1
-    assert t["parties"]["unity"]["delegates"] == {"p1": 1}
-    assert t["parties"]["unity"]["leader"] == "p1"    # el unico delegado ahi, es leader
-    assert t["dominant_party"] == "unity"             # y ahora tiene mas que cualquier otro
+    assert t["parties"]["unity"]["delegates"] == {NEUTRAL: 1, "p1": 1}
+    assert t["parties"]["unity"]["leader"] == NEUTRAL  # empate: el neutral sigue liderando
+    assert t["neutral_reserve"] == 12
+    assert t["dominant_party"] == "unity"  # el total no cambio
 
 
-def test_exchange_neutral_delegate_falla_si_no_hay_neutrales():
-    t = new_turmoil()
-    for _ in range(STARTING_NEUTRAL_DELEGATES):
-        t = exchange_neutral_delegate(t, "unity", "p1")
-    assert t["parties"]["unity"]["neutral"] == 0
+def test_exchange_neutral_delegate_falla_si_solo_queda_el_neutral_leader():
+    t = place_neutral_delegate(new_turmoil(), "unity")
     with pytest.raises(UnknownPartyError):
-        exchange_neutral_delegate(t, "unity", "p2")
-
-
-def test_exchange_neutral_delegate_partido_desconocido():
-    t = new_turmoil()
+        exchange_neutral_delegate(t, "unity", "p1")
     with pytest.raises(UnknownPartyError):
-        exchange_neutral_delegate(t, "bogus_party", "p1")
+        exchange_neutral_delegate(new_turmoil(), "bogus_party", "p1")
 
 
-def test_exchange_neutral_delegate_puede_reemplazar_al_leader():
-    # p1 ya lidera unity con 1 delegado propio; p2 intercambia dos veces
-    # (con 2 neutrales disponibles) y le saca el liderazgo.
-    t = new_turmoil()
-    t = place_delegate(t, "unity", "p1")
-    t = exchange_neutral_delegate(t, "unity", "p2")
-    t = exchange_neutral_delegate(t, "unity", "p2")
-    assert t["parties"]["unity"]["delegates"] == {"p1": 1, "p2": 2}
-    assert t["parties"]["unity"]["leader"] == "p2"
+def test_exchange_neutral_delegate_puede_volver_leader_al_jugador():
+    t = place_delegate(new_turmoil(), "unity", "p1")
+    t = place_neutral_delegate(t, "unity")
+    t = exchange_neutral_delegate(t, "unity", "p1")
+    assert t["parties"]["unity"] == {"delegates": {"p1": 2}, "leader": "p1"}
+
+
+def test_resolve_new_government_neutrales_vuelven_a_su_reserva_y_leader_neutral_es_chairman():
+    t = setup_global_events(new_turmoil(), ["e1", "e3", "e2"], _EVENT_PARTIES)  # 2 neutrales en mars_first
+    t = place_delegate(t, "mars_first", "p1")
+    assert t["neutral_reserve"] == 11
+    new_t, returned = resolve_new_government(t, "p1")
+    assert new_t["ruling_party"] == "mars_first"
+    assert new_t["chairman"] is None  # el leader neutral pasa a la silla
+    # vuelven: 1 neutral no-lider + el Chairman neutral anterior
+    assert new_t["neutral_reserve"] == 13
+    assert returned == 1  # el delegado de p1 (no-lider)
+
+
+def test_normalize_turmoil_descarta_el_neutral_fijo_viejo_y_completa_claves():
+    legacy = {
+        "parties": {name: {"delegates": {}, "leader": None, "neutral": 2} for name in PARTY_NAMES},
+        "dominant_party": None, "ruling_party": "reds", "chairman": None,
+    }
+    t = normalize_turmoil(legacy)
+    assert t["ruling_party"] == "reds"
+    assert all(p == {"delegates": {}, "leader": None} for p in t["parties"].values())
+    assert t["neutral_reserve"] == 13
+    assert normalize_turmoil({}) == new_turmoil()
 
 
 def test_place_delegate_unknown_party_raises():

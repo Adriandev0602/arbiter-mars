@@ -116,8 +116,19 @@ def _save_colonies(colonies: colonieslib.Colonies, game_id: str = "default") -> 
 def _load_turmoil(game_id: str = "default") -> turmoillib.TurmoilState:
     """Trae el estado mutable de Turmoil (partidos/delegados/dominante/chairman)."""
     res = supabase.table("global_parameters").select("turmoil").eq("game_id", game_id).single().execute()
-    stored = res.data.get("turmoil")
-    return stored if stored else turmoillib.new_turmoil()
+    # normalize_turmoil lleva filas guardadas con una forma vieja (ej. el
+    # `neutral: 2` fijo por partido de antes de 2026-10-02) a la actual.
+    return turmoillib.normalize_turmoil(res.data.get("turmoil") or {})
+
+
+def _load_global_event_parties() -> dict[str, tuple[str, str]]:
+    """
+    {event_id: (revealed_party, current_party)} del catalogo de Global
+    Events: el partido de la esquina superior izquierda (neutral al revelar
+    la carta) y el de la mitad derecha (neutral al volverse Current).
+    """
+    res = supabase.table("global_events").select("id,revealed_party,current_party").execute()
+    return {row["id"]: (row["revealed_party"], row["current_party"]) for row in (res.data or [])}
 
 
 def _save_turmoil(turmoil: turmoillib.TurmoilState, game_id: str = "default") -> None:
@@ -1255,10 +1266,8 @@ def play_card(
         # "party_leader_and_neutral_chairman" ya garantizo chairman neutral.
         # Mueve 1 delegado propio de la Reserva a la silla de Chairman y
         # gana 1 TR (regla real de la carta). El Chairman tiene su propio
-        # estado neutral explicito (`chairman is None`), distinto del
-        # `neutral` por partido que usa Recruitment (T11) -- esta carta
-        # no necesita esa pieza mas grande (ver "Pendientes" para
-        # Recruitment, que si la necesita).
+        # estado neutral explicito (`chairman is None`): el neutral que
+        # estaba sentado vuelve a la Neutral Reserve.
         if new_player["reserve_delegates"] < 1:
             raise engine.InsufficientResourcesError(
                 f"El jugador tiene {new_player['reserve_delegates']} delegados en la Reserva, se necesita 1"
@@ -1266,6 +1275,8 @@ def play_card(
         turmoil = turmoil if turmoil is not None else _load_turmoil()
         turmoil = dict(turmoil)
         turmoil["chairman"] = player_id
+        # El neutral que ocupaba la silla vuelve a la Neutral Reserve.
+        turmoil["neutral_reserve"] = turmoil["neutral_reserve"] + 1
         new_player = {
             **new_player,
             "reserve_delegates": new_player["reserve_delegates"] - 1,
@@ -2492,6 +2503,15 @@ def resolve_new_government(player_id: str) -> dict:
     2. RULING BONUS: solo si el partido Ruling efectivamente CAMBIO esta
        generacion (compara `ruling_party` de antes/despues) -- ver
        engine.apply_ruling_bonus.
+    3. CHAIRMAN: si el Party Leader del Dominante era `player_id`, pasa a
+       la silla de Chairman y gana 1 TR ("Party Leader from the Dominant
+       party becomes new Chairman, earning 1 TR", paso 3d). Si era un
+       neutral, la silla queda neutral.
+    4. CHANGING TIMES (paso 4), si el track de Global Events esta armado
+       (setup_global_events): Coming -> Current (+1 neutral en el partido de
+       su mitad derecha), Distant -> Coming, nueva Distant (+1 neutral en el
+       partido de su esquina superior izquierda). El Current que queda es el
+       que se resuelve con resolve_global_event.
 
     Args:
         player_id: id del jugador.
@@ -2516,12 +2536,50 @@ def resolve_new_government(player_id: str) -> dict:
     new_player = dict(engine._raise_tr(new_player, -1))
     if new_turmoil["ruling_party"] != old_ruling:
         new_player = dict(engine.apply_ruling_bonus(engine.PlayerState(**new_player), new_turmoil["ruling_party"]))  # type: ignore[typeddict-item]
+    became_chairman = turmoil["dominant_party"] is not None and new_turmoil["chairman"] == player_id
+    if became_chairman:
+        new_player = dict(engine._raise_tr(new_player, 1))
+
+    if new_turmoil["coming_event"] is not None:
+        new_turmoil = turmoillib.changing_times(new_turmoil, _load_global_event_parties())
 
     _save_player(player_id, engine.PlayerState(**new_player))  # type: ignore[typeddict-item]
     _save_turmoil(new_turmoil)
-    _log_transaction(player_id, "resolve_new_government", {"delegates_returned": returned})
+    _log_transaction(player_id, "resolve_new_government", {
+        "delegates_returned": returned, "became_chairman": became_chairman,
+        "current_event": new_turmoil["current_event"],
+    })
 
-    return {"player": new_player, "turmoil": dict(new_turmoil), "delegates_returned": returned}
+    return {
+        "player": new_player, "turmoil": dict(new_turmoil), "delegates_returned": returned,
+        "became_chairman": became_chairman, "current_event": new_turmoil["current_event"],
+    }
+
+
+@tool
+def setup_global_events() -> dict:
+    """
+    Arma el track de Global Events de la expansion Turmoil (setup oficial,
+    rulebook pagina 2, paso 3): mezcla el mazo, pone la primera carta en
+    COMING (+1 delegado neutral como Party Leader en el partido de su
+    esquina superior izquierda, que pasa a ser el Dominante) y la segunda en
+    DISTANT (+1 neutral en el partido de su esquina superior izquierda). No
+    hay Current en la primera generacion. Despues, cada resolve_new_government
+    avanza el track solo ("Changing Times").
+
+    Returns:
+        dict con el estado de Turmoil (coming_event, distant_event, partidos
+        con sus neutrales, neutral_reserve).
+
+    Lanza ValueError si el track ya estaba armado.
+    """
+    turmoil = _load_turmoil()
+    event_parties = _load_global_event_parties()
+    deck = list(event_parties)
+    random.shuffle(deck)
+    new_turmoil = turmoillib.setup_global_events(turmoil, deck, event_parties)
+    _save_turmoil(new_turmoil)
+    return {"turmoil": dict(new_turmoil)}
 
 
 @tool
@@ -3030,7 +3088,7 @@ def _compute_player_influence(
 
 @tool
 def resolve_global_event(
-    player_id: str, event_id: str, target_card_id: str | None = None, effect_choice: int | None = None,
+    player_id: str, event_id: str | None = None, target_card_id: str | None = None, effect_choice: int | None = None,
     discard_card_ids: list[str] | None = None, remove_ocean_hex_id: str | None = None,
 ) -> dict:
     """
@@ -3043,15 +3101,15 @@ def resolve_global_event(
     proyecto -- reusa su vocabulario, mas las piezas nuevas especificas de
     Global Events, ej. "resource_delta_per_capped_counter").
 
-    ALCANCE (ver turmoil.py): NO simula el reparto de delegados neutrales
-    al revelar la carta, ni el avance Distant -> Coming -> Current del
-    mazo (single-player, no hay ciclo de generaciones automatizado). El
-    LLM/usuario elige que Global Event resolver segun el contexto de la
-    partida que este llevando afuera del motor.
+    Si el track de Global Events esta armado (setup_global_events), sin
+    `event_id` resuelve el Current Global Event del track. El reparto de
+    delegados neutrales y el avance Distant -> Coming -> Current los hace
+    resolve_new_government ("Changing Times").
 
     Args:
         player_id: id del jugador.
         event_id: id de `global_events` (ej. "generous_funding", "riots").
+            None = el Current Global Event del track.
         target_card_id: OBLIGATORIO si `effects` tiene
             "target_card_resource_delta_typed" (ej. Corrosive Rain: "Lose
             2 floaters from a card" -- la carta activa propia elegida
@@ -3075,6 +3133,10 @@ def resolve_global_event(
 
     Lanza ValueError si `event_id` no existe en el catalogo.
     """
+    if event_id is None:
+        event_id = _load_turmoil()["current_event"]
+        if event_id is None:
+            raise ValueError("No hay Current Global Event: pasa event_id o arma el track con setup_global_events")
     event_res = supabase.table("global_events").select("*").eq("id", event_id).single().execute()
     event = event_res.data
     if event is None:
@@ -3641,7 +3703,7 @@ ALL_TOOLS = [
     deal_starting_hand, start_research_phase, resolve_research_phase,
     deal_prelude_hand, keep_preludes,
     setup_colonies, build_colony, use_trade_fleet,
-    lobby, resolve_new_government, get_turmoil_state, resolve_global_event, play_prelude,
+    lobby, resolve_new_government, setup_global_events, get_turmoil_state, resolve_global_event, play_prelude,
     get_active_cards_state, resolve_ocean_offer, choose_corporation, resolve_pending_discards,
     resolve_corporation_first_action,
     retire_card_as_event, place_community, play_double_down,

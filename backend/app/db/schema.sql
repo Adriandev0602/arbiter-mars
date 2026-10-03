@@ -321,8 +321,19 @@ create table if not exists card_review_queue (
 create table if not exists global_events (
     id text primary key,
     name text not null,
-    effects jsonb not null default '{}'::jsonb
+    effects jsonb not null default '{}'::jsonb,
+    -- Partidos impresos en la carta donde entran delegados NEUTRALES:
+    -- esquina superior izquierda (al revelarse) y mitad derecha (al volverse
+    -- Current). Ver turmoil.setup_global_events / changing_times.
+    revealed_party text,
+    current_party text
 );
+
+-- Migracion idempotente para bases donde global_events ya existia sin esas
+-- columnas (va DESPUES del create table: antes seria un no-op en una base
+-- nueva, ver la nota del create table de players).
+alter table global_events add column if not exists revealed_party text;
+alter table global_events add column if not exists current_party text;
 
 -- Cola de revision de Global Events, mismo patron que card_review_queue pero
 -- sin scan_number (el sitio fuente no numera esta categoria, solo el nombre
