@@ -2460,7 +2460,10 @@ def use_card_action(
         target_card_resource_delta pero el jugador puede elegir CUALQUIER
         carta activa como destino, incluida la propia (`target_card_id` es
         opcional -- si se omite, agrega a la propia carta) (ej. Dirigibles:
-        "Add 1 floater to ANY card"); tr_delta sube el TR directo sin pasar por un parametro global (ej.
+        "Add 1 floater to ANY card"); acepta "target_resource_type": "<tipo>"
+        para exigir que el destino guarde ese recurso, y "target_required_tag"
+        (validado en tools.use_card_action) para exigirle un tag (ej.
+        Stratopolis: "Add 2 floaters to ANY VENUS card"); tr_delta sube el TR directo sin pasar por un parametro global (ej.
         Equatorial Magnetizer); mc_per_counter da tanto MC como valga ese
         contador global (ej. Martian Rails: MC por cada ciudad en Marte via
         "city_tiles_placed"); place_oceans: N coloca N tiles de oceano (+N TR
@@ -2723,6 +2726,17 @@ def use_card_action(
                 raise CardEffectError(
                     f"La carta objetivo '{dest_id}' tiene {dest_resources} recursos guardados; "
                     f"la accion de '{card_id}' exige al menos {min_target_resources}"
+                )
+        # Stratopolis (248): "add 2 floaters to ANY VENUS card" -- el destino
+        # tiene que guardar ese tipo de recurso (`target_resource_type`). La
+        # parte "VENUS" (tag del destino) la valida tools.use_card_action con
+        # `target_required_tag`, porque el motor no conoce el catalogo.
+        target_resource_type = gains.get("target_resource_type")
+        if target_resource_type is not None and dest_id != card_id:
+            dest_type = new_active_cards.get(dest_id, {}).get("resource_type")
+            if dest_type != target_resource_type:
+                raise CardEffectError(
+                    f"La carta objetivo '{dest_id}' no guarda recursos de tipo '{target_resource_type}'"
                 )
         if dest_id == card_id:
             card_resources = max(0, card_resources + amount)

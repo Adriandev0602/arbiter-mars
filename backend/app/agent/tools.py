@@ -1595,6 +1595,15 @@ def use_card_action(
                     f"'{reserved_card_id}' no tiene ninguno de los tags requeridos {required_tags}"
                 )
 
+    # "Add N <recurso> to ANY <TAG> card" (Stratopolis: VENUS): el tag del
+    # destino vive en el catalogo, asi que se valida aca y no en el motor.
+    target_required_tag = resolved_spec.get("gains", {}).get("target_required_tag")
+    if target_required_tag and target_card_id is not None and target_card_id != card_id:
+        target_res = supabase.table("cards").select("tags").eq("id", target_card_id).maybe_single().execute()
+        target_tags = (target_res.data or {}).get("tags") if target_res else None
+        if not target_tags or target_required_tag not in target_tags:
+            raise ValueError(f"'{target_card_id}' no tiene el tag '{target_required_tag}' que exige la accion")
+
     free_trade = bool(resolved_spec.get("gains", {}).get("free_trade"))
     if free_trade and trade_colony_id is None:
         raise ValueError(f"La accion de '{card_id}' requiere trade_colony_id")

@@ -255,7 +255,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `solarnet` | Solarnet | 245 | 7 MC | Tags venus+earth+jovian. Requiere los 3 tags jugados. Roba 2 cartas |
 | `spin_inducing_asteroid` | Spin-Inducing Asteroid | 246 | 16 MC | Tag power, evento. Requiere Venus ≤10%. +2 pasos Venus |
 | `sponsored_academies` | Sponsored Academies | 247 | 9 MC | Sin tags propios. Requiere science+earth jugados. Descarta 1 carta elegida, roba 3 (pieza nueva `discard_card_then_draw`; cláusula "opponents draw 1" omitida, sin efecto en single-player) |
-| `stratopolis` | Stratopolis | 248 | 22 MC | Tags venus+city. Requiere 2 tags de ciencia. +2 producción MC, +1 ciudad; acción repetible sin costo: +2 recursos a OTRA carta Venus activa elegida |
+| `stratopolis` | Stratopolis | 248 | 22 MC | Tags venus+city. Requiere 2 tags de ciencia. +2 producción MC, +1 ciudad; acción repetible sin costo: "Add 2 floaters to ANY VENUS card" — **corregida 2026-10-02** contra el scan: antes decía "a OTRA carta" y no declaraba `active_card_resource_type: "floater"` aunque guarda floaters ("1 VP per 3 floaters on this card"). Ahora `target_card_resource_delta_allow_self: 2` (puede ser ella misma) + `target_resource_type: "floater"` (motor) + `target_required_tag: "venus"` (tools.py, piezas nuevas) |
 | `stratospheric_birds` | Stratospheric Birds | 249 | 12 MC | Tags venus+animal. Requiere Venus ≥12%. Acción repetible sin costo propio: mueve 1 floater desde OTRA carta activa elegida → +1 animal en esta |
 | `sulphur_exports` | Sulphur Exports | 250 | 21 MC | Tag venus. +1 paso Venus, +1 producción MC por cada tag venus (incluida esta) |
 | `sulphur_eating_bacteria` | Sulphur-Eating Bacteria | 251 | 6 MC | Tags venus+microbe. Requiere Venus ≥6%. Acción con elección: +1 microbio a sí misma, O gastar X microbios propios (pieza nueva `convert_card_resource_amount`) → +3X MC |
@@ -1287,7 +1287,8 @@ tandas seguidas con el mismo patrón):
   y `resolve_corporation_first_action(player_id)` la resuelve una sola vez. Llamarla después de
   `deal_starting_hand` (necesita el mazo armado).
   *Hallazgo lateral:* Stratopolis guarda floaters ("1 VP per 3 floaters on this card") pero no
-  está en el retrofit de `active_card_resource_type: "floater"`; no se tocó acá.
+  estaba en el retrofit de `active_card_resource_type: "floater"`. **Corregido 2026-10-02** (ver
+  su fila en la tabla de cartas cargadas).
 - Los VP de Arklight (1 por 2 animales) y Celestic (1 por 3 floaters) no se modelan: el motor no
   puntúa.
 
