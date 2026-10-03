@@ -221,13 +221,17 @@ out_of_scope). Refrescarlo con `/graphify . --update` después de cada cambio.
   `target_required_tag` (tools.py).
 - **README.md actualizado** con los números reales: 412 cartas de proyecto, 48 corporaciones,
   70 preludes, 36 Global Events, 11 colonias, 715 tests.
-- **Supabase: el proyecto NO EXISTE en DNS** (NXDOMAIN en DNS públicos, no es la red local).
-  Está pausado o fue borrado. **Hay que restaurarlo desde el dashboard** (o crear uno nuevo y
-  actualizar `SUPABASE_URL` / `SUPABASE_KEY` / `SUPABASE_DB_URL` en `.env`), y después correr
-  `python3 scripts/apply_db.py` desde `backend/` (aplica `schema.sql` y los 4 seeds en orden).
+- **Supabase: migrado a un proyecto NUEVO** (`bjwcddblngnntgqdxjyg`); el viejo
+  (`trczrhbmhgiklwrlzkjw`) da NXDOMAIN. **El proyecto nuevo se COMPARTE con otra app**: en `public`
+  vive `raw_notifications` (de otra app, con RLS propio). **No tocarla.**
+  - Schema y catálogo aplicados con `python3 scripts/apply_db.py`: 412 cartas, 48 corporaciones,
+    70 preludes y 36 Global Events.
+  - **RLS activo en las 11 tablas de arbiter, sin policies** (bloque al final de `schema.sql`).
+    El backend usa la **clave secret** (`SUPABASE_KEY=sb_secret_...`, rol service_role), que
+    saltea RLS; con la publishable, el backend no ve nada.
+  - Prueba de humo contra Supabase real: **19 de 19**. Los datos de prueba quedaron limpios.
 
-**Lo que queda:** el **frontend** (100% mockeado, próxima iteración) y el push a Supabase cuando
-el proyecto vuelva a estar disponible.
+**Lo que queda:** el **frontend** (100% mockeado, próxima iteración).
 
 ### 📍 Punto de retoma anterior (2026-09-10, Turmoil: TR Revision + Ruling Bonus + las 6 Ruling Policy, COMPLETO)
 
@@ -691,7 +695,7 @@ NEUTRALES por partido, que `turmoil.py` no trackea hoy (ver "Pendientes" en `CAR
 de Energy Market usó la clave equivocada y quedaba en un no-op silencioso (ver nota en
 `CARDS_LOG.md`).
 
-**Nota operativa:** el host de Supabase resuelve **solo por IPv6**. Si la máquina pierde
+**Nota operativa:** el host de la base de Supabase (`db.<ref>.supabase.co`) resuelve **solo por IPv6**. Si la máquina pierde
 conectividad IPv6, la base queda inalcanzable aunque IPv4 ande bien (pasó una vez, 2026-09-04) --
 `ip -6 addr show scope global` lo diagnostica en un segundo. Por eso los seeds se escriben
 idempotentes (`on conflict do update`) e incluyen el marcado de sus colas: si un apply falla, se
