@@ -136,8 +136,8 @@ npm install && npm run dev
 # Tests
 cd backend && PYTHONPATH=. pytest tests/ -v
 
-# Database (Supabase/Postgres): apply the schema, then the catalog seeds
-# schema.sql → seed_cards.sql → seed_corporations.sql → seed_preludes.sql → seed_global_events.sql
+# Database (Supabase/Postgres): schema + the 4 catalog seeds, in order (idempotent)
+cd backend && python3 scripts/apply_db.py      # reads SUPABASE_DB_URL from .env
 ```
 
 ## Stack

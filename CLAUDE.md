@@ -224,7 +224,7 @@ out_of_scope). Refrescarlo con `/graphify . --update` después de cada cambio.
 - **Supabase: el proyecto NO EXISTE en DNS** (NXDOMAIN en DNS públicos, no es la red local).
   Está pausado o fue borrado. **Hay que restaurarlo desde el dashboard** (o crear uno nuevo y
   actualizar `SUPABASE_URL` / `SUPABASE_KEY` / `SUPABASE_DB_URL` en `.env`), y después correr
-  `schema.sql` y los 4 seeds en orden.
+  `python3 scripts/apply_db.py` desde `backend/` (aplica `schema.sql` y los 4 seeds en orden).
 
 **Lo que queda:** el **frontend** (100% mockeado, próxima iteración) y el push a Supabase cuando
 el proyecto vuelva a estar disponible.
@@ -1025,6 +1025,11 @@ cur = conn.cursor()
 cur.execute(open('app/db/schema.sql').read())
 cur.execute(open('app/db/seed_cards.sql').read())
 "
+
+# Forma recomendada: schema + los 4 seeds en orden, idempotente, parsea bien la password con `@`
+# (lee SUPABASE_DB_URL de .env; --check solo conecta y cuenta filas)
+python3 scripts/apply_db.py
+python3 scripts/apply_db.py --check
 
 # Scripts de mantenimiento del catálogo (ver seccion 4)
 python3 scripts/enqueue_card_review_queue.py --pending-md app/db/CARDS_PENDING_REVIEW.md --cards-json <index.html cacheado> --db-url "$SUPABASE_DB_URL"
