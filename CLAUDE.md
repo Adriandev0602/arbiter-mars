@@ -138,7 +138,143 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-09-10, CATÁLOGO DE PRELUDES COMPLETO: 70 de 70)
+### 📍 Punto de retoma (última sesión: 2026-10-02, pendientes y huecos cerrados + grafo graphify)
+
+**Se cerraron todos los pendientes y huecos que listaba el grafo de `graphify-out/`.** Trabajo
+hecho con 5 subagentes en worktrees aislados (A-E) e integrado en `feat/pendientes-y-huecos`.
+Detalle completo en `CARDS_LOG.md`, en la sección de cada tema (se editó en el lugar).
+
+- **A, colonias Pluto y Europa → catálogo de colonias 11 de 11.** `ColonyDef.income_types`
+  (Europa da PRODUCCIÓN distinta por casilla), placement bonus `"ocean"` (océano real en el
+  tablero, por `tools.build_colony(ocean_hex_id=...)`), y el descarte de Pluto como obligación
+  pendiente: `PlayerState.pending_card_discards` + tool `resolve_pending_discards` (`play_card` se
+  niega a jugar mientras quede alguna).
+- **B, las 3 cartas dudosas, cargadas** (`self_replicating_robots`, `venus_orbital_survey`,
+  `wg_project`), más la pieza genérica "revelá N preludes, jugá 1": `pending_prelude_draw` +
+  tool `resolve_prelude_draw`. La comparten New Partner, Board of Directors, WG Project y Valley
+  Trust. Venus Orbital Survey usa `gains.reveal_top_cards_take_tag`.
+- **C, Unity en `resolve_ocean_offer`: el hueco no existía como estaba descrito.** La Ruling
+  Policy real de Unity es "your titanium resources are worth 1 M€ extra", solo titanio. El texto
+  "steel and titanium... Standard Project, Prelude, Blue or Green card" del log era incorrecto.
+  La oferta de Neptunian se paga con ACERO, así que su precio no cambia. Igual se cableó el
+  ruling party y la cuenta se movió al motor puro (`engine.resolve_ocean_offer`). De paso, la
+  producción de la oferta ahora pasa por `_increase_production` (Manutech no la cobraba).
+- **D, first actions de corporaciones, sin costo.** Pieza única `effects.first_action: {"type":
+  ...}`: `choose_corporation` la anota en `pending_corporation_first_action` y la tool
+  **`resolve_corporation_first_action`** la consume una sola vez. Tipos: `place_greenery`
+  (Philares), `place_city` (Tharsis Republic, que antes pagaba 25 M€ + producción del proyecto
+  estándar), `add_colony_tile` (Aridor), `build_colony` (Poseidon), `place_community` (Arcadian),
+  `reveal_preludes` (Valley Trust) y `reveal_until_matching` (Celestic). **Nirgal y el Effect de
+  Philares quedaron como "fuera de alcance POR DISEÑO"** (awards/milestones; tiles de oponente).
+- **E, cláusulas de setup.**
+  - Celestic tiene una lista cerrada de **33 cartas con ícono de floater**, verificada scan por
+    scan (mismo criterio que Vitor).
+  - Reparto de preludes del setup según el rulebook oficial (4 repartidas, te quedás 2):
+    `deal_prelude_hand` / `keep_preludes`, campos `pending_prelude_choice` / `prelude_hand`.
+  - `deal_starting_hand(buy_with_research=True)`: la mano inicial se compra a 3 M€ por carta
+    (5 con Polyphemos, 1 con TerraLabs). Antes se regalaba siempre; sigue gratis por defecto
+    (Beginner).
+
+**Unificación al integrar:** B y E habían armado cada uno su propio mecanismo de first action
+(`use_corporation_first_action` y `resolve_corporation_first_action_reveal`). Se eliminaron los
+dos y Valley Trust y Celestic pasaron a ser tipos de la pieza de D.
+
+**Bugs preexistentes agarrados en esta pasada:**
+- `_load_player` no leía `tr_raised_this_generation`, `tr_skip_used_this_generation` ni
+  `scientists_policy_used_this_generation`. Contra Supabase real daba `KeyError` (Pristar, UNMI,
+  Preservation Program, Scientists).
+- **`schema.sql` no creaba 7 columnas en una base NUEVA.** Las que solo estaban en el bloque de
+  migraciones del principio (`alter table if exists`) son no-op antes del `create table`. Ahora
+  también están en el `create table`. Regla: **toda columna nueva va en los DOS lugares.**
+- Las producciones de colonias no disparaban Manutech; `build_colony` no aplicaba Suitable
+  Infrastructure ni Reds; `build_colony_id` en `play_card` tiraba KeyError con Enceladus, Titan o
+  Miranda.
+
+**Prueba de humo: Supabase real INALCANZABLE.** El host del proyecto no resuelve por DNS, aunque
+`supabase.co` sí: es muy probable que el proyecto esté **pausado por inactividad** (plan
+gratuito). Se hizo contra **Postgres 16 + PostgREST locales en Docker** (la misma API REST que
+usa `supabase-py`), con `schema.sql` aplicado dos veces y los 4 seeds. 14 de 14 flujos OK. **Al
+reactivar Supabase: correr `schema.sql`, `seed_cards.sql`, `seed_corporations.sql` y repetir la
+prueba de humo contra la base real.**
+
+**Tests:** 703 de 703 pasando.
+
+**Grafo del proyecto:** `graphify-out/` (`graph.html`, `GRAPH_REPORT.md`, `graph.json`) **se
+commitea siempre**. Cada nodo de feature lleva `status` (done/pending/known_gap/tech_debt/
+out_of_scope). Refrescarlo con `/graphify . --update` después de cada cambio.
+
+**Lo que queda:** el **frontend** (100% mockeado), README.md desactualizado (todavía dice 340
+cartas), T11 Recruitment con la cantidad fija de 2 neutrales (deuda técnica ya señalada) y
+Stratopolis sin `active_card_resource_type: "floater"` (hallazgo lateral de E).
+
+### 📍 Punto de retoma anterior (2026-09-10, Turmoil: TR Revision + Ruling Bonus + las 6 Ruling Policy, COMPLETO)
+
+**Las dos piezas "fuera de alcance" que quedaban de Turmoil, cargadas enteras.** El usuario eligió
+explícitamente el alcance más grande ("Todo: Bonus + las 6 Ruling Policy") ante la opción de
+recortar. Fuente: rulebook oficial (`TM_TURMOIL_ENG_RULES`, PDF de fryxgames.se), página 6 —
+detalle completo en `CARDS_LOG.md`, sección "Turmoil: TR Revision, Ruling Bonus y Ruling Policy".
+
+**TR Revision:** -1 TR incondicional a cada New Government (`tools.resolve_new_government`),
+reusando `engine._raise_tr`. **Ruling Bonus:** pago único cuando el Ruling Party cambia —
+`engine.apply_ruling_bonus`, 6 fórmulas (una por partido), disparada con el mismo idioma
+diff-antes/después que `apply_become_party_leader_bonus`. **Ruling Policy** (activa solo mientras
+ese partido gobierna): Mars First (+1 acero al colocar tile) y Greens (+4 M€ al colocar greenery)
+enganchadas en los 3 wrappers de colocación real; Unity (+1 M€ valor titanio) extendiendo
+`compute_conversion_rates`; Kelvinists y Scientists como tools nuevas
+(`use_kelvinists_ruling_policy`, `use_scientists_ruling_policy` — esta última con el flag nuevo
+`scientists_policy_used_this_generation`, migración aplicada en `schema.sql`).
+
+**La pieza que tocaba la arquitectura, resuelta sin romperla:** Reds ("-3 M€ por cada paso de TR
+subido; si no alcanza, no podés tomar la acción") necesitaba que subir TR supiera de Turmoil, pero
+`engine._raise_tr` es el choke-point puro usado desde ~10 sitios distintos dentro del motor. Se
+resolvió con diff-antes/después en el BORDE de `tools.py` (`tools._apply_reds_ruling_policy`),
+sin tocar `_raise_tr` ni su pureza — enganchada en las 5 tools que representan una acción real del
+jugador (`play_card`, `use_card_action`, `play_prelude`, `use_standard_project`,
+`convert_resources`). Deliberadamente NO se aplica a la TR Revision ni al Ruling Bonus de Reds en
+`resolve_new_government`, porque esos son automáticos, no "una acción que el jugador toma".
+
+**Gap conocido, no bloqueante:** `tools.resolve_ocean_offer` no recibe `ruling_party`, así que el
+alza de Unity al titanio no aplica ahí (caso de borde raro). Documentado en `CARDS_LOG.md`, no
+arreglado en esta pasada.
+
+**Tests:** 8 nuevos en `tests/test_rules_engine.py` (Ruling Bonus × 6 partidos + unknown-party +
+Unity en `compute_conversion_rates`). 653/653 pasando en total.
+
+**Deuda técnica NO tocada en esta sesión** (ya documentada, no pedida por el usuario): T11
+Recruitment usa una cantidad fija de 2 delegados neutrales por partido
+(`turmoil.STARTING_NEUTRAL_DELEGATES`) que no coincide con el mecanismo oficial verificado (14
+neutrales totales, 1 al Chairman en el setup, el resto entra vía Global Events) — señalado al
+usuario como FYI, pendiente de decisión futura.
+
+### 📍 Punto de retoma anterior (última sesión: 2026-09-10, T11 Recruitment cargada: catálogo de proyecto SIN pendientes por mecánica)
+
+**T11 Recruitment cargada.** Era la única fila que quedaba en "Pendientes" de `CARDS_LOG.md`.
+Necesitó delegados NEUTRALES por partido, algo que `turmoil.py` explícitamente no modelaba (el
+propio docstring del módulo lo decía). **Decisión de alcance consultada con el usuario antes de
+tocar código** (no hay dato oficial verificable sin re-leer el reglamento, que además fija la
+cantidad según número de jugadores — algo que este proyecto no modela): se usa una **cantidad
+fija de 2 delegados neutrales por partido**, documentada como supuesto de diseño explícito
+(`turmoil.STARTING_NEUTRAL_DELEGATES`), no como dato oficial.
+
+**Piezas nuevas:** `PartyState.neutral: int`; `turmoil.exchange_neutral_delegate(turmoil, party,
+player_id)` (un neutral sale, uno propio entra — nunca es leader, así que alcanza con
+`neutral >= 1`); `effects.exchange_neutral_delegate` en `play_card`, resuelto en `tools.py`
+reusando el parámetro `removal_party` que ya existía.
+
+**Migración de estado compartido necesaria y ya aplicada:** `global_parameters.turmoil` es una
+fila COMPARTIDA (no por jugador) que ya existía en Supabase sin el campo `neutral` en sus
+partidos — hubo que parchearla a mano (se verificó primero que los 6 partidos estaban vacíos,
+sin delegados de ninguna partida real). **Cualquier otro entorno con esa fila en la forma vieja
+va a necesitar el mismo parche antes de poder jugar Recruitment** — no es algo que `schema.sql`
+resuelva solo, porque `turmoil` es una columna jsonb sin sub-esquema.
+
+**Nota de proceso — mismo problema de PRs huérfanos que ya pasó dos veces antes:** al arrancar
+esta sesión, el trabajo de las 2 últimas preludes (PR #55) seguía sin llegar a `main` pese a
+estar mergeado en su rama base. Se abrió un PR de recuperación (#56) y **se mergeó de inmediato**
+(a pedido explícito del usuario, en vez de seguir encadenando) antes de continuar con T11, para
+no seguir acumulando ramas huérfanas.
+
+### 📍 Punto de retoma anterior (2026-09-10, CATÁLOGO DE PRELUDES COMPLETO: 70 de 70)
 
 **Ecology Experts y Board of Directors, cargadas — cierran el catálogo de preludes entero.**
 Ambas necesitaban la misma pieza: "jugar una carta dentro de otra jugada/acción". `play_card`
@@ -709,16 +845,16 @@ single-player, ver "Fuera de alcance" en `CARDS_LOG.md`).
 bloque de 10" ya no aplica. Lo que queda, en orden de valor:
 
 1. ~~Auditoría de tags `power`/`space`~~ — **hecha el 2026-09-08** (ver arriba).
-2. ~~Las 10 colonias faltantes~~ — **9 de 11 cargadas el 2026-09-08** (ver `CARDS_LOG.md`).
-   Quedan Pluto y Europa, que no entran en el modelo actual de `ColonyDef`.
+2. ~~Las 10 colonias faltantes~~ — **COMPLETO el 2026-10-02: 11 de 11** (Pluto y Europa
+   cargadas, ver punto de retoma).
 3. ~~Corporaciones~~ — **COMPLETO el 2026-09-09: 48 de 48 cargadas**, cero pendientes.
-4. ~~Preludes~~ — **COMPLETO el 2026-09-10: 70 de 70 cargadas**, cero pendientes. Siguen
-   pendientes las 3 cartas dudosas de proyecto (`self_replicating_robots`,
-   `venus_orbital_survey`, `wg_project`).
-5. **T11 Recruitment**, la única fila que queda en "Pendientes" de `CARDS_LOG.md` (delegados
-   neutrales por partido en Turmoil).
+4. ~~Preludes~~ — **COMPLETO el 2026-09-10: 70 de 70 cargadas**, cero pendientes. Las 3
+   cartas dudosas de proyecto quedaron cargadas el 2026-10-02.
+5. ~~T11 Recruitment~~ — **cargada el 2026-09-10** (ver punto de retoma). La tabla "Pendientes"
+   de `CARDS_LOG.md` queda vacía.
 6. El **frontend**, todavía 100% mockeado.
-7. Las piezas de Turmoil pospuestas: Ruling Bonus/Policy de los 6 partidos y la revisión de TR.
+7. ~~Las piezas de Turmoil pospuestas~~ — **COMPLETO el 2026-09-10** (Ruling Bonus/Policy y
+   TR Revision).
 
 El flujo de trabajo, si vuelve a haber cartas para revisar: consultar la cola en Supabase
 (conexión directa con `psycopg2` y parámetros individuales de host/user/password — el

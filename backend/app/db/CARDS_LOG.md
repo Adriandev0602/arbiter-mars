@@ -314,7 +314,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `trading_colony` | Trading Colony | C47 | 18 MC | Tag power. Mismo pasivo que Trade Envoys, construye 1 colonia |
 | `urban_decomposers` | Urban Decomposers | C48 | 6 MC | Tags building+microbe. Requiere 1 ciudad y 1 colonia en juego. +1 producción plantas, +2 microbios a OTRA carta activa elegida |
 | `warp_drive` | Warp Drive | C49 | 14 MC | Tag science. Requiere 5 tags de ciencia. Pasivo: cartas con tag space cuestan 4 MC menos |
-| `house_printing` | House Printing | P36 | 10 MC | Tag building, expansión **Prelude** (primera carta cargada de esta expansión — no necesita mecánica propia, se dealt 2 gratis en el setup real, no modelado todavía). +1 producción steel |
+| `house_printing` | House Printing | P36 | 10 MC | Tag building, expansión **Prelude** (primera carta cargada de esta expansión — no necesita mecánica propia, se dealt 2 gratis en el setup real; el reparto de 4/elegir 2 quedó modelado el 2026-10-02 con `deal_prelude_hand`/`keep_preludes`, ver "Prelude: mazo propio"). +1 producción steel |
 | `titan_floating_launch_pad` | Titan Floating Launch-Pad | C44 | 18 MC | Tag jovian. +2 floaters a cualquier carta Jovian elegida. Acción con elección: +1 floater a OTRA carta Jovian elegida, O gastar 1 floater propio → comerciar GRATIS (pieza nueva `free_trade`, resuelta 2026-09-03 — ver sección dedicada abajo) |
 | `lava_tube_settlement` | Lava Tube Settlement | P37 | 15 MC | Tags city+building, expansión **Prelude**. -1 producción energía, +2 producción MC. Coloca 1 ciudad EN UN HEXÁGONO VOLCÁNICO, ignorando la regla normal de no-adyacencia a otras ciudades (pieza nueva `board.can_place_city_on_volcanic` + flag `city_placement_on_volcanic` en `play_card`) |
 | `martian_survey` | Martian Survey | P38 | 9 MC | Tag science. Requiere oxígeno ≤4%. Roba 2 cartas |
@@ -629,9 +629,47 @@ función de motor con un dict armado a mano.
 Estas NO son descartes definitivos — son casos donde ya se identificó qué falta agregar al
 motor para desbloquearlas. Se resuelven agregando esa pieza, no evitando la carta.
 
-| # scan | Nombre | Qué falta |
-|---|---|---|
-| T11 | Recruitment | Delegados NEUTRALES por partido (`turmoil.py` hoy solo trackea `delegates: {player_id: N}`, sin entrada para "neutral" -- ver comentario en `turmoil.py` "neutrales/de otros jugadores... no se simulan"). El texto es "exchange one NEUTRAL non-leader delegate with one of your own from reserve", en el partido que el jugador elija -- necesita saber cuántos delegados neutrales hay en cada partido, algo que el setup actual nunca inicializa. Distinto de Vote of No Confidence (T16, bloque 31, sí cargada): esa solo necesitaba el Chairman neutral, que YA es representable (`chairman is None`) sin tocar `delegates` |
+**Ninguna fila.** La única que quedaba (T11 Recruitment) se cargó el 2026-09-10 — ver
+"T11 Recruitment" más abajo.
+
+#### T11 Recruitment, cargada (2026-09-10)
+
+*"Exchange one NEUTRAL NON-LEADER delegate with one of your own from the reserve"*, en el
+partido que el jugador elija. Necesitó una pieza real de infraestructura: `turmoil.py`
+explícitamente NO modelaba delegados neutrales (`delegates: {player_id: N}`, sin entrada para
+"neutral" — el propio docstring del módulo decía "neutrales/de otros jugadores... no se
+simulan").
+
+**Decisión de alcance, consultada con el usuario antes de tocar código** (no es un dato
+verificado contra el reglamento, es un supuesto de diseño explícito): el reglamento oficial fija
+la cantidad de delegados neutrales por partido según el número de jugadores, algo que este
+proyecto no modela. Con las opciones sobre la mesa (cantidad fija razonable / marcar T11 fuera de
+alcance / re-verificar el reglamento primero), el usuario eligió una **cantidad fija de 2
+delegados neutrales por partido** al arrancar — documentado como tal en el código
+(`turmoil.STARTING_NEUTRAL_DELEGATES`), no presentado como número oficial.
+
+**Piezas nuevas:**
+- `PartyState.neutral: int` — nuevo campo, inicializado en `new_turmoil()` y preservado en los
+  demás constructores de `PartyState` (`place_delegate`, `remove_delegate`,
+  `resolve_new_government`).
+- `turmoil.exchange_neutral_delegate(turmoil, party, player_id)`: un neutral sale de juego (no
+  vuelve a ninguna reserva, a nadie le pertenecía), uno propio de `player_id` ocupa su lugar.
+  Un neutral NUNCA es Party Leader, así que alcanza con exigir `neutral >= 1` — no hace falta
+  distinguir "cuál" se intercambia. Mismo efecto de tablero que `place_delegate` (puede volver al
+  jugador Party Leader, puede cambiar el partido Dominante), pero sin cobrar MC.
+- `effects.exchange_neutral_delegate: true` en `apply_card_effect`/`play_card`, resuelto en
+  `tools.py` (reutiliza el parámetro `removal_party` que ya existía para `remove_own_delegate`,
+  en vez de agregar uno nuevo). Sale de la Reserva del jugador, sin costo de MC.
+
+**Migración de estado compartido necesaria:** `global_parameters.turmoil` es estado COMPARTIDO
+(fila única `game_id='default'`, no por jugador) y ya existía guardado en Supabase de sesiones
+anteriores, con los partidos en la forma vieja (sin `neutral`). Agregar el campo al `TypedDict`
+no alcanza para el dato YA persistido — hubo que parchear la fila existente sumando
+`neutral: 2` a cada partido antes de que `exchange_neutral_delegate` pudiera leerla (si no,
+`KeyError: 'neutral'`). Se verificó que los 6 partidos estaban vacíos (ningún delegado colocado
+por ninguna partida real) antes de tocar la fila. **Cualquier otro entorno con una fila
+`global_parameters.turmoil` vieja va a necesitar el mismo parche** — no es algo que
+`schema.sql` resuelva solo, porque `turmoil` es una columna jsonb sin sub-esquema.
 
 ### Turmoil: núcleo político (Colonial Envoys, Colonial Representation)
 
@@ -705,16 +743,76 @@ de acción, requisito propio de acción (`effects.action.requirements`), `allow_
 `turmoil.remove_delegate`, y `trade_bump_track_first` parametrizable a N pasos (con retrofit de
 Trade Envoys y Trading Colony a `1`).
 
-**Siguen pendientes por mecánica (2):**
-- **P88 Venus Orbital Survey** — su acción revela el tope del mazo, deja quedarse gratis con las
-  cartas venus y manda el resto a compra/descarte. Hay un diseño concreto propuesto (3
-  primitivas puras nuevas + resolución en `tools.py`), no se implementó en esta tanda por
-  tamaño.
-- **P91 WG Project** — "roba 3 cartas Prelude y jugá 1 gratis". El agente lo evaluó como
-  **feature de tamaño comparable a `reserved_cards`**: hace falta un sub-mazo Prelude
-  identificable (hoy `deck` es indiferenciado; habría que mantener una lista a mano, estilo
-  `COLONY_DEFS`) más un mecanismo de "jugar gratis una carta arbitraria" en dos pasos. Además
-  solo hay ~15 de las ~24 cartas Prelude cargadas, así que conviene cargar el resto antes.
+~~**Siguen pendientes por mecánica (2):**~~ **Las 2 cargadas el 2026-10-02** (ver abajo).
+- ~~**P88 Venus Orbital Survey** — su acción revela el tope del mazo, deja quedarse gratis con las
+  cartas venus y manda el resto a compra/descarte.~~
+- ~~**P91 WG Project** — "roba 3 cartas Prelude y jugá 1 gratis".~~ El diagnóstico de "sub-mazo
+  Prelude identificable" quedó viejo: las 70 preludes ya viven en `prelude_cards`.
+
+**Robo de preludes y Venus Orbital Survey (2026-10-02): P88, P91 y Valley Trust cargadas, y
+Self-Replicating Robots (210) por fin en el seed.** Las 3 cartas de proyecto se re-verificaron
+contra su scan oficial (bajados a `scan_cache/`):
+
+| Carta | Costo | Tags | Requisito | Tipo |
+|---|---|---|---|---|
+| 210 Self-Replicating Robots | 7 | ninguno (esquina vacía) | 2 tags `science` | activa (azul) |
+| P88 Venus Orbital Survey | 18 | `venus`, `space` | ninguno | activa (azul) |
+| P91 WG Project | 9 | `earth` | ser Chairman (`is_chairman`) | automatizada (verde), NO evento |
+
+*Venus Orbital Survey* ("reveal the top 2 cards. Take any Venus cards to hand for free. Any
+other card you either buy or discard"): `gains.reveal_top_cards_take_tag: {"n": 2, "tag":
+"venus"}` en `use_card_action`. Pieza pura `rules_engine.reveal_top_cards_take_tag(player, n,
+card_tags, tag)`: las que tienen el tag van gratis a `hand`, el resto a `pending_research`;
+`tools.use_card_action` solo trae los tags del catálogo. La compra/descarte **reusa
+`resolve_research_phase`** (3 M€ c/u, mismos modificadores de precio de Polyphemos/TerraLabs —
+"buy" es comprar una carta, igual que en la investigación). Rechaza si ya hay una
+investigación pendiente. El tag `wild` no cuenta como venus.
+
+*Pieza genérica "revelá N preludes, elegí 1 y jugala"* — compartida por **New Partner** (n=2),
+**Board of Directors** (n=1, con costo), **WG Project** (n=3) y **Valley Trust** (n=3). Antes,
+New Partner y Board of Directors devolvían las reveladas solo como sugerencia y después
+`play_prelude` aceptaba **cualquier** id. Ahora la "mesa" se persiste:
+- Campo nuevo `players.pending_prelude_draw` (jsonb, `{}` si no hay nada):
+  `{"source": card_id, "options": [ids], "free_play": bool}`.
+- Puras: `prelude_draw_candidates` (catálogo − ya jugadas − la carta que dispara),
+  `start_prelude_draw` (rechaza si hay un robo pendiente de OTRA carta; uno de la misma carta se
+  pisa — es el "discard" implícito de Board of Directors al reusar su acción otra generación) y
+  `take_pending_prelude` (valida que la elegida esté entre las opciones y limpia la mesa;
+  `prelude_id=None` descarta todas).
+- `tools._reveal_random_preludes` hace el sorteo (I/O + azar) y la usan `play_prelude` (New
+  Partner), `play_card` (WG Project, clave `reveal_random_preludes` — la misma de New Partner),
+  `use_card_action` (rama `reveal_prelude` de Board of Directors, con `free_play=False`) y
+  `resolve_corporation_first_action` (Valley Trust, tipo `reveal_preludes`).
+- Tool nueva `resolve_prelude_draw(player_id, prelude_id=None, ...)`: juega GRATIS la elegida vía
+  `play_prelude.func` (mismos parámetros de tiles/elección). Limpia la mesa antes de jugar (así
+  una New Partner elegida desde WG Project puede abrir su propio robo) y la restaura si
+  `play_prelude` falla. No deja jugar gratis lo que reveló Board of Directors (`free_play=False`):
+  eso sigue por su rama "pay 12 M€", que ahora además exige que `target_card_id` sea la prelude
+  que esa misma carta reveló.
+
+*Valley Trust* ("as your first action, draw 3 Prelude cards, and play one of them. Discard the
+other two", re-verificado contra su scan): `effects.first_action: {"type": "reveal_preludes",
+"n": 3}` en `seed_corporations.sql`. Es un tipo más de la pieza genérica de first actions de
+corporación (ver "First actions de corporaciones, RESUELTAS"): `choose_corporation` la anota
+pendiente y `resolve_corporation_first_action(player_id)` revela las 3 (una sola vez); después
+`resolve_prelude_draw` juega gratis la elegida. Lo de "first" (antes que cualquier otra acción)
+no se fuerza: lo ordena el jugador, mismo criterio que el resto de las first actions.
+
+*Self-Replicating Robots*: la mecánica ya existía (ver "Resuelto (2026-09-02)" más abajo); solo
+faltaba confirmar los datos contra el scan. "Double the resources on a card here" =
+`duplicate_reserved_card`.
+
+**Bug preexistente encontrado y corregido de paso:** `tools._load_player` no cargaba
+`tr_raised_this_generation`, `tr_skip_used_this_generation` ni
+`scientists_policy_used_this_generation`, aunque el motor los lee con `player["..."]` directo
+(`run_production_phase` con Pristar, el requisito `requires_tr_raised_this_generation`,
+`use_scientists_ruling_policy`): contra Supabase real eso era un `KeyError`, y además el flag de
+TR que `_raise_tr` guardaba nunca volvía a leerse. Los tests unitarios no lo ven porque no pasan
+por `tools.py`.
+
+Tests: 10 nuevos al final de `test_rules_engine.py` (reparto venus/no-venus con número exacto de
+M€ al comprar, wild, mesa de preludes, bloqueo de fuente distinta, Board of Directors no gratis,
+requisito de 2 science).
 
 ### Bloque 31 (2026-09-04): multi-agente, y por qué la revisión importa
 
@@ -758,12 +856,13 @@ en la cola con `reviewed = false`.
   cartas objetivo distintas (hoy el máximo es 2).
 - **P80 Red Appeasement** — el costo de su acción es gastar 2 delegados propios; falta integrar
   el estado de Turmoil a `use_card_action` (hoy solo `check_card_requirements` lo recibe).
-- **P88 Venus Orbital Survey** — revelar el tope del mazo, quedarse gratis con las que tengan tag
-  venus y comprar/descartar el resto.
+- ~~**P88 Venus Orbital Survey** — revelar el tope del mazo, quedarse gratis con las que tengan tag
+  venus y comprar/descartar el resto.~~ Cargada el 2026-10-02 (`reveal_top_cards_take_tag`).
 - **P89 Venus Shuttles** — costo de acción reducido por cada tag venus (costo dinámico, hoy los
   costos de acción son fijos).
-- **P91 WG Project** — requiere ser Chairman (ya resuelto), pero además un sub-mazo de Prelude
-  separado y un mecanismo para jugar gratis una carta arbitraria revelada.
+- ~~**P91 WG Project** — requiere ser Chairman (ya resuelto), pero además un sub-mazo de Prelude
+  separado y un mecanismo para jugar gratis una carta arbitraria revelada.~~ Cargada el
+  2026-10-02 (`reveal_random_preludes` + `resolve_prelude_draw`).
 
 ### Prelude bloque 2: 26 de 46, y un bug de reglas encontrado
 
@@ -820,7 +919,10 @@ intento separaba "revelar" y "pagar y jugar" en dos llamadas normales a `use_car
 la primera llamada marcaba `action_used = True` y la segunda se rechazaba ("la acción ya se usó
 esta generación") — lo agarró la prueba de humo, no los tests unitarios. Se corrigió reseteando
 `action_used` a `False` específicamente después de la rama `reveal_prelude`, para que la
-resolución (discard o pagar+jugar) siga disponible en la misma generación.
+resolución (discard o pagar+jugar) siga disponible en la misma generación. *(2026-10-02: la
+revelada ahora queda en `pending_prelude_draw` con `free_play=False`; "pagar y jugar" exige que
+`target_card_id` sea esa, y "discard" es `resolve_prelude_draw(prelude_id=None)` o simplemente
+volver a revelar otra generación. Ver "Robo de preludes y Venus Orbital Survey".)*
 
 **Dos bugs preexistentes más, encontrados por la misma prueba de humo:**
 - `tools.use_card_action` nunca declaraba el parámetro `discard_card_id` ni lo pasaba al motor —
@@ -847,7 +949,9 @@ pendientes Ecology Experts (P10) y Board of Directors (P45).
 **Corrección importante sobre el análisis viejo:** la nota que agrupaba Ecology Experts (P10),
 Eccentric Sponsor (P11) y WG Project bajo "jugar otra carta de la mano" estaba mal para 2 de las
 3. Eccentric Sponsor es en realidad `next_card_discount_mc: 25` — idéntica a Indentured Workers,
-ya cargada sin pieza nueva. WG Project ya estaba cargada con otra pieza distinta desde el bloque 3.
+ya cargada sin pieza nueva. ~~WG Project ya estaba cargada con otra pieza distinta desde el bloque 3.~~
+*(Corrección 2026-10-02: falso — `wg_project` no estaba en `seed_cards.sql`. Se cargó recién el
+2026-10-02 con la pieza de robo de preludes, ver "Robo de preludes y Venus Orbital Survey".)*
 **Solo Ecology Experts necesita de verdad la mecánica de "jugar una carta anidada"** — la pieza
 queda pospuesta, pero ahora acotada a una sola carta en vez de tres.
 
@@ -981,7 +1085,28 @@ patrón que `global_events`. Tool nueva `tools.play_prelude(player_id, prelude_i
 la colocación de tiles por diferencia de contadores, igual que `play_card`.
 
 Esto además destraba parcialmente **P91 WG Project**, que necesitaba justamente un sub-mazo
-Prelude identificable.
+Prelude identificable (cargada el 2026-10-02, ver "Robo de preludes y Venus Orbital Survey").
+
+**Reparto del setup, modelado (2026-10-02).** Regla exacta, del rulebook oficial de Prelude
+(`TM_PRELUDE_ENG_RULESi.pdf`, fryxgames.se, sección "Prelude cards"): *"When you deal cards in
+the setup (...step 5), you also deal 4 Prelude cards to each player. The players choose 2
+Prelude cards to keep at the same time as choosing corporations and project cards (step 6). The
+Prelude cards do not cost anything to keep. After all corporations have been played (...step 7),
+there is an extra round (step 7b) where each player plays their pair of picked Prelude cards
+(...), and discards their remaining 2 Prelude cards."* Mismo patrón dos-pasos que
+`pending_research`/`hand`:
+- Campos nuevos en `players`: `pending_prelude_choice` (las 4 repartidas) y `prelude_hand` (las 2
+  elegidas, todavía sin jugar). Migración idempotente en `schema.sql`.
+- `rules_engine.draw_random_preludes(candidate_ids, n, exclude, rng)`: el sorteo puro, sin
+  repetir, aislado a propósito para unificarlo con los sorteos de New Partner / Board of
+  Directors (que hoy usan `random.shuffle` inline en `tools.py`).
+- `rules_engine.deal_prelude_hand(player, all_prelude_ids, n=4, rng)`: excluye las ya jugadas,
+  rechaza un segundo reparto. `rules_engine.keep_preludes(player, ids, keep_count=2)`: exige
+  EXACTAMENTE 2 de las repartidas, gratis; el resto se descarta.
+- `rules_engine.remove_prelude_from_hand`: `play_prelude` (camino normal y Merger) y
+  `play_double_down` la sacan de `prelude_hand` al jugarla. **No es obligatorio** que venga de
+  ahí: New Partner, Board of Directors y las partidas sin reparto siguen jugando preludes por id.
+- Tools: `deal_prelude_hand(player_id, n=4)` y `keep_preludes(player_id, prelude_ids)`.
 
 **Bloque 1 (P01-P24): 22 cargadas, 2 pendientes.** Revisadas por 4 agentes en paralelo. Todas las
 cargadas usan vocabulario existente -- ninguna necesitó pieza nueva de motor.
@@ -1124,11 +1249,45 @@ tandas seguidas con el mismo patrón):
 
 **Cláusulas de SETUP, no de motor** (documentadas, no implementadas como efecto):
 - Beginner Corporation: "instead of choosing from 10 cards, you get 10 cards for free" — se
-  reparten con `deal_starting_hand` sin cobrar.
-- Aridor: "as your first action, put an additional Colony Tile into play" — se resuelve con
-  `setup_colonies` agregando una colonia más.
-- Celestic: "reveal cards until 2 with a floater ICON" — **queda sin modelar**: el ícono de
-  floater no es un tag, es una marca del arte que el catálogo no guarda.
+  reparten con `deal_starting_hand` sin cobrar. (Correcto. Desde 2026-10-02 el resto de las
+  corporaciones tiene el camino oficial "pay 3 M€ for each card you keep" con
+  `deal_starting_hand(..., buy_with_research=True)` — ver Polyphemos/TerraLabs más abajo.)
+- ~~Aridor: "as your first action, put an additional Colony Tile into play" — se resuelve con
+  `setup_colonies` agregando una colonia más.~~ **Resuelto (2026-10-02)**: `setup_colonies`
+  REEMPLAZA el set entero, así que no servía. Ahora es `first_action: add_colony_tile`, resuelta
+  con `resolve_corporation_first_action(colony_id=...)` sobre `colonies.add_colony_tile`, que
+  AGREGA una tile sin tocar las que ya están. Ver "First actions de corporaciones" más abajo, en
+  "Cargadas parcialmente".
+- Celestic: "reveal cards until 2 with a floater ICON" — ~~queda sin modelar~~ **RESUELTA
+  (2026-10-02).** Texto exacto del scan: *"As your first action, reveal cards from the deck until
+  you have revealed 2 cards with a floater icon on it. Take those 2 cards into hand, and discard
+  the rest."* El ícono no es un tag ni vive en `effects`, así que se resolvió con el mismo
+  criterio que Vitor (`excluded_card_ids`): una lista CERRADA y verificada en
+  `effects.first_action = {"type": "reveal_until_matching", "n": 2, "card_ids": [...]}`.
+  **Cómo se armó la lista (no de memoria):** se bajaron/reusaron los scans de las 208 cartas del
+  catálogo cargado que no son Base ni Corporate Era (los floaters nacen en Venus Next; el resto
+  no puede tener el ícono) y se revisaron en hojas de contacto de carta COMPLETA (el ícono puede
+  estar en la acción, el efecto inmediato, el recuadro de requisito o la caja de VP). Criterio:
+  cuadrado amarillo con nube blanca impreso en cualquier parte. **33 cartas:** aerial_mappers,
+  aerosport_tournament (solo en el requisito), air_scrapping_expedition, airliners,
+  atmo_collectors, atmoscoop, cloud_tourism, deuterium_export, dirigibles, extractor_balloons,
+  floater_leasing, floater_prototypes, floater_technology, floating_habs, floating_refinery,
+  forced_precipitation, ghg_shipment, hydrogen_to_venus, jet_stream_microscrappers,
+  jovian_lanterns, jupiter_floating_station, local_shading, nitrogen_from_titan,
+  red_spot_observatory, saturn_surfing, stratopolis, stratospheric_birds,
+  stratospheric_expedition, titan_air_scrapping, titan_floating_launch_pad, titan_shuttles,
+  venus_shuttles, weather_balloons. **Descartadas a propósito:** Corroder Suits, Maxwell Base y
+  L1 Trade Terminal muestran un recurso genérico "?" (no la nube), y Mars Nomads un cubo dorado
+  sin nube. Si se cargan cartas nuevas con floaters, hay que sumarlas a la lista.
+  Piezas: `rules_engine.reveal_cards_until_matching` (puro: revela del tope hasta N
+  coincidencias, esas a la mano, el resto se descarta; si el mazo se agota se queda con las que
+  haya) y el tipo `reveal_until_matching` de `effects.first_action` (`{"type":
+  "reveal_until_matching", "n": 2, "card_ids": [...]}`), la misma pieza genérica de first actions
+  de corporación (ver "First actions de corporaciones, RESUELTAS"): `choose_corporation` la anota
+  y `resolve_corporation_first_action(player_id)` la resuelve una sola vez. Llamarla después de
+  `deal_starting_hand` (necesita el mazo armado).
+  *Hallazgo lateral:* Stratopolis guarda floaters ("1 VP per 3 floaters on this card") pero no
+  está en el retrofit de `active_card_resource_type: "floater"`; no se tocó acá.
 - Los VP de Arklight (1 por 2 animales) y Celestic (1 por 3 floaters) no se modelan: el motor no
   puntúa.
 
@@ -1202,8 +1361,9 @@ enganchado en las tres vías de colocación real, y el marcador desaparece solo 
 
 **Nota de alcance sobre la acción de Arcadian:** su `effects` NO lleva `action`. Colocar el
 marcador necesita un `hex_id`, y en este repo las colocaciones en el mapa se piden siempre con su
-propia tool (`place_community`), igual que el greenery de Philares o la ciudad de Tharsis
-Republic. Se cargó primero con un `gains.place_community` que **no estaba cableado en
+propia tool (`place_community`). (El primer marcador, el de la first action, pasa desde
+2026-10-02 por `resolve_corporation_first_action`, igual que el greenery de Philares y la ciudad
+de Tharsis Republic.) Se cargó primero con un `gains.place_community` que **no estaba cableado en
 `use_card_action`** — una vía muerta que se detectó al verificar el JSON contra Supabase y se
 corrigió antes de commitear.
 
@@ -1327,19 +1487,75 @@ Verificar 28 tags costó 3 imágenes en vez de 28 scans completos.
   **ninguna carta del catálogo tiene cargado su VP impreso**, así que el pasivo no tendría de
   dónde leerlo. Necesita un retrofit de `vp_icon` en el catálogo entero primero.
 
-**Cargadas parcialmente, por decisión de alcance (no son "pendientes"):**
-- **Nirgal Enterprises**: su Effect ("awards and milestones always cost 0 M€") no se modela
-  porque milestones/awards están fuera del MVP entero (CLAUDE.md sección 7), no porque falte una
-  pieza de vocabulario.
-- **Philares**: su Effect depende de adyacencia con tiles de OPONENTES → en un jugador nunca
-  dispara, mismo criterio que Mons Insurance/Toll Station. Se cargó con `effects: {}`.
-- **Philares** y **Tharsis Republic** tienen además un "as your first action, place a
-  greenery/city tile" que no entra en `effects`: `choose_corporation` no coloca tiles (no recibe
-  `hex_id`), así que esa colocación la resuelve el jugador con la tool de siempre.
-- **Valley Trust**: su "draw 3 Prelude cards and play one" sigue sin modelarse — el sorteo de
-  preludes del setup no existe todavía.
-- **Polyphemos/TerraLabs**: la cláusula "including the starting hand" no cambia nada acá, porque
-  `deal_starting_hand` reparte la mano inicial GRATIS en este motor.
+**Fuera de alcance POR DISEÑO (revalidado contra los scans, 2026-10-02 — ya no son "parciales"):**
+- **Nirgal Enterprises**: su Effect ("AWARDS AND MILESTONES ALWAYS COST 0 M€ FOR YOU") es
+  legítimamente fuera de alcance: milestones/awards están fuera del MVP entero (CLAUDE.md sección
+  7) y el Effect no toca ningún contador del motor. El resto de la carta (30 M€, +1 producción de
+  energía/plantas/acero, tags `power`+`plant`+`building`) ya estaba cargado entero: no queda
+  ninguna parte cargable.
+- **Philares — su Effect**: "each new adjacency between your tile and an OPPONENT's tile gives
+  you a standard resource of your choice (regardless of who just placed a tile)". Exige un tile
+  de OPONENTE en el mapa → en un jugador nunca dispara. Exclusión multijugador legítima, mismo
+  criterio que Mons Insurance/Toll Station.
+
+**First actions de corporaciones, RESUELTAS (2026-10-02).** Antes, el "as your first action..."
+de Philares y Tharsis Republic se resolvía "con la tool de siempre", o sea pagando el proyecto
+estándar (23 M€ el greenery; 25 M€ la ciudad, que además sumaba el +1 de producción de M€ del
+PROYECTO, que no corresponde). Textos verificados contra los scans:
+- **Philares**: "As your first action, place a greenery tile and raise the oxygen 1 step."
+- **Tharsis Republic**: "As your first action in the game, place a city tile."
+- **Aridor**: "As your first action, put an additional Colony Tile of your choice into play."
+- **Poseidon**: "As your first action, place a colony." (antes con `build_colony`, que cobraba
+  los 17 M€ del proyecto estándar).
+- **Arcadian Communities**: "As your first action, place a community (player marker) on a
+  non-reserved area." (antes `place_community(first_action=True)`, que se podía repetir sin
+  límite).
+
+Pieza nueva: `effects.first_action: {"type": ...}` en `corporation_cards` (tipos en
+`rules_engine.CORPORATION_FIRST_ACTION_TYPES`: `place_greenery`, `place_city`,
+`add_colony_tile`, `build_colony`, `place_community`). `choose_corporation` la ANOTA en el campo
+nuevo `player.pending_corporation_first_action` (`register_corporation_first_action`; columna
+jsonb nueva, migración en `schema.sql`) y la tool nueva **`resolve_corporation_first_action(
+player_id, hex_id=None, colony_id=None, target_card_id=None)`** la consume una sola vez
+(`consume_corporation_first_action`), sin costo. Mismo criterio que `pending_ocean_offers`: la
+decisión necesita un dato (hex/colonia) que la tool que la dispara no tiene. Se eligió una tool
+aparte en vez de un parámetro de `choose_corporation` porque la first action es una ACCIÓN del
+jugador, no parte del setup (y así `choose_corporation` no se llena de parámetros que solo usan
+cinco corporaciones).
+- Greenery: `corporation_first_action_greenery` (sube oxígeno 1 paso, +1 TR, sin cobrar; con
+  oxígeno al tope coloca sin TR) + `_place_greenery_and_apply_bonus` (bonus de hex, océanos
+  adyacentes, pasivos de greenery, Mars First +1 acero, Greens +4 M€) + Reds (-3 M€ por el paso
+  de TR, es una acción del jugador).
+- Ciudad: `corporation_first_action_city` (solo suma al contador global) +
+  `_place_city_and_apply_bonus` (bonus de hex, pasivos de ciudad — la propia Tharsis: +1
+  producción de M€ y +3 M€ —, Mars First).
+- Colony tile: `colonies.add_colony_tile` (agrega, no reemplaza; rechaza repetidas).
+- Colonia: `colonies.build_colony` + placement bonus + `on_colony_placed`, sin los 17 M€.
+- Community: `board.place_community(require_adjacency=False)`. `place_community(first_action=
+  True)` ahora delega en la tool nueva (exige la pendiente y la consume).
+
+No se fuerza que sea literalmente la PRIMERA acción (el motor no tiene un contador de acciones
+por generación); la pendiente no expira. Las demás "first action" del catálogo ya estaban bien
+modeladas como efecto inmediato al elegir la corporación porque no necesitan dato del jugador
+(Inventrix: robar 3; Morning Star Inc / Splice: revelar hasta un tag; Spire: robar 4 y
+descartar 3). Vitor ("fund an award for free") sigue fuera de alcance (awards). Valley Trust y
+Celestic se resuelven aparte.
+- **Valley Trust**: completa desde 2026-10-02. Su "draw 3 Prelude cards and play one" es un
+  tipo más de first action (`reveal_preludes`), resuelto por la misma
+  `resolve_corporation_first_action` y cerrado con `resolve_prelude_draw` (ver "Robo de preludes
+  y Venus Orbital Survey").
+- **Polyphemos/TerraLabs**: la cláusula "including the starting hand" ~~no cambia nada acá,
+  porque `deal_starting_hand` reparte la mano inicial GRATIS~~. **Revisado 2026-10-02: ese
+  manejo NO era fiel al reglamento.** El setup oficial con corporaciones dice "pay 3 M€ for each
+  card you keep" de las 10 repartidas; solo Beginner Corporation las recibe gratis ("you get 10
+  cards for free"). Regalarlas siempre le ahorraba a Polyphemos sus 5 M€ por carta y le quitaba a
+  TerraLabs su precio de 1 M€. **Resuelto sin romper el modo gratis:**
+  `deal_starting_hand(..., buy_with_research=True)` reparte las 10 a `pending_research` en vez de
+  a la mano, y se cierran con `resolve_research_phase` DESPUÉS de `choose_corporation` (paga el
+  M€ inicial de la corporación). Ese camino ya aplica `compute_research_cost_per_card`
+  (`research_cost_delta_mc`), así que 5 M€ (Polyphemos) / 1 M€ (TerraLabs) / 3 M€ (resto) salen
+  solos, sin pieza nueva. El modo por defecto (gratis) queda para Beginner Corporation y la
+  partida estándar sin corporaciones.
 
 **Bug encontrado y corregido:** el seed del bloque 2 tenía, después de cargar Manutech, un
 `update ... set corporation_id = null where name = 'Manutech'` sobrante del estado anterior (era
@@ -1545,6 +1761,69 @@ resource" es una elección del jugador entre los 6 recursos básicos (MC/acero/t
 energía/calor), pieza de "elección de recurso genérica" todavía no construida. Pospuesta hasta
 resolver ambas.
 
+### Turmoil: TR Revision, Ruling Bonus y Ruling Policy (2026-09-10, COMPLETO)
+
+**Fuente de datos:** rulebook oficial de Turmoil (`TM_TURMOIL_ENG_RULES`, PDF de fryxgames.se),
+página 6 (las 6 Ruling Bonus + Ruling Policy, una tabla por partido) y página "Turmoil phase" paso
+4 (TR Revision). Texto literal citado en los docstrings de cada pieza -- no de memoria, mismo
+criterio que el resto del proyecto.
+
+**TR Revision** (`tools.resolve_new_government`, incondicional): "At the beginning of the Turmoil
+phase, after the Production phase, all players lose 1 TR." -1 TR SIEMPRE, pase lo que pase con el
+partido Dominante (incluso antes de que exista un Ruling Party). Reusa `engine._raise_tr`, el
+choke-point único de cambios de TR ya existente.
+
+**Ruling Bonus** (`engine.apply_ruling_bonus`), un pago único a todos los jugadores la vez que un
+partido se vuelve Ruling -- disparado en `tools.resolve_new_government` comparando `ruling_party`
+de antes/después (mismo idioma diff-antes/después que `apply_become_party_leader_bonus`):
+
+| Partido | Ruling Bonus |
+|---|---|
+| Mars First | 1 M€ por cada tag building jugado |
+| Kelvinists | 1 M€ por cada punto de producción de calor |
+| Reds | El jugador con TR más bajo gana 1 TR -- en solitario, umbral fijo: TR ≤ 20 |
+| Greens | 1 M€ por cada tag plant + microbe + animal jugado |
+| Scientists | 1 M€ por cada tag science jugado |
+| Unity | 1 M€ por cada tag venus + earth + jovian jugado |
+
+**Ruling Policy**, efecto activo/acción SOLO durante la fase de Acción mientras ese partido
+gobierna:
+
+| Partido | Ruling Policy | Implementación |
+|---|---|---|
+| Mars First | "When you place any tile on Mars, you receive 1 steel." | `tools._apply_mars_first_ruling_bonus`, enganchada en los 3 wrappers de colocación real (`_place_ocean_and_apply_bonus`, `_place_city_and_apply_bonus`, `_place_greenery_and_apply_bonus`) -- este motor solo modela Tharsis, nunca tiles fuera de mapa, así que "on Mars" es sencillamente "pasó por uno de esos 3 wrappers". |
+| Kelvinists | "Spend 10 M€ to increase your heat production 1 step and your energy production 1 step." | Tool nueva `use_kelvinists_ruling_policy`, usable cualquier cantidad de veces por generación (sin flag de "usado"). |
+| Reds | "Whenever a player takes an action that raises their TR, that player must pay 3 M€ per step raised. If you don't have enough M€, you cannot take that action." | `tools._apply_reds_ruling_policy`: NO toca `engine._raise_tr` (que sigue pura, sin conocer Turmoil) -- se resuelve en el BORDE de tools.py, comparando el TR de antes/después de cada tool que representa una acción del jugador (`play_card`, `use_card_action`, `play_prelude`, `use_standard_project`, `convert_resources`). Si el cargo deja MC negativo, lanza `InsufficientResourcesError` antes de guardar (la acción entera se cancela). NO se aplica a la TR Revision ni al propio Ruling Bonus de Reds en `resolve_new_government` -- esos son efectos automáticos, no "una acción que el jugador toma". |
+| Greens | "Gain 4 M€ each time you place a Greenery tile." | Enganchada en `_place_greenery_and_apply_bonus`, mismo criterio que Mars First. |
+| Scientists | "Spend 10 M€ to draw 3 cards -- may only be used once per generation and player." | Tool nueva `use_scientists_ruling_policy`, gateada por el flag nuevo `PlayerState.scientists_policy_used_this_generation` (se limpia en `run_production_phase`, mismo patrón que `tr_skip_used_this_generation`). |
+| Unity | "Your titanium resources are worth 1 M€ extra." (texto CORREGIDO 2026-10-02: la versión anterior de esta fila citaba "When performing a Standard Project, or playing a Prelude, Blue or Green card, the price of steel and titanium resource is raised by 1 M€", que NO coincide con el docstring de `compute_conversion_rates`, que cita el rulebook p. 6 "Titanium is worth 1 M€ extra", ni con la implementación open-source de referencia, `UnityPolicy01`: "Your titanium resources are worth 1 M€ extra". Solo titanio, sin restricción por tipo de carta.) | `engine.compute_conversion_rates(player, ruling_party)`: +1 M€ al `titanium_value` si `ruling_party == "unity"`; el acero no cambia. Threadeado a través de TODOS los caminos de pago con acero/titanio: `play_card` (incluye la carta anidada de `play_prelude`, que llama `play_card.func`), `use_card_action` (`mc_or_titanium`/`mc_or_steel`) y `resolve_ocean_offer`. Los proyectos estándar no aceptan acero/titanio en este motor, así que no hay nada que threadear ahí. |
+
+**~~Gap conocido~~ RESUELTO (2026-10-02): `resolve_ocean_offer` y Unity.** La cuenta de la oferta
+se movió a una función pura, `engine.resolve_ocean_offer(player, card_id, steel_to_pay,
+ruling_party)` (al lado de `place_ocean`, con tests de número exacto); `tools.resolve_ocean_offer`
+quedó como wrapper de I/O y lee el ruling party de `global_parameters.turmoil` (`_load_turmoil()`),
+igual que `play_card`/`use_card_action`. **Conclusión de reglas:** hoy esto NO cambia ningún
+número. Unity solo sube el titanio ("Your titanium resources are worth 1 M€ extra") y Neptunian
+Power Consultants paga "5 M€ (steel may be used)" (verificado contra el scan X61): con Unity
+gobernando, 2 aceros siguen valiendo 4 M€. Si la regla citada antes (acero Y titanio, solo en
+Standard Project/Prelude/carta azul o verde) fuera la correcta, igual quedaría la duda de si la
+acción pasiva de una carta azul ya jugada cuenta como "playing a Blue card" -- pero esa versión no
+coincide con el rulebook ni con la implementación de referencia, así que no se modeló. Se pasa el
+`ruling_party` igual por consistencia: si una oferta futura permitiera titanio, ya vería la subida.
+**Auditoría de otros caminos de pago:** todos los que cobran con titanio ya pasaban el ruling
+party (`play_card`, `use_card_action`, `play_prelude` → `play_card.func`); `use_trade_fleet`/
+`build_colony` cobran cantidades fijas de titanio, no un valor en M€, así que Unity no los toca.
+**Fix lateral:** el aumento de producción de la oferta ahora pasa por `_increase_production` (antes
+usaba `_apply_production_floor` directo y Manutech no cobraba su energía).
+
+**Piezas nuevas en `PlayerState`:** `scientists_policy_used_this_generation: bool` (init `False`,
+reset en `run_production_phase`). Migración en `schema.sql`: columna
+`scientists_policy_used_this_generation boolean not null default false`.
+
+Tests: `tests/test_rules_engine.py` (7 casos de `apply_ruling_bonus`, 1 de `compute_conversion_rates`
+con Unity). 653/653 pasando. +10 tests el 2026-10-02 (`engine.resolve_ocean_offer` + acero sin
+cambio con Unity): 663/663.
+
 ### Bloque 5 (2026-09-04): las 22 restantes, analizadas en paralelo por 4 agentes
 
 Único bloque hecho con **orquestación multi-agente**: se repartieron las 22 cartas que quedaban
@@ -1699,7 +1978,7 @@ disponibles). Campos nuevos en `PlayerState`: `colonies_owned`, `trade_fleets`,
 `trade_fleets_used`; en `GlobalParameters` (cargado/guardado aparte, igual que `board`):
 `colonies`. Tools nuevas: `setup_colonies`, `build_colony`, `use_trade_fleet`.
 
-**Catálogo de colonias — 9 de 11 cargadas (2026-09-08).** El juego real tiene 11 Colony Tiles con
+**Catálogo de colonias — 11 de 11 cargadas (9 el 2026-09-08; Pluto y Europa el 2026-10-02).** El juego real tiene 11 Colony Tiles con
 nombre (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto, Ceres, Io).
 Callisto ya estaba, verificada con dos fuentes independientes (el ejemplo trabajado del rulebook
 oficial, que muestra el track 0/2/3/5/7/10/13 con el marcador en 10 energía y colony bonus 3
@@ -1724,12 +2003,47 @@ resto: al leer los scans aparecieron tres formas de premio que el modelo no cont
   validando que la carta destino guarde ese tipo. `build_colony` y `use_trade_fleet` suman ese
   parámetro.
 - **Robar cartas como premio** (Miranda colony bonus): clave `"cards"` en el mismo helper.
-- **Pendientes, 2 de 11:** *Pluto*, cuyo colony bonus es "roba 1 carta y descarta 1" y necesita
-  que el jugador ELIJA el descarte (su income, robar X cartas, sí entraría — pero cargarla a
-  medias sería peor que no cargarla); y *Europa*, cuyo trade income no es "X de un recurso" sino
-  "gana la PRODUCCIÓN indicada", distinta en cada casilla del track (MC, MC, energía, energía,
-  plantas, plantas, plantas), lo que rompe el tipo `track: list[int]` + `income_type: str`, y
-  cuyo placement bonus es **colocar un océano**.
+- **Pluto y Europa, resueltas (2026-10-02)** — antes figuraban como "Pendientes, 2 de 11". Leídas
+  del scan (`COLONY_pluto.png`, `COLONY_europa.png`), con el mismo método; ningún valor quedó sin
+  poder leerse.
+  - *Pluto*: trade income "X cartas", track 0/1/2/2/3/3/4; colony bonus "+1 carta −1 carta";
+    colony spots con DOS cartas sin marco = robar 2 al construir. El colony bonus necesitaba que el
+    jugador ELIJA el descarte **después de ver lo robado** (puede descartar justo esa carta), así
+    que no se puede resolver como un parámetro decidido a ciegas. Pieza nueva: clave
+    `cards_draw_then_discard` en `colony_bonus`; `rules_engine.draw_cards_then_require_discard`
+    roba y anota la obligación en el campo nuevo `player.pending_card_discards` (columna nueva en
+    `schema.sql`); `rules_engine.resolve_pending_discards` la salda (cantidad exacta, o la mano
+    entera si tiene menos), vía la tool nueva `resolve_pending_discards` o directamente con el
+    parámetro opcional `discard_card_ids` de `use_trade_fleet` si el jugador ya sabe qué descartar.
+    Es una OBLIGACIÓN (no una oferta como `pending_ocean_offers`): no se pierde al cerrar la
+    generación, y `tools.play_card` se niega a jugar cartas mientras quede alguna pendiente.
+  - *Europa*: trade income "Gain the indicated production" — cada casilla tiene impreso un ícono de
+    producción de 1 paso: M€, M€, energía, energía, plantas, plantas, plantas (los de M€ traen "1";
+    los de energía/plantas no traen número = 1). Pieza nueva: campo opcional
+    `ColonyDef.income_types` (una clave por casilla, pisa a `income_type`) + función pura
+    `colonies.trade_income(colony_id, position)`; `track` queda en 1 en todas las casillas. Colony
+    bonus: 1 M€ de stock. Placement bonus: un tile de OCÉANO en los 3 colony spots — clave
+    `"ocean"`, resuelta en `tools._apply_colony_placement_bonus` con un océano real
+    (`engine.place_ocean`: +1 TR y pasivos `on_ocean_placed`; `_place_ocean_and_apply_bonus`: bonus
+    del hex, adyacencia, Mars First). Parámetros nuevos: `ocean_hex_id` en `build_colony`,
+    `colony_ocean_hex_id` en `play_card`/`play_prelude` (cartas que construyen colonia como efecto;
+    distinto de `ocean_hex_ids`, que son los océanos de la propia carta, ej. Ice Moon Colony). Con
+    los 9 océanos ya colocados la colonia se construye igual y el océano no se coloca (regla
+    general de parámetro al tope).
+  - **Colony bonus cuando comercia OTRO jugador:** en single-player no hay otros jugadores; se sigue
+    cobrando al comerciar uno mismo siendo dueño, igual que las otras 9. El paso de producción de
+    colonias (`run_colony_production`) no necesitó nada nuevo: solo mueve el marcador.
+  - **Correcciones de paso, encontradas al cablear:** (1) `_apply_colony_gain` ahora sube las
+    claves `*_production` vía `engine._increase_production` (antes era suma directa: Callisto/
+    Ceres/Ganymede/Io/Luna nunca disparaban Manutech); (2) `build_colony` y `use_trade_fleet`
+    aplican `apply_production_increased_bonus` (Suitable Infrastructure, son acciones) y
+    `build_colony` aplica la Ruling Policy de Reds (el océano de Europa sube TR); (3) los caminos de
+    `play_card`/`play_prelude` con `build_colony_id`, y `gain_all_colony_bonuses`, sumaban las claves
+    del bonus directo al jugador — con Enceladus/Titan/Miranda/Pluto/Europa eso habría tirado
+    KeyError. Ahora pasan por el mismo helper que la tool `build_colony`.
+  - Tests: `test_colonies.py` (defs, `trade_income` por casilla, comercio con Europa y Pluto,
+    descarte pendiente). La colocación del océano vive en `tools.py` (sin tests unitarios por
+    diseño); se verificó offline llamando al helper con un tablero en memoria.
 
 Esto desbloqueó **Cryo-Sleep** (pasivo `trade_cost_discount`) y **Ecology Research** (efecto
 nuevo `production_delta_per_colony`, que cuenta `player["colonies_owned"]` sin importar cuál).
@@ -1812,10 +2126,9 @@ Self-Replicating Robots (210) quedó implementada en `rules_engine.py`:
 Tests: `test_reserve_card_in_slot_moves_from_hand_and_stacks_resources`,
 `test_duplicate_reserved_card_resources`, `test_release_reserved_card`,
 `test_self_replicating_robots_action_reserve_or_duplicate_via_use_card_action`
-en `test_rules_engine.py`. La carta todavía no está cargada en
-`seed_cards.sql` (falta releer el scan real y confirmar costo/tags/número
-de tags de ciencia exactos) — queda disponible para el próximo bloque de
-revisión de cartas, ya sin bloqueo de mecánica.
+en `test_rules_engine.py`. **Cargada en `seed_cards.sql` el 2026-10-02**,
+verificada contra el scan: 7 M€, sin tags, requiere 2 tags science (ver
+"Robo de preludes y Venus Orbital Survey").
 
 **Resuelto (2026-09-01):** la pieza "mover/agregar un recurso a una carta específica elegida
 por el jugador, distinta de la que se está jugando/usando" (identificada primero en Local Heat

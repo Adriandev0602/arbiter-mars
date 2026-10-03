@@ -90,6 +90,7 @@ from app.agent.rules_engine import (
     apply_card_resource_gained_bonuses,
     is_blue_card,
     resolve_active_card_starting_resources,
+    apply_ruling_bonus,
 )
 
 
@@ -6397,3 +6398,461 @@ def test_card_cost_discount_requires_requirement():
     )
     assert compute_card_cost_discount(player, (), has_requirement=True) == 2
     assert compute_card_cost_discount(player, (), has_requirement=False) == 0
+
+
+def test_apply_ruling_bonus_mars_first_pays_per_building_tag():
+    player = new_player_state()
+    player["tags_played"] = {"building": 3}
+    new_player = apply_ruling_bonus(player, "mars_first")
+    assert new_player["mc"] == player["mc"] + 3
+
+
+def test_apply_ruling_bonus_kelvinists_pays_per_heat_production():
+    player = {**new_player_state(), "heat_production": 4}
+    new_player = apply_ruling_bonus(player, "kelvinists")
+    assert new_player["mc"] == player["mc"] + 4
+
+
+def test_apply_ruling_bonus_greens_pays_per_plant_microbe_animal_tags():
+    player = new_player_state()
+    player["tags_played"] = {"plant": 2, "microbe": 1, "animal": 1, "building": 5}
+    new_player = apply_ruling_bonus(player, "greens")
+    assert new_player["mc"] == player["mc"] + 4
+
+
+def test_apply_ruling_bonus_scientists_pays_per_science_tag():
+    player = new_player_state()
+    player["tags_played"] = {"science": 2}
+    new_player = apply_ruling_bonus(player, "scientists")
+    assert new_player["mc"] == player["mc"] + 2
+
+
+def test_apply_ruling_bonus_unity_pays_per_venus_earth_jovian_tags():
+    player = new_player_state()
+    player["tags_played"] = {"venus": 1, "earth": 2, "jovian": 1}
+    new_player = apply_ruling_bonus(player, "unity")
+    assert new_player["mc"] == player["mc"] + 4
+
+
+def test_apply_ruling_bonus_reds_raises_tr_only_if_20_or_below():
+    low_tr_player = {**new_player_state(), "tr": 20}
+    new_player = apply_ruling_bonus(low_tr_player, "reds")
+    assert new_player["tr"] == 21
+
+    high_tr_player = {**new_player_state(), "tr": 21}
+    unchanged = apply_ruling_bonus(high_tr_player, "reds")
+    assert unchanged["tr"] == 21
+
+
+def test_apply_ruling_bonus_unknown_party_raises():
+    with pytest.raises(ValueError):
+        apply_ruling_bonus(new_player_state(), "bogus_party")
+
+
+def test_compute_conversion_rates_unity_ruling_raises_titanium_value():
+    player = new_player_state()
+    _, titanium_value = compute_conversion_rates(player)
+    _, titanium_value_unity = compute_conversion_rates(player, ruling_party="unity")
+    assert titanium_value_unity == titanium_value + 1
+
+
+# --- resolve_ocean_offer (Neptunian Power Consultants) + Ruling Policy de Unity ---
+# Unity: "Your titanium resources are worth 1 M€ extra" -- solo titanio. La
+# oferta de Neptunian paga "5 M€ (steel may be used)", asi que Unity NO
+# cambia su precio; los tests fijan ese numero exacto.
+
+from app.agent.rules_engine import resolve_ocean_offer as engine_resolve_ocean_offer  # noqa: E402
+
+_NEPTUNIAN_OFFER = {
+    "cost_mc": 5, "allow_steel": True,
+    "production_deltas": {"energy_production": 1}, "card_resource_delta": 1,
+}
+
+
+def _neptunian_player(**overrides):
+    player = register_passive_effect(
+        new_player_state(), "neptunian_power_consultants", {"on_ocean_placed_offer": _NEPTUNIAN_OFFER},
+    )
+    return {
+        **player,
+        "active_cards": {"neptunian_power_consultants": {"resources": 0, "action_used": False}},
+        "pending_ocean_offers": 1,
+        **overrides,
+    }
+
+
+def test_compute_conversion_rates_unity_ruling_leaves_steel_unchanged():
+    player = new_player_state()
+    assert compute_conversion_rates(player) == (2, 3)
+    assert compute_conversion_rates(player, ruling_party="unity") == (2, 4)
+
+
+def test_resolve_ocean_offer_pays_5_mc():
+    player = _neptunian_player(mc=10, steel=0, energy_production=0)
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+    assert new_player["mc"] == 5
+    assert new_player["energy_production"] == 1
+    assert new_player["active_cards"]["neptunian_power_consultants"]["resources"] == 1
+    assert new_player["pending_ocean_offers"] == 0
+
+
+def test_resolve_ocean_offer_steel_worth_2_mc_each():
+    player = _neptunian_player(mc=10, steel=2)
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=2)
+    assert new_player["steel"] == 0
+    assert new_player["mc"] == 9  # 5 - 2*2 = 1 MC
+
+
+def test_resolve_ocean_offer_unity_ruling_does_not_raise_steel_value():
+    player = _neptunian_player(mc=10, steel=2)
+    without = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=2)
+    with_unity = engine_resolve_ocean_offer(
+        player, "neptunian_power_consultants", steel_to_pay=2, ruling_party="unity",
+    )
+    assert without["mc"] == 9
+    assert with_unity["mc"] == 9
+
+
+def test_resolve_ocean_offer_advanced_alloys_steel_bonus_applies():
+    player = register_passive_effect(
+        _neptunian_player(mc=10, steel=1), "advanced_alloys", {"steel_value_bonus": 1, "titanium_value_bonus": 1},
+    )
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=1)
+    assert new_player["mc"] == 8  # 5 - 1*3 = 2 MC
+
+
+def test_resolve_ocean_offer_steel_overpayment_not_refunded():
+    player = _neptunian_player(mc=10, steel=3)
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants", steel_to_pay=3)
+    assert new_player["mc"] == 10  # 3*2 = 6 >= 5, sin vuelto
+    assert new_player["steel"] == 0
+
+
+def test_resolve_ocean_offer_triggers_manutech():
+    player = register_passive_effect(
+        _neptunian_player(mc=10, energy=0, energy_production=0), "manutech", {"on_production_increased": True},
+    )
+    new_player = engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+    assert new_player["energy_production"] == 1
+    assert new_player["energy"] == 1
+
+
+def test_resolve_ocean_offer_insufficient_mc_raises():
+    player = _neptunian_player(mc=4, steel=0)
+    with pytest.raises(InsufficientResourcesError):
+        engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+
+
+def test_resolve_ocean_offer_without_pending_offer_raises():
+    player = _neptunian_player(mc=10, pending_ocean_offers=0)
+    with pytest.raises(ValueError):
+        engine_resolve_ocean_offer(player, "neptunian_power_consultants")
+
+
+def test_resolve_ocean_offer_steel_not_allowed_raises():
+    player = register_passive_effect(
+        {**new_player_state(), "mc": 10, "steel": 2, "pending_ocean_offers": 1},
+        "some_card", {"on_ocean_placed_offer": {"cost_mc": 5}},
+    )
+    with pytest.raises(ValueError):
+        engine_resolve_ocean_offer(player, "some_card", steel_to_pay=1)
+# ---------------------------------------------------------------------------
+# "As your first action..." de corporaciones (Philares, Tharsis Republic,
+# Aridor, Poseidon, Arcadian Communities): se anota como pendiente al elegir
+# la corporacion y se resuelve SIN COSTO (tools.resolve_corporation_first_action).
+# ---------------------------------------------------------------------------
+from app.agent import rules_engine as _engine_fa
+from app.agent import board as _board_fa
+
+
+def test_register_corporation_first_action_anota_pendiente():
+    player = _engine_fa.register_corporation_first_action(
+        new_player_state(), "philares", {"type": "place_greenery"}
+    )
+    assert player["pending_corporation_first_action"] == {
+        "corporation_id": "philares", "type": "place_greenery",
+    }
+
+
+def test_register_corporation_first_action_sin_spec_no_anota_nada():
+    player = new_player_state()
+    assert _engine_fa.register_corporation_first_action(player, "credicor", None) == player
+    assert player["pending_corporation_first_action"] is None
+
+
+def test_register_corporation_first_action_tipo_desconocido_lanza():
+    with pytest.raises(ValueError):
+        _engine_fa.register_corporation_first_action(new_player_state(), "x", {"type": "fund_award"})
+
+
+def test_consume_corporation_first_action_se_usa_una_sola_vez():
+    player = _engine_fa.register_corporation_first_action(
+        new_player_state(), "tharsis_republic", {"type": "place_city"}
+    )
+    new_player, spec = _engine_fa.consume_corporation_first_action(player)
+    assert spec == {"corporation_id": "tharsis_republic", "type": "place_city"}
+    assert new_player["pending_corporation_first_action"] is None
+    with pytest.raises(ValueError):
+        _engine_fa.consume_corporation_first_action(new_player)
+
+
+def test_philares_first_action_greenery_gratis_sube_oxigeno_y_tr():
+    # Philares (scan): "You start with 47 M€. As your first action, place a
+    # greenery tile and raise the oxygen 1 step." Sin pagar los 23 M€.
+    player = _engine_fa.apply_corporation_start(new_player_state(), 47)
+    player = _engine_fa.register_corporation_first_action(player, "philares", {"type": "place_greenery"})
+    player, _ = _engine_fa.consume_corporation_first_action(player)
+    globals_ = new_global_parameters()
+    new_player, new_globals = _engine_fa.corporation_first_action_greenery(player, globals_)
+    assert new_player["mc"] == 47
+    assert new_player["tr"] == 21
+    assert new_globals["oxygen"] == globals_["oxygen"] + 1
+    # Tile en el hex 03 (bonus impreso: 2 acero).
+    _, hex_bonus, ocean_bonus_mc = _board_fa.place_greenery_tile(_board_fa.new_board(), "03", "p1")
+    assert hex_bonus == [("steel", 2)]
+    assert ocean_bonus_mc == 0
+
+
+def test_philares_first_action_greenery_con_oxigeno_al_tope_no_da_tr():
+    globals_ = {**new_global_parameters(), "oxygen": 14}
+    player = new_player_state()
+    new_player, new_globals = _engine_fa.corporation_first_action_greenery(player, globals_)
+    assert new_player["tr"] == player["tr"]
+    assert new_globals["oxygen"] == 14
+
+
+def test_tharsis_first_action_city_gratis_sin_produccion_del_proyecto_estandar():
+    # Tharsis Republic (scan): "You start with 40 M€. As your first action in
+    # the game, place a city tile." Su propio Effect paga +1 produccion de M€
+    # y +3 M€ por esa ciudad; el proyecto estandar (25 M€, +1 produccion
+    # extra) NO entra.
+    player = _engine_fa.apply_corporation_start(new_player_state(), 40)
+    player = register_passive_effect(player, "tharsis_republic", {
+        "on_city_tile_placed_production_delta": {"production": "mc_production", "per_tile": 1},
+        "on_city_tile_placed_resource_delta": {"mc": 3},
+    })
+    globals_ = new_global_parameters()
+    new_player, new_globals = _engine_fa.corporation_first_action_city(player, globals_)
+    new_player = apply_city_placed_bonuses(new_player)
+    assert new_player["mc"] == 43
+    assert new_player["mc_production"] == 1
+    assert new_globals["city_tiles_placed"] == globals_["city_tiles_placed"] + 1
+# ---------------------------------------------------------------------------
+# Cartas "dudosas" cargadas (2026-10-02): Self-Replicating Robots, Venus
+# Orbital Survey, WG Project + robo de preludes "revela N, juga 1"
+# (New Partner, Board of Directors, WG Project, Valley Trust).
+# ---------------------------------------------------------------------------
+from app.agent import rules_engine as _engine_vos  # noqa: E402
+
+
+def test_self_replicating_robots_requires_exactly_2_science_tags():
+    req = {"min_tag_count": {"tag": "science", "count": 2}}
+    player = {**new_player_state(), "tags_played": {"science": 1}}
+    with pytest.raises(CardRequirementNotMetError):
+        check_card_requirements(req, new_global_parameters(), player)
+    player = {**new_player_state(), "tags_played": {"science": 2}}
+    check_card_requirements(req, new_global_parameters(), player)
+
+
+def test_reveal_top_cards_take_tag_venus_to_hand_rest_to_pending_research():
+    # Venus Orbital Survey: revela 2; la venus va gratis a la mano, la otra
+    # queda para comprar (3 M€) o descartar. El mazo pierde exactamente 2.
+    player = {**new_player_state(), "deck": ["a_venus", "b_space", "c"], "hand": ["h"], "mc": 10}
+    tags = {"a_venus": ["venus", "space"], "b_space": ["space"]}
+    new_player = _engine_vos.reveal_top_cards_take_tag(player, 2, tags, "venus")
+    assert new_player["hand"] == ["h", "a_venus"]
+    assert new_player["pending_research"] == ["b_space"]
+    assert new_player["deck"] == ["c"]
+    assert new_player["mc"] == 10  # las venus son GRATIS
+
+    # Comprar la otra cuesta 3 M€ con el resolve_research_phase de siempre.
+    bought = _engine_vos.resolve_research_phase(new_player, ["b_space"], 3)
+    assert bought["mc"] == 7
+    assert bought["hand"] == ["h", "a_venus", "b_space"]
+    assert bought["pending_research"] == []
+
+
+def test_reveal_top_cards_take_tag_both_venus_and_wild_does_not_count():
+    player = {**new_player_state(), "deck": ["v1", "v2", "w"]}
+    tags = {"v1": ["venus"], "v2": ["venus"], "w": ["wild"]}
+    both = _engine_vos.reveal_top_cards_take_tag(player, 2, tags, "venus")
+    assert both["hand"] == ["v1", "v2"] and both["pending_research"] == [] and both["deck"] == ["w"]
+    # El tag "wild" no es un tag venus (solo vale para requisitos).
+    wild = _engine_vos.reveal_top_cards_take_tag({**player, "deck": ["w"]}, 2, tags, "venus")
+    assert wild["hand"] == [] and wild["pending_research"] == ["w"] and wild["deck"] == []
+
+
+def test_reveal_top_cards_take_tag_rejects_with_pending_research():
+    player = {**new_player_state(), "deck": ["a"], "pending_research": ["x"]}
+    with pytest.raises(CardEffectError):
+        _engine_vos.reveal_top_cards_take_tag(player, 2, {}, "venus")
+
+
+def test_venus_orbital_survey_action_spec_without_engine_gains_marks_action_used():
+    # tools.use_card_action saca reveal_top_cards_take_tag de gains antes
+    # de llamar al motor; el motor tiene que aceptar la accion "vacia" y
+    # marcarla usada (una vez por generacion), sin cobrar nada.
+    player = _engine_vos.register_active_card(new_player_state(), "venus_orbital_survey")
+    player = {**player, "mc": 5}
+    new_player, _ = _engine_vos.use_card_action(
+        player, new_global_parameters(), "venus_orbital_survey", {"cost": {}, "gains": {}},
+    )
+    assert new_player["active_cards"]["venus_orbital_survey"]["action_used"] is True
+    assert new_player["mc"] == 5
+
+
+def test_prelude_draw_candidates_excludes_played_and_source():
+    catalog = ["p1", "p2", "p3", "new_partner"]
+    assert _engine_vos.prelude_draw_candidates(catalog, ["p2"], exclude=("new_partner",)) == ["p1", "p3"]
+
+
+def test_prelude_draw_pick_one_of_revealed_and_discard_rest():
+    player = _engine_vos.start_prelude_draw(new_player_state(), "wg_project", ["p1", "p2", "p3"])
+    assert player["pending_prelude_draw"] == {"source": "wg_project", "options": ["p1", "p2", "p3"], "free_play": True}
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(player, "p9", require_free_play=True)
+    taken = _engine_vos.take_pending_prelude(player, "p2", require_free_play=True)
+    assert taken["pending_prelude_draw"] == {}
+    # Sin robo pendiente no hay nada que resolver.
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(taken, "p1")
+    # Descartar todas (prelude_id=None) tambien cierra la mesa.
+    assert _engine_vos.take_pending_prelude(player, None)["pending_prelude_draw"] == {}
+
+
+def test_prelude_draw_blocks_other_source_but_same_source_overwrites():
+    player = _engine_vos.start_prelude_draw(new_player_state(), "valley_trust", ["p1", "p2", "p3"])
+    with pytest.raises(CardEffectError):
+        _engine_vos.start_prelude_draw(player, "board_of_directors", ["p4"], free_play=False)
+    bod = _engine_vos.start_prelude_draw(new_player_state(), "board_of_directors", ["p4"], free_play=False)
+    again = _engine_vos.start_prelude_draw(bod, "board_of_directors", ["p5"], free_play=False)
+    assert again["pending_prelude_draw"]["options"] == ["p5"]
+
+
+def test_board_of_directors_reveal_cannot_be_played_for_free():
+    bod = _engine_vos.start_prelude_draw(new_player_state(), "board_of_directors", ["p4"], free_play=False)
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(bod, "p4", require_free_play=True)
+    # Descartar si se puede.
+    assert _engine_vos.take_pending_prelude(bod, None, require_free_play=True)["pending_prelude_draw"] == {}
+    # Por su propia accion (rama pagar), con su source, si.
+    assert _engine_vos.take_pending_prelude(bod, "p4", source_card_id="board_of_directors")["pending_prelude_draw"] == {}
+    with pytest.raises(CardEffectError):
+        _engine_vos.take_pending_prelude(bod, "p4", source_card_id="new_partner")
+
+
+def test_prelude_draw_effect_keys_are_noop_in_apply_card_effect():
+    # WG Project / Valley Trust: las claves las resuelve tools.py; el motor
+    # puro no cambia nada por ellas.
+    player, globals_ = new_player_state(), new_global_parameters()
+    for effects in ({"reveal_random_preludes": {"n": 3}}, {"first_action": {"type": "reveal_preludes", "n": 3}}):
+        new_player, new_globals = _engine_vos.apply_card_effect(player, globals_, effects)
+        assert new_player == player and new_globals == globals_
+
+
+def test_register_corporation_first_action_reveal_preludes_conserva_n():
+    # Valley Trust: la first action de robar preludes es un tipo mas de la
+    # pieza generica; la pendiente guarda cuantas revelar.
+    player = _engine_fa.register_corporation_first_action(
+        new_player_state(), "valley_trust", {"type": "reveal_preludes", "n": 3}
+    )
+    assert player["pending_corporation_first_action"] == {
+        "corporation_id": "valley_trust", "type": "reveal_preludes", "n": 3,
+    }
+    _, pending = _engine_fa.consume_corporation_first_action(player)
+    assert pending["n"] == 3
+# ---------------------------------------------------------------------------
+# Clausulas de SETUP: Celestic (revelar hasta N cartas con icono de floater)
+# y reparto de preludes (4 repartidas, 2 elegidas).
+# ---------------------------------------------------------------------------
+
+def test_reveal_cards_until_matching_keeps_first_n_matches_and_discards_rest():
+    from app.agent.rules_engine import reveal_cards_until_matching
+    player = {**new_player_state(), "deck": ["a", "f1", "b", "c", "f2", "f3", "d"], "hand": ["x"]}
+    new_player, revealed, kept = reveal_cards_until_matching(player, {"f1", "f2", "f3"}, 2)
+    assert revealed == ["a", "f1", "b", "c", "f2"]
+    assert kept == ["f1", "f2"]
+    assert new_player["hand"] == ["x", "f1", "f2"]
+    # f3 (una tercera coincidencia) y d NO se revelan: quedan en el mazo.
+    assert new_player["deck"] == ["f3", "d"]
+
+
+def test_reveal_cards_until_matching_exhausted_deck_keeps_what_it_found():
+    from app.agent.rules_engine import reveal_cards_until_matching
+    player = {**new_player_state(), "deck": ["a", "f1", "b"]}
+    new_player, revealed, kept = reveal_cards_until_matching(player, ["f1", "f2"], 2)
+    assert revealed == ["a", "f1", "b"]
+    assert kept == ["f1"]
+    assert new_player["deck"] == []
+    assert new_player["hand"] == ["f1"]
+
+
+def test_celestic_first_action_reveal_until_matching_se_anota_una_sola_vez():
+    from app.agent.rules_engine import (
+        register_corporation_first_action, consume_corporation_first_action,
+        reveal_cards_until_matching,
+    )
+    spec = {"type": "reveal_until_matching", "n": 2, "card_ids": ["f1", "f2"]}
+    player = register_corporation_first_action(
+        {**new_player_state(), "deck": ["f1", "a", "f2", "b"]}, "celestic", spec,
+    )
+    player, pending = consume_corporation_first_action(player)
+    new_player, revealed, kept = reveal_cards_until_matching(player, pending["card_ids"], pending["n"])
+    assert revealed == ["f1", "a", "f2"]
+    assert kept == ["f1", "f2"]
+    assert new_player["deck"] == ["b"]
+    assert new_player["hand"] == ["f1", "f2"]
+    with pytest.raises(ValueError):
+        consume_corporation_first_action(new_player)
+
+
+def test_draw_random_preludes_is_seeded_distinct_and_respects_exclude():
+    import random
+    from app.agent.rules_engine import draw_random_preludes
+    ids = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
+    assert draw_random_preludes(ids, 4, rng=random.Random(42)) == ["p4", "p5", "p7", "p8"]
+    # Con exclude que deja exactamente 2 candidatas, salen esas 2 y nada mas.
+    drawn = draw_random_preludes(ids, 4, exclude=ids[:6], rng=random.Random(1))
+    assert sorted(drawn) == ["p7", "p8"]
+    # Ids duplicados en el catalogo no producen una prelude repetida.
+    assert sorted(draw_random_preludes(["p1", "p1", "p2"], 4, rng=random.Random(3))) == ["p1", "p2"]
+
+
+def test_deal_prelude_hand_deals_4_excluding_played_and_refuses_twice():
+    import random
+    from app.agent.rules_engine import deal_prelude_hand, PRELUDES_DEALT_AT_SETUP
+    assert PRELUDES_DEALT_AT_SETUP == 4
+    ids = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"]
+    player = {**new_player_state(), "played_cards": ["p2", "p5"]}
+    dealt_player = deal_prelude_hand(player, ids, rng=random.Random(42))
+    assert dealt_player["pending_prelude_choice"] == ["p6", "p3", "p4", "p7"]
+    assert dealt_player["prelude_hand"] == []
+    with pytest.raises(CardEffectError):
+        deal_prelude_hand(dealt_player, ids, rng=random.Random(42))
+
+
+def test_keep_preludes_keeps_exactly_2_and_discards_the_rest():
+    from app.agent.rules_engine import keep_preludes
+    player = {**new_player_state(), "pending_prelude_choice": ["p6", "p3", "p4", "p7"]}
+    kept = keep_preludes(player, ["p3", "p7"])
+    assert kept["prelude_hand"] == ["p3", "p7"]
+    assert kept["pending_prelude_choice"] == []
+
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3"])              # menos de 2
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3", "p4", "p7"])  # mas de 2
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3", "p3"])        # repetida
+    with pytest.raises(ValueError):
+        keep_preludes(player, ["p3", "p1"])        # no repartida
+    with pytest.raises(CardEffectError):
+        keep_preludes(new_player_state(), ["p3", "p7"])  # sin reparto
+
+
+def test_remove_prelude_from_hand_only_touches_dealt_preludes():
+    from app.agent.rules_engine import remove_prelude_from_hand
+    player = {**new_player_state(), "prelude_hand": ["p3", "p7"]}
+    assert remove_prelude_from_hand(player, "p3")["prelude_hand"] == ["p7"]
+    # Una prelude jugada por otra via (New Partner, etc.) no rompe nada.
+    assert remove_prelude_from_hand(player, "p9")["prelude_hand"] == ["p3", "p7"]

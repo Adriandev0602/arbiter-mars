@@ -22,6 +22,7 @@ from app.agent.colonies import (
     trade_with_colony,
     run_colony_production,
     adjust_colony_track,
+    trade_income,
 )
 
 
@@ -176,10 +177,10 @@ def test_build_colony_allow_duplicate_still_respects_max_3():
 
 # --- Catalogo de colonias (transcrito de los scans, bloque de colonias) -----
 
-def test_las_nueve_colonias_cargadas_tienen_track_de_7_casillas():
+def test_las_once_colonias_cargadas_tienen_track_de_7_casillas():
     # El track impreso de una Colony Tile siempre tiene 7 casillas; si alguna
     # quedo con 6 u 8 es que se transcribio mal del scan.
-    assert len(COLONY_DEFS) == 9
+    assert len(COLONY_DEFS) == 11
     for cid, cdef in COLONY_DEFS.items():
         assert len(cdef["track"]) == 7, f"{cid} tiene {len(cdef['track'])} casillas"
         assert cdef["id"] == cid
@@ -213,7 +214,153 @@ def test_colonias_de_recurso_de_carta_usan_el_prefijo():
     assert COLONY_DEFS["miranda"]["colony_bonus"] == {"cards": 1}
 
 
-def test_pluto_y_europa_siguen_sin_cargar():
-    # Las dos que no entran en el modelo actual (ver la nota en COLONY_DEFS).
-    assert "pluto" not in COLONY_DEFS
-    assert "europa" not in COLONY_DEFS
+# --- Pluto y Europa (2026-10-02) ---------------------------------------------
+
+def test_pluto_def_leida_del_scan():
+    pluto = COLONY_DEFS["pluto"]
+    assert pluto["income_type"] == "cards"
+    assert pluto["track"] == [0, 1, 2, 2, 3, 3, 4]
+    # "+1 carta -1 carta": roba 1 y despues descarta 1
+    assert pluto["colony_bonus"] == {"cards_draw_then_discard": 1}
+    # colony spots: dos cartas sin marco = robar 2
+    assert pluto["placement_bonus"] == {"cards": 2}
+
+
+def test_europa_def_leida_del_scan():
+    europa = COLONY_DEFS["europa"]
+    assert europa["income_types"] == [
+        "mc_production", "mc_production", "energy_production", "energy_production",
+        "plant_production", "plant_production", "plant_production",
+    ]
+    assert europa["track"] == [1, 1, 1, 1, 1, 1, 1]
+    assert europa["colony_bonus"] == {"mc": 1}
+    assert europa["placement_bonus"] == {"ocean": 1}
+
+
+def test_trade_income_por_casilla_de_europa():
+    assert trade_income("europa", 0) == ("mc_production", 1)
+    assert trade_income("europa", 1) == ("mc_production", 1)
+    assert trade_income("europa", 2) == ("energy_production", 1)
+    assert trade_income("europa", 3) == ("energy_production", 1)
+    assert trade_income("europa", 4) == ("plant_production", 1)
+    assert trade_income("europa", 6) == ("plant_production", 1)
+    # Las colonias de income fijo no cambian de clave
+    assert trade_income("callisto", 5) == ("energy", 10)
+    assert trade_income("pluto", 6) == ("cards", 4)
+
+
+def test_trade_with_europa_da_la_produccion_de_la_casilla_actual():
+    colonies = new_colonies(["europa"])
+    colonies = adjust_colony_track(colonies, "europa", 2)  # 1 -> 3 (energia)
+    new_state, income_type, income_amount, colony_bonus = trade_with_colony(colonies, "europa")
+    assert (income_type, income_amount) == ("energy_production", 1)
+    assert colony_bonus == {"mc": 1}
+    assert new_state["europa"]["track_position"] == 0
+
+
+def test_trade_with_europa_al_tope_da_plantas():
+    colonies = new_colonies(["europa"])
+    for _ in range(10):
+        colonies = run_colony_production(colonies)
+    assert colonies["europa"]["track_position"] == 6
+    _, income_type, income_amount, _ = trade_with_colony(colonies, "europa")
+    assert (income_type, income_amount) == ("plant_production", 1)
+
+
+def test_trade_with_pluto_en_posicion_inicial_roba_1():
+    colonies = new_colonies(["pluto"])
+    colonies, _ = build_colony(colonies, "pluto", "player-1")
+    colonies = adjust_colony_track(colonies, "pluto", 3)  # 1 -> 4
+    new_state, income_type, income_amount, colony_bonus = trade_with_colony(colonies, "pluto")
+    assert (income_type, income_amount) == ("cards", 3)
+    assert colony_bonus == {"cards_draw_then_discard": 1}
+    assert new_state["pluto"]["track_position"] == 1
+
+
+def test_build_europa_devuelve_el_oceano_como_placement_bonus():
+    colonies = new_colonies(["europa"])
+    _, placement_bonus = build_colony(colonies, "europa", "player-1")
+    assert placement_bonus == {"ocean": 1}
+
+
+def _player_with_hand(hand, deck):
+    from app.agent.rules_engine import new_player_state
+    return {**new_player_state(), "hand": list(hand), "deck": list(deck)}
+
+
+def test_draw_cards_then_require_discard_roba_y_anota_el_descarte():
+    from app.agent.rules_engine import draw_cards_then_require_discard
+    player = _player_with_hand(["a"], ["b", "c"])
+    new_player = draw_cards_then_require_discard(player, 1)
+    assert new_player["hand"] == ["a", "b"]
+    assert new_player["deck"] == ["c"]
+    assert new_player["pending_card_discards"] == 1
+
+
+def test_resolve_pending_discards_puede_descartar_la_carta_recien_robada():
+    from app.agent.rules_engine import draw_cards_then_require_discard, resolve_pending_discards
+    player = draw_cards_then_require_discard(_player_with_hand(["a"], ["b"]), 1)
+    new_player = resolve_pending_discards(player, ["b"])
+    assert new_player["hand"] == ["a"]
+    assert new_player["pending_card_discards"] == 0
+
+
+def test_resolve_pending_discards_puede_descartar_una_carta_vieja():
+    from app.agent.rules_engine import draw_cards_then_require_discard, resolve_pending_discards
+    player = draw_cards_then_require_discard(_player_with_hand(["a"], ["b"]), 1)
+    new_player = resolve_pending_discards(player, ["a"])
+    assert new_player["hand"] == ["b"]
+
+
+def test_resolve_pending_discards_exige_la_cantidad_exacta():
+    from app.agent.rules_engine import (
+        CardEffectError, draw_cards_then_require_discard, resolve_pending_discards,
+    )
+    player = draw_cards_then_require_discard(_player_with_hand(["a"], ["b"]), 1)
+    with pytest.raises(CardEffectError):
+        resolve_pending_discards(player, [])
+    with pytest.raises(CardEffectError):
+        resolve_pending_discards(player, ["a", "b"])
+
+
+def test_resolve_pending_discards_sin_pendientes_falla():
+    from app.agent.rules_engine import CardEffectError, resolve_pending_discards
+    with pytest.raises(CardEffectError):
+        resolve_pending_discards(_player_with_hand(["a"], []), ["a"])
+
+
+def test_resolve_pending_discards_carta_ajena_falla():
+    from app.agent.rules_engine import (
+        CardNotInHandError, draw_cards_then_require_discard, resolve_pending_discards,
+    )
+    player = draw_cards_then_require_discard(_player_with_hand(["a"], ["b"]), 1)
+    with pytest.raises(CardNotInHandError):
+        resolve_pending_discards(player, ["z"])
+
+
+def test_resolve_pending_discards_con_mano_vacia_alcanza_con_nada():
+    from app.agent.rules_engine import draw_cards_then_require_discard, resolve_pending_discards
+    # Mazo vacio y mano vacia: no se robo nada y no hay que descartar nada
+    player = draw_cards_then_require_discard(_player_with_hand([], []), 1)
+    assert player["pending_card_discards"] == 1
+    assert resolve_pending_discards(player, [])["pending_card_discards"] == 0
+def test_add_colony_tile_agrega_sin_tocar_las_que_estan():
+    # Aridor (scan): "As your first action, put an additional Colony Tile of
+    # your choice into play." Agrega, no reemplaza: Callisto conserva su
+    # track y su dueno.
+    from app.agent.colonies import add_colony_tile
+    other = next(cid for cid in COLONY_DEFS if cid != "callisto")
+    colonies, _ = build_colony(new_colonies(["callisto"]), "callisto", "p1")
+    new = add_colony_tile(colonies, other)
+    assert new["callisto"] == colonies["callisto"]
+    assert new[other] == {"track_position": 1, "owners": [], "trade_fleet_present": False}
+    assert len(new) == 2
+
+
+def test_add_colony_tile_rechaza_repetida_o_desconocida():
+    from app.agent.colonies import add_colony_tile
+    colonies = new_colonies(["callisto"])
+    with pytest.raises(ValueError):
+        add_colony_tile(colonies, "callisto")
+    with pytest.raises(UnknownColonyError):
+        add_colony_tile(colonies, "no_existe")

@@ -155,12 +155,40 @@ class PlayerState(TypedDict):
     # Consultants). Se acumulan en place_ocean, se consumen con la tool
     # resolve_ocean_offer y se pierden al cerrar la generacion.
     pending_ocean_offers: int
+    # Cartas que el jugador ROBO con la obligacion de descartar despues (ej.
+    # colony bonus de Pluto: "roba 1 carta y descarta 1"). No se resuelve en
+    # el mismo paso porque el jugador tiene que ver lo robado antes de elegir
+    # que descartar: la anota draw_cards_then_require_discard y la salda
+    # resolve_pending_discards (tool del mismo nombre). A diferencia de
+    # pending_ocean_offers es una OBLIGACION, no una oferta: no se pierde al
+    # cerrar la generacion, y tools.play_card se niega a jugar cartas
+    # mientras quede alguna pendiente.
+    pending_card_discards: int
+    # "As your first action..." de la corporacion elegida, todavia sin
+    # resolver: {"corporation_id": str, "type": str} o None. Lo anota
+    # choose_corporation (register_corporation_first_action) y lo consume
+    # tools.resolve_corporation_first_action, SIN COSTO.
+    pending_corporation_first_action: dict | None
     # True si el jugador subio su TR en lo que va de esta generacion.
     # Lo marca _raise_tr y lo limpia run_production_phase (ver ambas).
     tr_raised_this_generation: bool
     # True si Preservation Program ya anulo su primer paso de TR de la
     # generacion. Limpiado junto con tr_raised_this_generation.
     tr_skip_used_this_generation: bool
+    # True si el jugador ya uso la Ruling Policy de Scientists esta
+    # generacion ("pay 10 M€ to draw 3 cards -- may only be used once per
+    # generation and player"). Limpiado en run_production_phase.
+    scientists_policy_used_this_generation: bool
+
+    # Reparto de preludes del SETUP (rulebook de Prelude: "you also deal 4
+    # Prelude cards to each player. The players choose 2 Prelude cards to
+    # keep..."), mismo patron dos-pasos que pending_research/hand:
+    #   pending_prelude_choice: las 4 repartidas, todavia sin elegir
+    #     (deal_prelude_hand).
+    #   prelude_hand: las 2 que el jugador se quedo y todavia no jugo
+    #     (keep_preludes); play_prelude las saca de aca al jugarlas.
+    pending_prelude_choice: list
+    prelude_hand: list
 
     # Igual que pending_mc_discount pero para relajar/endurecer (puede ser
     # negativo) los requisitos de temperatura/oxigeno/oceanos de la
@@ -212,6 +240,13 @@ class PlayerState(TypedDict):
     lobby_delegates: int
     reserve_delegates: int
 
+    # pending_prelude_draw: preludes reveladas "sobre la mesa" esperando que
+    # el jugador elija cual jugar ({"source": card_id, "options": [ids],
+    # "free_play": bool}; {} si no hay ninguna). Ver start_prelude_draw /
+    # take_pending_prelude (New Partner, Board of Directors, WG Project,
+    # Valley Trust).
+    pending_prelude_draw: dict
+
 
 class GlobalParameters(TypedDict):
     """Estado compartido del tablero central -- no pertenece a un jugador.
@@ -246,10 +281,15 @@ def new_player_state() -> PlayerState:
         active_cards={}, tags_played={}, passive_effects=[],
         deck=[], hand=[], pending_research=[], played_cards=[],
         pending_mc_discount=0, pending_requirement_tolerance_steps=0, pending_ocean_offers=0,
+        pending_card_discards=0,
+        pending_corporation_first_action=None,
         tr_raised_this_generation=False, tr_skip_used_this_generation=False,
+        scientists_policy_used_this_generation=False,
+        pending_prelude_choice=[], prelude_hand=[],
         reserved_cards={}, zero_tag_cards_played=0,
         colonies_owned=[], trade_fleets=1, trade_fleets_used=0,
         lobby_delegates=1, reserve_delegates=6,
+        pending_prelude_draw={},
     )
 
 
@@ -438,6 +478,76 @@ def place_ocean(player: PlayerState, globals_: GlobalParameters) -> tuple[Player
     if any("on_ocean_placed_offer" in effect for effect in player["passive_effects"]):
         new_player["pending_ocean_offers"] = new_player["pending_ocean_offers"] + 1
     return PlayerState(**new_player), new_globals  # type: ignore[typeddict-item]
+
+
+def resolve_ocean_offer(
+    player: PlayerState, card_id: str, steel_to_pay: int = 0, ruling_party: str | None = None,
+) -> PlayerState:
+    """
+    Cobra UNA de las ofertas opcionales que dejo place_ocean en
+    `pending_ocean_offers` (pasivo "on_ocean_placed_offer" de `card_id`).
+
+    Ej. Neptunian Power Consultants (X61, texto literal del scan): "When any
+    ocean is placed, you MAY spend 5 M€ (steel may be used), to raise your
+    energy production 1 step and add 1 hydroelectric resource here."
+
+    Pago: `steel_to_pay` (solo si la oferta trae `allow_steel`) vale
+    `compute_conversion_rates(player, ruling_party)[0]` M€ cada uno; el resto
+    sale de MC. Sin reembolso por sobrepago (mismo criterio que
+    calculate_card_payment). `ruling_party` se pasa por consistencia con los
+    demas caminos de pago: la Ruling Policy de Unity ("Your titanium
+    resources are worth 1 M€ extra") solo toca el TITANIO, asi que hoy no
+    cambia el valor del acero de esta oferta -- pero si una oferta futura
+    permitiera titanio, ya veria la subida sin otro cableado.
+
+    La produccion sube por `_increase_production` (asi Manutech cobra el
+    recurso de stock correspondiente, igual que en cualquier otro aumento).
+
+    Lanza ValueError si no hay ofertas pendientes, si la carta no ofrece
+    nada, si declara acero en una oferta que no lo permite o si la carta no
+    esta activa; InsufficientResourcesError si no alcanza el pago.
+    """
+    if player["pending_ocean_offers"] < 1:
+        raise ValueError("No hay ofertas pendientes por colocacion de oceano")
+    offer = next(
+        (
+            e["on_ocean_placed_offer"] for e in player["passive_effects"]
+            if "on_ocean_placed_offer" in e and e.get("card_id") == card_id
+        ),
+        None,
+    )
+    if offer is None:
+        raise ValueError(f"La carta '{card_id}' no tiene una oferta por colocacion de oceano")
+    if steel_to_pay < 0:
+        raise ValueError("steel_to_pay no puede ser negativo")
+    if steel_to_pay and not offer.get("allow_steel"):
+        raise ValueError(f"La oferta de '{card_id}' no permite pagar con acero")
+    if player["steel"] < steel_to_pay:
+        raise InsufficientResourcesError(
+            f"El jugador tiene {player['steel']} de acero, declaro pagar {steel_to_pay}"
+        )
+    steel_value_mc, _ = compute_conversion_rates(player, ruling_party)
+    mc_needed = max(0, offer.get("cost_mc", 0) - steel_to_pay * steel_value_mc)
+    if player["mc"] < mc_needed:
+        raise InsufficientResourcesError(f"Se necesitan {mc_needed} MC, hay {player['mc']}")
+
+    new_player: dict = {
+        **player,
+        "mc": player["mc"] - mc_needed,
+        "steel": player["steel"] - steel_to_pay,
+        "pending_ocean_offers": player["pending_ocean_offers"] - 1,
+    }
+    for key, delta in offer.get("production_deltas", {}).items():
+        new_player = _increase_production(new_player, key, delta)
+    if offer.get("card_resource_delta"):
+        active = new_player["active_cards"]
+        if card_id not in active:
+            raise ValueError(f"La carta '{card_id}' no esta activa para este jugador")
+        new_player["active_cards"] = {
+            **active,
+            card_id: {**active[card_id], "resources": active[card_id]["resources"] + offer["card_resource_delta"]},
+        }
+    return PlayerState(**new_player)  # type: ignore[typeddict-item]
 
 
 def place_city_tile(globals_: GlobalParameters) -> GlobalParameters:
@@ -676,6 +786,7 @@ def run_production_phase(player: PlayerState, energy_to_convert: int | None = No
         # Arranca la generacion nueva sin TR subido (ver _raise_tr).
         "tr_raised_this_generation": False,
         "tr_skip_used_this_generation": False,
+        "scientists_policy_used_this_generation": False,
     }
 
 
@@ -2275,6 +2386,7 @@ def use_card_action(
     titanium_to_pay: int = 0,
     steel_to_pay: int = 0,
     discard_card_id: str | None = None,
+    ruling_party: str | None = None,
 ) -> tuple[PlayerState, GlobalParameters]:
     """
     Ejecuta la accion repetible de una carta activa (columna `effects.action`
@@ -2540,7 +2652,7 @@ def use_card_action(
                 raise InsufficientResourcesError(
                     f"Se necesita {titanium_to_pay} de titanio, hay {new_player['titanium']}"
                 )
-            _, titanium_value_mc = compute_conversion_rates(PlayerState(**new_player))  # type: ignore[typeddict-item]
+            _, titanium_value_mc = compute_conversion_rates(PlayerState(**new_player), ruling_party)  # type: ignore[typeddict-item]
             mc_needed = max(0, amount - titanium_to_pay * titanium_value_mc)
             if new_player["mc"] < mc_needed:
                 raise InsufficientResourcesError(f"Se necesita {mc_needed} de MC, hay {new_player['mc']}")
@@ -2555,7 +2667,7 @@ def use_card_action(
                 raise InsufficientResourcesError(
                     f"Se necesita {steel_to_pay} de acero, hay {new_player['steel']}"
                 )
-            steel_value_mc, _ = compute_conversion_rates(PlayerState(**new_player))  # type: ignore[typeddict-item]
+            steel_value_mc, _ = compute_conversion_rates(PlayerState(**new_player), ruling_party)  # type: ignore[typeddict-item]
             mc_needed = max(0, amount - steel_to_pay * steel_value_mc)
             if new_player["mc"] < mc_needed:
                 raise InsufficientResourcesError(f"Se necesita {mc_needed} de MC, hay {new_player['mc']}")
@@ -3186,17 +3298,28 @@ def register_passive_effect(player: PlayerState, card_id: str, passive: dict) ->
     return {**player, "passive_effects": [*player["passive_effects"], {"card_id": card_id, **passive}]}
 
 
-def compute_conversion_rates(player: PlayerState) -> tuple[int, int]:
+def compute_conversion_rates(player: PlayerState, ruling_party: str | None = None) -> tuple[int, int]:
     """
     Devuelve (steel_value_mc, titanium_value_mc) sumando los bonus de todos
     los efectos pasivos activos del jugador a las constantes oficiales
     (ej. con Advanced Alloys en juego: 2+1=3 MC por acero, 3+1=4 por titanio).
+
+    `ruling_party`: si es "unity", suma +1 al titanio -- Ruling Policy de
+    Turmoil, rulebook oficial pagina 6: "Titanium is worth 1 M€ extra",
+    activa solo mientras Unity gobierna. `None` (default) para partidas sin
+    Turmoil o cuando el caller no cargo el estado de Turmoil. El ACERO no
+    cambia con Unity (la policy no lo nombra; mismo texto en la
+    implementacion open-source de referencia, UnityPolicy01: "Your titanium
+    resources are worth 1 M€ extra"), ni se restringe a ciertos tipos de
+    carta: aplica a todo pago con titanio.
     """
     steel_value = STEEL_VALUE_MC
     titanium_value = TITANIUM_VALUE_MC
     for effect in player["passive_effects"]:
         steel_value += effect.get("steel_value_bonus", 0)
         titanium_value += effect.get("titanium_value_bonus", 0)
+    if ruling_party == "unity":
+        titanium_value += 1
     return steel_value, titanium_value
 
 
@@ -3425,6 +3548,53 @@ def apply_become_party_leader_bonus(player: PlayerState) -> PlayerState:
     return draw_cards_to_hand(player, cards_to_draw)
 
 
+def apply_ruling_bonus(player: PlayerState, ruling_party: str) -> PlayerState:
+    """
+    Ruling Bonus de Turmoil (rulebook oficial, pagina 6, TM_TURMOIL_ENG_RULES
+    -- texto literal transcrito y verificado, no de memoria): un pago UNICO
+    a TODOS los jugadores (en este motor de un jugador, solo a este) cada
+    vez que un partido se vuelve Ruling (New Government, paso 3b). Seis
+    formulas, una por partido:
+
+      - mars_first: "1 M€ for each building tag they have" -> tags_played
+        de building.
+      - kelvinists: "1 M€ for each heat production they have" -> el VALOR
+        de heat_production (no un tag, la produccion en si).
+      - reds: "The player with lowest TR gains 1 TR. Ties are friendly. In
+        solo, you receive 1 TR if you have TR 20 or below" -- la regla
+        aclara explicitamente el caso de UN jugador: no hay "el mas bajo"
+        que comparar, se usa el umbral fijo TR<=20.
+      - greens: "1 M€ for each plant tag, microbe tag, and animal tag" ->
+        suma de las tres.
+      - scientists: "1 M€ for each science tag they have".
+      - unity: "1 M€ for each Venus tag, Earth tag, and Jovian tag" -> suma
+        de las tres.
+
+    Llamado UNA vez por generacion, solo cuando el partido Ruling
+    efectivamente CAMBIO (tools.resolve_new_government compara el
+    `ruling_party` de antes/despues) -- si no hubo Dominante todavia, no
+    hay cambio de gobierno y esta funcion no se llama.
+    """
+    tags = player["tags_played"]
+    if ruling_party == "mars_first":
+        bonus = tags.get("building", 0)
+    elif ruling_party == "kelvinists":
+        bonus = player["heat_production"]
+    elif ruling_party == "greens":
+        bonus = tags.get("plant", 0) + tags.get("microbe", 0) + tags.get("animal", 0)
+    elif ruling_party == "scientists":
+        bonus = tags.get("science", 0)
+    elif ruling_party == "unity":
+        bonus = tags.get("venus", 0) + tags.get("earth", 0) + tags.get("jovian", 0)
+    elif ruling_party == "reds":
+        return _raise_tr(dict(player), 1) if player["tr"] <= 20 else player  # type: ignore[return-value]
+    else:
+        raise ValueError(f"Partido desconocido: '{ruling_party}'")
+    if not bonus:
+        return player
+    return {**player, "mc": player["mc"] + bonus}  # type: ignore[return-value]
+
+
 def apply_card_played_vp_icon_bonus(player: PlayerState, played_card_id: str) -> PlayerState:
     """
     Aplica el pasivo "on_card_played_with_vp_icon": {"mc_delta": N,
@@ -3567,6 +3737,90 @@ def apply_corporation_start(player: PlayerState, starting_mc: int) -> PlayerStat
         "mc_production": 0, "steel_production": 0, "titanium_production": 0,
         "plant_production": 0, "energy_production": 0, "heat_production": 0,
     })  # type: ignore[typeddict-item]
+
+
+# "As your first action..." de una corporacion: tipos que el motor sabe
+# resolver SIN COSTO (ver register_corporation_first_action y
+# tools.resolve_corporation_first_action). Cada uno es el texto literal de un
+# scan: Philares ("place a greenery tile and raise the oxygen 1 step"),
+# Tharsis Republic ("place a city tile"), Aridor ("put an additional Colony
+# Tile of your choice into play"), Poseidon ("place a colony") y Arcadian
+# Communities ("place a community on a non-reserved area").
+CORPORATION_FIRST_ACTION_TYPES = (
+    "place_greenery", "place_city", "add_colony_tile", "build_colony", "place_community",
+    "reveal_preludes", "reveal_until_matching",
+)
+
+
+def register_corporation_first_action(
+    player: PlayerState, corporation_id: str, spec: dict | None
+) -> PlayerState:
+    """
+    Anota la "first action" de la corporacion como PENDIENTE en
+    `player.pending_corporation_first_action`. No la resuelve: las cinco
+    necesitan un dato que choose_corporation no tiene (hex_id, colony_id), y
+    son una ACCION del jugador (la primera de la partida), no parte del setup.
+    Mismo criterio que pending_ocean_offers: se anota aca y una tool aparte la
+    cobra despues.
+
+    `spec` es `effects.first_action` de la corporacion ({"type": ...}); None
+    no anota nada. Lanza ValueError si el tipo no es uno de
+    CORPORATION_FIRST_ACTION_TYPES.
+    """
+    if not spec:
+        return player
+    action_type = spec.get("type")
+    if action_type not in CORPORATION_FIRST_ACTION_TYPES:
+        raise ValueError(
+            f"first_action desconocida: '{action_type}' "
+            f"(validas: {', '.join(CORPORATION_FIRST_ACTION_TYPES)})"
+        )
+    return PlayerState(**{
+        **player,
+        "pending_corporation_first_action": {**spec, "corporation_id": corporation_id, "type": action_type},
+    })  # type: ignore[typeddict-item]
+
+
+def consume_corporation_first_action(player: PlayerState) -> tuple[PlayerState, dict]:
+    """
+    Saca la first action pendiente del jugador y la devuelve, para que el
+    llamador la resuelva. Se resuelve UNA sola vez: lanza ValueError si no hay
+    ninguna pendiente (ya se uso, o la corporacion no tiene first action).
+    """
+    pending = player.get("pending_corporation_first_action")
+    if not pending:
+        raise ValueError("El jugador no tiene ninguna first action de corporacion pendiente")
+    return PlayerState(**{**player, "pending_corporation_first_action": None}), dict(pending)  # type: ignore[typeddict-item]
+
+
+def corporation_first_action_greenery(
+    player: PlayerState, globals_: GlobalParameters
+) -> tuple[PlayerState, GlobalParameters]:
+    """
+    Philares: "place a greenery tile and raise the oxygen 1 step". Es la
+    mitad de standard_project_greenery que NO cobra: sube el oxigeno 1 paso
+    (+1 TR). El tile, su bonus de hex y los pasivos de greenery los aplica
+    tools._place_greenery_and_apply_bonus, igual que en el proyecto estandar.
+    Si el oxigeno ya estuviera al tope, se coloca el tile igual sin TR (regla
+    base: colocar un tile no depende de que el parametro pueda subir).
+    """
+    if globals_["oxygen"] >= OXYGEN_MAX:
+        return player, globals_
+    return raise_oxygen(player, globals_, steps=1)
+
+
+def corporation_first_action_city(
+    player: PlayerState, globals_: GlobalParameters
+) -> tuple[PlayerState, GlobalParameters]:
+    """
+    Tharsis Republic: "place a city tile". A diferencia de
+    standard_project_city NO cobra 25 M€ ni da el +1 de produccion de M€ del
+    proyecto estandar (esa produccion es del PROYECTO, no de colocar una
+    ciudad). Solo suma la ciudad al contador global; los pasivos de ciudad
+    (el +1 produccion / +3 M€ de la propia Tharsis) los aplica
+    tools._place_city_and_apply_bonus via apply_city_placed_bonuses.
+    """
+    return player, place_city_tile(globals_)
 
 
 OCEAN_ADJACENCY_BONUS_MC = 2   # M€ por cada oceano adyacente al colocar un tile
@@ -4125,6 +4379,308 @@ def draw_cards_to_hand(player: PlayerState, n: int) -> PlayerState:
     drawn = player["deck"][:n]
     remaining_deck = player["deck"][n:]
     return {**player, "deck": remaining_deck, "hand": [*player["hand"], *drawn]}
+
+
+def draw_cards_then_require_discard(player: PlayerState, n: int) -> PlayerState:
+    """
+    Roba `n` cartas a la mano y anota la obligacion de descartar `n` despues
+    (ej. colony bonus de Pluto: "+1 carta -1 carta" -- robar 1, despues
+    descartar 1 a eleccion). El descarte no se resuelve aca porque el
+    jugador tiene que ver la carta robada antes de elegir (puede descartar
+    justo esa): queda en `pending_card_discards` hasta que se llame a
+    resolve_pending_discards. Si el mazo tiene menos de `n`, roba las que
+    queden, pero el descarte sigue siendo de `n` (la carta impresa dice
+    descartar 1, no "descartar lo robado").
+    """
+    drawn = draw_cards_to_hand(player, n)
+    return {**drawn, "pending_card_discards": player.get("pending_card_discards", 0) + n}  # type: ignore[return-value]
+
+
+def resolve_pending_discards(player: PlayerState, card_ids: list[str]) -> PlayerState:
+    """
+    Salda la obligacion anotada por draw_cards_then_require_discard: saca
+    de la mano exactamente `pending_card_discards` cartas (las elegidas en
+    `card_ids`, pueden ser cualquiera de la mano, incluida la recien
+    robada). Excepcion: si la mano tiene MENOS cartas que el descarte
+    pendiente, alcanza con descartar la mano entera (no se puede descartar
+    lo que no hay).
+
+    Lanza CardEffectError si no hay descarte pendiente o la cantidad no
+    coincide, CardNotInHandError si alguna carta no esta en la mano.
+    """
+    pending = player.get("pending_card_discards", 0)
+    if pending <= 0:
+        raise CardEffectError("El jugador no tiene descartes pendientes")
+    required = min(pending, len(player["hand"]))
+    if len(card_ids) != required:
+        raise CardEffectError(f"Hay que descartar exactamente {required} carta(s), se eligieron {len(card_ids)}")
+    new_player = player
+    for cid in card_ids:
+        new_player = remove_card_from_hand(new_player, cid)
+    return {**new_player, "pending_card_discards": 0}  # type: ignore[return-value]
+
+
+def reveal_top_cards_take_tag(
+    player: PlayerState, n: int, card_tags: dict[str, list[str]], tag: str,
+) -> PlayerState:
+    """
+    Revela las `n` cartas del tope del mazo: las que tienen `tag` pasan
+    GRATIS a la mano, y el resto queda en `pending_research` para que el
+    jugador decida comprarlas (3 M€ c/u, mismo precio y mismos modificadores
+    que la investigacion -- Polyphemos/TerraLabs) o descartarlas, cerrando
+    con el resolve_research_phase de siempre.
+
+    Ej. Venus Orbital Survey (P88): "Action: reveal the top 2 cards. Take any
+    Venus cards to hand for free. Any other card you either buy or discard."
+
+    `card_tags`: {card_id: [tags]} de (al menos) las cartas reveladas, lo
+    pasa tools.py desde el catalogo -- el motor no lo conoce. El tag "wild"
+    NO cuenta (solo vale para requisitos, ver check_card_requirements). Si el
+    mazo tiene menos de `n` cartas, revela las que queden.
+
+    Lanza CardEffectError si ya hay una investigacion pendiente sin resolver
+    (mismo criterio que start_research_phase: no se mezclan dos "mesas").
+    """
+    if player["pending_research"]:
+        raise CardEffectError(
+            "Ya hay cartas pendientes de comprar/descartar -- resolvelas antes de revelar otras"
+        )
+    revealed = player["deck"][:n]
+    taken = [cid for cid in revealed if tag in (card_tags.get(cid) or [])]
+    rest = [cid for cid in revealed if cid not in taken]
+    return {
+        **player,
+        "deck": player["deck"][n:],
+        "hand": [*player["hand"], *taken],
+        "pending_research": rest,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Robo de preludes "revela N, jugá 1" (New Partner, Board of Directors, WG
+# Project, Valley Trust)
+# ---------------------------------------------------------------------------
+# No hay mazo persistente de preludes: el sorteo sale del catalogo completo
+# (`prelude_cards`) menos las que el jugador ya jugo. Lo que si se persiste
+# es la "mesa": `pending_prelude_draw` = {"source": card_id, "options": [ids],
+# "free_play": bool} ({} si no hay nada pendiente), para que la prelude que
+# despues se juega sea de verdad una de las reveladas. `free_play=False`
+# marca un robo cuyo "jugarla" tiene costo propio (Board of Directors: 12
+# M€ + 1 director) y por lo tanto se resuelve por la accion de esa carta,
+# no gratis.
+
+def prelude_draw_candidates(
+    catalog_prelude_ids: list[str], played_cards: list[str], exclude: tuple[str, ...] = (),
+) -> list[str]:
+    """Preludes que todavia se pueden revelar: el catalogo menos las ya
+    jugadas por el jugador y menos `exclude`, conservando el orden."""
+    blocked = set(played_cards) | set(exclude)
+    return [pid for pid in catalog_prelude_ids if pid not in blocked]
+
+
+def start_prelude_draw(
+    player: PlayerState, source_card_id: str, revealed_ids: list[str], free_play: bool = True,
+) -> PlayerState:
+    """
+    Deja las preludes reveladas "sobre la mesa" (`pending_prelude_draw`).
+    Lanza CardEffectError si ya hay un robo pendiente de OTRA carta: hay que
+    resolverlo antes (resolve_prelude_draw). Un robo pendiente de la MISMA
+    carta se pisa -- es el "discard" implicito de Board of Directors cuando
+    vuelve a usar su accion en otra generacion sin haber jugado la anterior.
+    """
+    pending = player.get("pending_prelude_draw") or {}
+    if pending and pending.get("source") != source_card_id:
+        raise CardEffectError(
+            f"Ya hay preludes reveladas pendientes de '{pending.get('source')}' "
+            f"({pending.get('options')}) -- resolvelas antes de revelar otras"
+        )
+    return {
+        **player,
+        "pending_prelude_draw": {
+            "source": source_card_id, "options": list(revealed_ids), "free_play": free_play,
+        },
+    }
+
+
+def take_pending_prelude(
+    player: PlayerState, prelude_id: str | None, source_card_id: str | None = None,
+    require_free_play: bool | None = None,
+) -> PlayerState:
+    """
+    Cierra el robo pendiente: valida que `prelude_id` sea una de las
+    reveladas y limpia la mesa (las demas se descartan). `prelude_id=None`
+    descarta todas. Jugarla de verdad lo hace tools.py despues
+    (play_prelude), con el camino normal de siempre.
+
+    `source_card_id`: si se pasa, exige que el robo pendiente venga de esa
+    carta (Board of Directors cobrando su rama "pay 12 M€ to play it").
+    `require_free_play`: si se pasa, exige que el flag `free_play` del robo
+    coincida -- resolve_prelude_draw pasa True para no dejar jugar GRATIS lo
+    que Board of Directors revelo con costo.
+
+    Lanza CardEffectError si no hay robo pendiente, si viene de otra carta,
+    si `free_play` no coincide, o si `prelude_id` no esta entre las opciones.
+    """
+    pending = player.get("pending_prelude_draw") or {}
+    if not pending:
+        raise CardEffectError("No hay preludes reveladas pendientes de resolver")
+    if source_card_id is not None and pending.get("source") != source_card_id:
+        raise CardEffectError(
+            f"Las preludes pendientes las revelo '{pending.get('source')}', no '{source_card_id}'"
+        )
+    if (
+        prelude_id is not None and require_free_play is not None
+        and bool(pending.get("free_play", True)) != require_free_play
+    ):
+        raise CardEffectError(
+            f"Las preludes que revelo '{pending.get('source')}' no se juegan gratis -- "
+            f"se resuelven con la accion de esa carta"
+        )
+    if prelude_id is not None and prelude_id not in pending.get("options", []):
+        raise CardEffectError(
+            f"'{prelude_id}' no esta entre las preludes reveladas ({pending.get('options')})"
+        )
+    return {**player, "pending_prelude_draw": {}}
+def reveal_cards_until_matching(
+    player: PlayerState, matching_card_ids: list[str] | set[str], n: int,
+) -> tuple[PlayerState, list[str], list[str]]:
+    """
+    Revela cartas del tope del mazo (deck[0], deck[1], ...) hasta haber
+    revelado `n` que esten en `matching_card_ids`. Las que coinciden van a la
+    MANO (gratis); las demas reveladas se descartan (salen del mazo y no
+    vuelven -- este motor no modela pila de descarte, mismo criterio que
+    resolve_research_phase). Si el mazo se agota antes, el jugador se queda
+    con las que haya encontrado (no es un error).
+
+    Celestic: "As your first action, reveal cards from the deck until you
+    have revealed 2 cards with a floater icon on it. Take those 2 cards into
+    hand, and discard the rest." El "icono de floater" no es un tag ni vive en
+    `effects`: el predicado llega como una lista CERRADA y verificada contra
+    los scans (`first_action.card_ids` de la fila de la corporacion, tipo
+    `reveal_until_matching`), mismo criterio que `excluded_card_ids` de Vitor.
+
+    Devuelve (player_nuevo, reveladas_en_orden, tomadas).
+    """
+    if n < 0:
+        raise ValueError(f"n debe ser >= 0, se paso {n}")
+    matching = set(matching_card_ids)
+    revealed: list[str] = []
+    kept: list[str] = []
+    for card_id in player["deck"]:
+        if len(kept) >= n:
+            break
+        revealed.append(card_id)
+        if card_id in matching:
+            kept.append(card_id)
+    remaining_deck = player["deck"][len(revealed):]
+    return (
+        {**player, "deck": remaining_deck, "hand": [*player["hand"], *kept]},
+        revealed,
+        kept,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reparto de preludes del setup (expansion Prelude).
+# Rulebook oficial de Prelude (TM_PRELUDE_ENG_RULES, fryxgames.se), "Prelude
+# cards": "When you deal cards in the setup (...step 5), you also deal 4
+# Prelude cards to each player. The players choose 2 Prelude cards to keep at
+# the same time as choosing corporations and project cards (step 6). The
+# Prelude cards do not cost anything to keep. After all corporations have
+# been played (...step 7), there is an extra round (step 7b) where each player
+# plays their pair of picked Prelude cards (...), and discards their
+# remaining 2 Prelude cards."
+# ---------------------------------------------------------------------------
+
+PRELUDES_DEALT_AT_SETUP = 4
+PRELUDES_KEPT_AT_SETUP = 2
+
+
+def draw_random_preludes(
+    candidate_ids: list[str], n: int, exclude: list[str] | set[str] = (),
+    rng: random.Random | None = None,
+) -> list[str]:
+    """
+    Sortea `n` preludes distintas al azar de `candidate_ids` (tipicamente
+    todo `prelude_cards.id`), sin repetir y sin las de `exclude` (ej. las que
+    el jugador ya jugo). Helper chico y aislado a proposito: es el mismo
+    "sorteo" que hacen New Partner / Board of Directors en tools.py, para que
+    se pueda unificar despues. `rng` inyectable para tests deterministicos.
+    Si hay menos candidatas que `n`, devuelve todas las que haya.
+    """
+    excluded = set(exclude)
+    pool = [cid for cid in dict.fromkeys(candidate_ids) if cid not in excluded]
+    (rng or random).shuffle(pool)
+    return pool[:n]
+
+
+def deal_prelude_hand(
+    player: PlayerState, all_prelude_ids: list[str], n: int = PRELUDES_DEALT_AT_SETUP,
+    rng: random.Random | None = None,
+) -> PlayerState:
+    """
+    Reparte `n` preludes al azar (4 por regla oficial) a
+    `pending_prelude_choice`, sin repetir y sin incluir las que el jugador ya
+    jugo. Analoga a deal_starting_hand, pero para el mazo propio de preludes.
+    El jugador elige despues cuales quedarse con keep_preludes.
+
+    Lanza CardEffectError si ya hay un reparto pendiente o preludes en mano
+    (no se reparte dos veces por accidente).
+    """
+    if player["pending_prelude_choice"] or player["prelude_hand"]:
+        raise CardEffectError(
+            "El jugador ya tiene preludes repartidas -- no se puede repartir de nuevo"
+        )
+    dealt = draw_random_preludes(all_prelude_ids, n, exclude=player["played_cards"], rng=rng)
+    return {**player, "pending_prelude_choice": dealt}
+
+
+def keep_preludes(
+    player: PlayerState, prelude_ids: list[str], keep_count: int = PRELUDES_KEPT_AT_SETUP,
+) -> PlayerState:
+    """
+    Cierra el reparto de deal_prelude_hand: el jugador se queda EXACTAMENTE
+    con `keep_count` (2) de las repartidas, gratis ("The Prelude cards do not
+    cost anything to keep"); esas pasan a `prelude_hand` y el resto se
+    descarta. Si se repartieron menos que `keep_count` (catalogo agotado), se
+    exige quedarse con todas.
+
+    Lanza CardEffectError si no hay reparto pendiente, y ValueError si algun
+    id no estaba repartido, si hay repetidos o si la cantidad no es la exacta.
+    """
+    pending = player["pending_prelude_choice"]
+    if not pending:
+        raise CardEffectError("No hay preludes repartidas pendientes de elegir")
+    expected = min(keep_count, len(pending))
+    if len(set(prelude_ids)) != len(prelude_ids):
+        raise ValueError(f"Preludes repetidas en la eleccion: {prelude_ids}")
+    if len(prelude_ids) != expected:
+        raise ValueError(
+            f"Hay que quedarse con exactamente {expected} preludes, se eligieron {len(prelude_ids)}"
+        )
+    for prelude_id in prelude_ids:
+        if prelude_id not in pending:
+            raise ValueError(f"'{prelude_id}' no estaba entre las repartidas ({pending})")
+    return {
+        **player,
+        "prelude_hand": [*player["prelude_hand"], *prelude_ids],
+        "pending_prelude_choice": [],
+    }
+
+
+def remove_prelude_from_hand(player: PlayerState, prelude_id: str) -> PlayerState:
+    """
+    Saca `prelude_id` de `prelude_hand` al jugarla. NO exige que este ahi:
+    play_prelude tambien se usa para preludes que no vienen del reparto del
+    setup (New Partner, Double Down, Board of Directors, partidas sin
+    reparto), asi que si no esta, devuelve el jugador sin cambios.
+    """
+    hand = player.get("prelude_hand") or []
+    if prelude_id not in hand:
+        return player
+    new_hand = list(hand)
+    new_hand.remove(prelude_id)
+    return {**player, "prelude_hand": new_hand}
 
 
 def remove_card_from_hand(player: PlayerState, card_id: str) -> PlayerState:

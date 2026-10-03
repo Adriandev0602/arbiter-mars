@@ -90,13 +90,33 @@ do $$ begin
     alter table if exists players add column if not exists lobby_delegates integer not null default 1;
     alter table if exists players add column if not exists reserve_delegates integer not null default 6;
     alter table if exists players add column if not exists pending_ocean_offers integer not null default 0;
+    alter table if exists players add column if not exists pending_card_discards integer not null default 0;
     alter table if exists players add column if not exists tr_raised_this_generation boolean not null default false;
     alter table if exists players add column if not exists tr_skip_used_this_generation boolean not null default false;
+    alter table if exists players add column if not exists scientists_policy_used_this_generation boolean not null default false;
+    -- Reparto de preludes del setup (deal_prelude_hand / keep_preludes).
+    alter table if exists players add column if not exists pending_prelude_choice jsonb not null default '[]'::jsonb;
+    alter table if exists players add column if not exists prelude_hand jsonb not null default '[]'::jsonb;
+exception when undefined_table then null;
+end $$;
+
+-- "As your first action..." de la corporacion, pendiente hasta resolverla con
+-- tools.resolve_corporation_first_action: {"corporation_id", "type"} o null.
+do $$ begin
+    alter table if exists players add column if not exists pending_corporation_first_action jsonb;
 exception when undefined_table then null;
 end $$;
 
 do $$ begin
     alter table if exists global_parameters add column if not exists turmoil jsonb not null default '{}'::jsonb;
+exception when undefined_table then null;
+end $$;
+
+-- Robo de preludes "revela N, juga 1" (New Partner, Board of Directors, WG
+-- Project, Valley Trust). Ver rules_engine.start_prelude_draw /
+-- take_pending_prelude y tools.resolve_prelude_draw.
+do $$ begin
+    alter table if exists players add column if not exists pending_prelude_draw jsonb not null default '{}'::jsonb;
 exception when undefined_table then null;
 end $$;
 
@@ -198,6 +218,23 @@ create table if not exists players (
     -- reserve_delegates arranca en 6 -- 7 delegados totales, setup oficial.
     lobby_delegates integer not null default 1,
     reserve_delegates integer not null default 6,
+
+    -- Expansion Prelude, reparto del setup: 4 repartidas (pending_prelude_choice),
+    -- 2 elegidas y todavia sin jugar (prelude_hand). Ver rules_engine.deal_prelude_hand.
+    pending_prelude_choice jsonb not null default '[]'::jsonb,
+    prelude_hand jsonb not null default '[]'::jsonb,
+
+    -- Columnas que hasta ahora solo vivian en las migraciones del principio
+    -- del archivo: en una base NUEVA esos `alter table if exists` corren
+    -- antes de que exista la tabla (no-op), asi que tambien tienen que estar
+    -- aca. Ver PlayerState en rules_engine.py para el significado de cada una.
+    pending_ocean_offers integer not null default 0,
+    pending_card_discards integer not null default 0,
+    pending_corporation_first_action jsonb,
+    pending_prelude_draw jsonb not null default '{}'::jsonb,
+    tr_raised_this_generation boolean not null default false,
+    tr_skip_used_this_generation boolean not null default false,
+    scientists_policy_used_this_generation boolean not null default false,
 
     created_at timestamptz not null default now()
 );

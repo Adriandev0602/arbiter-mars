@@ -2464,3 +2464,67 @@ update cards set tags = '{power,building}' where id = 'tectonic_stress_power';
 --    derecha del scan esta vacia en ambas).
 update cards set tags = '{}' where id = 'aerial_lenses';
 update cards set tags = '{}' where id = 'trade_envoys';
+
+-- T11 Recruitment (Turmoil), cargada (2026-09-10): cierra la unica fila que
+-- quedaba en la tabla "Pendientes" de CARDS_LOG.md. "Exchange one NEUTRAL
+-- NON-LEADER delegate with one of your own from the reserve" en el partido
+-- que el jugador elija. Necesito una pieza nueva de infraestructura,
+-- delegados NEUTRALES por partido (turmoil.PartyState.neutral,
+-- turmoil.exchange_neutral_delegate) -- turmoil.py documentaba
+-- explicitamente que no los modelaba. Cantidad inicial fija (2 por partido,
+-- turmoil.STARTING_NEUTRAL_DELEGATES) elegida como supuesto de diseño
+-- razonable para el modo un jugador, NO un dato verificado contra el
+-- reglamento oficial (que fija la cantidad segun numero de jugadores, algo
+-- que este proyecto no modela). Ver "T11 Recruitment" en CARDS_LOG.md.
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'recruitment', 'Recruitment', 2, '{}', null,
+        '{"exchange_neutral_delegate": true}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update cards set is_event = true where id = 'recruitment';
+
+update card_review_queue set card_id = 'recruitment' where scan_number = 'T11';
+
+-- Las 3 cartas "dudosas" que no estaban en el seed (2026-10-02), cada una
+-- verificada contra su scan oficial (costo, tags arriba a la derecha,
+-- recuadro de requisito arriba a la izquierda, color del banner):
+--   * 210 Self-Replicating Robots (Promo): 7 M€, SIN tags (esquina superior
+--     derecha vacia), requiere 2 tags science (los 2 atomos del recuadro y
+--     el texto "Requires 2 science tags"), banner azul (activa). La
+--     mecanica de slot de reserva ya existia desde 2026-09-02
+--     (reserve_card_from_hand / duplicate_reserved_card, ver CARDS_LOG.md).
+--   * P88 Venus Orbital Survey (Venus Next/Prelude 2): 18 M€, tags venus +
+--     space (la "V" azul y el sol dorado), sin requisito, banner azul.
+--     Pieza nueva: gains.reveal_top_cards_take_tag en use_card_action
+--     (rules_engine.reveal_top_cards_take_tag + resolucion en tools.py).
+--   * P91 WG Project (Prelude 2/Turmoil): 9 M€, tag earth (globo
+--     terraqueo), requiere ser Chairman (icono del recuadro + texto),
+--     banner VERDE (automatizada, no evento). Pieza nueva:
+--     reveal_random_preludes en play_card (misma de New Partner), resuelta
+--     con la tool resolve_prelude_draw.
+insert into cards (id, name, cost, tags, requirements, effects) values
+    (
+        'self_replicating_robots', 'Self-Replicating Robots', 7, '{}',
+        '{"min_tag_count": {"tag": "science", "count": 2}}'::jsonb,
+        '{"becomes_active": true, "action": {"choice": [{"cost": {}, "gains": {"reserve_card_from_hand": {"requires_tag_any": ["space", "building"], "initial_resources": 2}}}, {"cost": {}, "gains": {"duplicate_reserved_card": true}}]}}'::jsonb
+    ),
+    (
+        'venus_orbital_survey', 'Venus Orbital Survey', 18, '{venus,space}', null,
+        '{"becomes_active": true, "action": {"cost": {}, "gains": {"reveal_top_cards_take_tag": {"n": 2, "tag": "venus"}}}}'::jsonb
+    ),
+    (
+        'wg_project', 'WG Project', 9, '{earth}',
+        '{"is_chairman": true}'::jsonb,
+        '{"reveal_random_preludes": {"n": 3}}'::jsonb
+    )
+on conflict (id) do update set
+    name = excluded.name, cost = excluded.cost, tags = excluded.tags,
+    requirements = excluded.requirements, effects = excluded.effects;
+
+update card_review_queue set reviewed = true, card_id = 'self_replicating_robots' where scan_number = '210';
+update card_review_queue set reviewed = true, card_id = 'venus_orbital_survey' where scan_number = 'P88';
+update card_review_queue set reviewed = true, card_id = 'wg_project' where scan_number = 'P91';

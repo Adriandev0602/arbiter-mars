@@ -21,8 +21,8 @@ primaria. Los numeros verificados de ahi:
 
 CATALOGO DE COLONIAS: el juego real tiene 11 Colony Tiles con nombre
 (Ganymede, Europa, Callisto, Titan, Enceladus, Triton, Miranda, Luna, Pluto,
-Ceres, Io). Hoy hay **9 cargadas**; faltan Pluto y Europa (ver la nota al
-final de COLONY_DEFS).
+Ceres, Io). Estan las **11 cargadas** (Pluto y Europa, las ultimas, el
+2026-10-02 -- ver su comentario en COLONY_DEFS).
 
 Callisto se habia cargado antes verificandola con dos fuentes independientes
 (el ejemplo trabajado del rulebook oficial, pagina 2, y un resumen de
@@ -42,7 +42,7 @@ Como leer un Colony Tile, por si hay que agregar mas:
     PRODUCCION; el mismo icono sin marco es recurso de stock (comparar
     Callisto, que da produccion, con Triton, que da 3 titanios de stock).
 """
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 BUILD_COLONY_COST_MC = 17
 TRADE_COST_MC = 9
@@ -56,6 +56,11 @@ class ColonyDef(TypedDict):
     id: str
     income_type: str  # clave de PlayerState que recibe el trade income (ej. "energy")
     track: list[int]  # valor de trade income en cada posicion del track, index 0..N
+    # OPCIONAL: clave de income DISTINTA en cada posicion del track (mismo
+    # largo que `track`). Si esta, pisa a `income_type` -- ver trade_income.
+    # Solo Europa la usa: "TRADE INCOME: Gain the indicated production", con
+    # una produccion distinta impresa en cada casilla.
+    income_types: NotRequired[list[str]]
     colony_bonus: dict  # {"<recurso>": N} -- se da a TODOS los duenos de la colonia al comerciar
     placement_bonus: dict  # {"<recurso>_production": N} -- se da UNA VEZ al construir
 
@@ -115,15 +120,39 @@ COLONY_DEFS: dict[str, ColonyDef] = {
         id="miranda", income_type="card_resource:animal", track=[0, 1, 1, 2, 2, 3, 3],
         colony_bonus={"cards": 1}, placement_bonus={"card_resource:animal": 1},
     ),
-    # PENDIENTES, las dos que no entran con este modelo (ver CARDS_LOG.md):
-    #   * Pluto: su colony bonus es "roba 1 carta y descarta 1", que necesita
-    #     que el jugador ELIJA cual descartar -- el income ("cards": robar X)
-    #     si entra, pero cargarla a medias seria peor que no cargarla.
-    #   * Europa: su trade income no es "X de un recurso" sino "gana la
-    #     PRODUCCION indicada", y cada casilla del track indica una produccion
-    #     distinta (MC, MC, energia, energia, plantas, plantas, plantas). Eso
-    #     rompe el tipo `track: list[int]` + `income_type: str`. Ademas su
-    #     placement bonus es COLOCAR UN OCEANO, no un recurso.
+    # Pluto y Europa (2026-10-02), las dos que no entraban en el modelo
+    # original. Transcritas de su scan, con el mismo metodo que las demas.
+    #   * Pluto: TRADE INCOME "X cartas" (track 0/1/2/2/3/3/4); COLONY BONUS
+    #     "+1 carta -1 carta" (roba 1 y DESPUES descarta 1, a eleccion del
+    #     jugador -- clave "cards_draw_then_discard", que deja la obligacion
+    #     anotada en player.pending_card_discards porque el jugador tiene que
+    #     ver la carta robada antes de elegir; ver
+    #     rules_engine.draw_cards_then_require_discard /
+    #     resolve_pending_discards); los 3 colony spots muestran DOS cartas
+    #     sin marco = robar 2 cartas (stock, no produccion).
+    "pluto": ColonyDef(
+        id="pluto", income_type="cards", track=[0, 1, 2, 2, 3, 3, 4],
+        colony_bonus={"cards_draw_then_discard": 1}, placement_bonus={"cards": 2},
+    ),
+    #   * Europa: TRADE INCOME "Gain the indicated production" -- cada casilla
+    #     del track tiene impreso un icono de PRODUCCION (marco marron) de 1
+    #     unidad: M€ 1, M€ 1, energia, energia, plantas, plantas, plantas. Se
+    #     modela con `income_types` (una clave por casilla) y `track` todo en
+    #     1. Los iconos de energia/plantas no traen numero impreso (un icono =
+    #     1 paso, igual que en el resto del juego); los de M€ traen "1".
+    #     COLONY BONUS: 1 M€ de stock (sin marco). Placement bonus: los 3
+    #     colony spots muestran un tile de OCEANO -- clave "ocean", que
+    #     tools.py resuelve colocando un oceano real en el tablero (TR, bonus
+    #     de hexagono, pasivos on_ocean_placed), igual que el proyecto
+    #     estandar Aquifer pero sin costo.
+    "europa": ColonyDef(
+        id="europa", income_type="production_by_position", track=[1, 1, 1, 1, 1, 1, 1],
+        income_types=[
+            "mc_production", "mc_production", "energy_production", "energy_production",
+            "plant_production", "plant_production", "plant_production",
+        ],
+        colony_bonus={"mc": 1}, placement_bonus={"ocean": 1},
+    ),
 }
 
 
@@ -155,13 +184,34 @@ def new_colonies(colony_ids: list[str]) -> Colonies:
     Colonies" en el rulebook: en single-player se sortean 4 y se eligen 3).
     El marcador blanco arranca en la 2da casilla del track (index 1): en los
     scans de las 9 colonias cargadas es la casilla resaltada con borde
-    blanco, y vale para todas ellas por igual (incluidas Titan, Enceladus y
-    Miranda, cuyo scan muestra el mismo resaltado en la segunda casilla).
+    blanco, y vale para todas ellas por igual (incluidas Titan, Enceladus,
+    Miranda, Pluto y Europa, cuyo scan muestra el mismo resaltado en la
+    segunda casilla).
     """
     for cid in colony_ids:
         if cid not in COLONY_DEFS:
             raise UnknownColonyError(f"Colonia '{cid}' no esta cargada en COLONY_DEFS")
     return {cid: ColonyTileState(track_position=1, owners=[], trade_fleet_present=False) for cid in colony_ids}
+
+
+def add_colony_tile(colonies: Colonies, colony_id: str) -> Colonies:
+    """
+    Pone UNA Colony Tile mas en juego, sin tocar las que ya estan (Aridor:
+    "as your first action, put an additional Colony Tile of your choice into
+    play"). Arranca igual que en new_colonies: marcador blanco en la 2da
+    casilla, sin duenos ni flota.
+
+    A diferencia de new_colonies (que reemplaza el set entero), esto agrega:
+    las colonias ya en juego conservan su track, sus duenos y sus flotas.
+
+    Lanza UnknownColonyError si no esta cargada en COLONY_DEFS, ValueError si
+    ya esta en juego.
+    """
+    if colony_id not in COLONY_DEFS:
+        raise UnknownColonyError(f"Colonia '{colony_id}' no esta cargada en COLONY_DEFS")
+    if colony_id in colonies:
+        raise ValueError(f"La colonia '{colony_id}' ya esta en juego")
+    return {**colonies, colony_id: ColonyTileState(track_position=1, owners=[], trade_fleet_present=False)}
 
 
 def build_colony(
@@ -201,6 +251,19 @@ def build_colony(
     return {**colonies, colony_id: new_tile}, dict(COLONY_DEFS[colony_id]["placement_bonus"])
 
 
+def trade_income(colony_id: str, track_position: int) -> tuple[str, int]:
+    """
+    (clave de income, cantidad) que da `colony_id` con el marcador en
+    `track_position`. Para casi todas las colonias la clave es fija
+    (`income_type`) y solo cambia la cantidad; Europa tiene una clave
+    distinta por casilla (`income_types`), siempre de 1 paso de produccion.
+    """
+    cdef = COLONY_DEFS[colony_id]
+    income_types = cdef.get("income_types")
+    key = income_types[track_position] if income_types else cdef["income_type"]
+    return key, cdef["track"][track_position]
+
+
 def trade_with_colony(colonies: Colonies, colony_id: str) -> tuple[Colonies, str, int, dict]:
     """
     Comercia con `colony_id`: da el trade income segun la posicion actual
@@ -222,12 +285,12 @@ def trade_with_colony(colonies: Colonies, colony_id: str) -> tuple[Colonies, str
     if tile["trade_fleet_present"]:
         raise ColonyOccupiedError(f"'{colony_id}' ya tiene una flota de comercio visitandola")
     cdef = COLONY_DEFS[colony_id]
-    income_amount = cdef["track"][tile["track_position"]]
+    income_type, income_amount = trade_income(colony_id, tile["track_position"])
     new_track_position = len(tile["owners"])
     new_tile = ColonyTileState(
         track_position=new_track_position, owners=tile["owners"], trade_fleet_present=True,
     )
-    return {**colonies, colony_id: new_tile}, cdef["income_type"], income_amount, dict(cdef["colony_bonus"])
+    return {**colonies, colony_id: new_tile}, income_type, income_amount, dict(cdef["colony_bonus"])
 
 
 def adjust_colony_track(colonies: Colonies, colony_id: str, delta: int) -> Colonies:
