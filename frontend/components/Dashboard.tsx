@@ -1,31 +1,61 @@
 "use client";
 
+import CardList from "@/components/CardList";
+import GlobalParameters from "@/components/GlobalParameters";
+import ResourcePanel from "@/components/ResourcePanel";
+import type { GameState, StateResponse } from "@/lib/api";
+
 /**
- * Panel principal: recursos disponibles, banderas condicionales activas e
- * historial de transacciones. Por ahora renderiza datos de ejemplo.
- *
- * TODO: reemplazar por un fetch real a GET /api/state/{playerId} (con
- * revalidacion cuando SidebarChat reciba una jugada aprobada).
+ * Panel principal: parametros globales de la partida, recursos del jugador y
+ * sus cartas. Solo pinta lo que devuelve la API (GET /api/game y
+ * /api/state/{id}); no calcula nada.
  */
-export default function Dashboard({ playerId }: { playerId: string }) {
+export default function Dashboard({
+  game,
+  state,
+  hasPlayer,
+}: {
+  game: GameState | null;
+  state: StateResponse | null;
+  hasPlayer: boolean;
+}) {
   return (
-    <div>
-      <h1 className="text-2xl font-semibold mb-4">Estado del jugador: {playerId}</h1>
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      {game && <GlobalParameters game={game} />}
 
-      <section className="mb-6">
-        <h2 className="text-lg font-medium mb-2">Recursos</h2>
-        <p className="text-gray-500 text-sm">TODO: pintar recursos reales desde Supabase</p>
-      </section>
+      {!hasPlayer && (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+          Elegí un jugador o creá uno nuevo arriba a la derecha para ver su estado.
+        </div>
+      )}
 
-      <section className="mb-6">
-        <h2 className="text-lg font-medium mb-2">Banderas condicionales activas</h2>
-        <p className="text-gray-500 text-sm">TODO</p>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-medium mb-2">Historial de transacciones</h2>
-        <p className="text-gray-500 text-sm">TODO</p>
-      </section>
+      {state && (
+        <>
+          <ResourcePanel player={state.player} />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <CardList
+              title="Mano"
+              emptyText="Sin cartas en la mano."
+              ids={state.player.hand}
+              cards={state.cards}
+            />
+            <CardList
+              title="Cartas activas"
+              emptyText="Ninguna carta con acción o recursos en juego."
+              ids={Object.keys(state.player.active_cards)}
+              cards={state.cards}
+              active={state.player.active_cards}
+            />
+          </div>
+          <CardList
+            title="Jugadas"
+            emptyText="Todavía no se jugó ninguna carta."
+            ids={state.player.played_cards}
+            cards={state.cards}
+            compact
+          />
+        </>
+      )}
     </div>
   );
 }

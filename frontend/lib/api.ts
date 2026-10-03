@@ -1,26 +1,109 @@
 /**
  * Cliente delgado hacia el backend. Centraliza la URL base y el manejo de
- * errores para no repetir fetch() sueltos por los componentes.
+ * errores para no repetir fetch() sueltos por los componentes. Ningun numero
+ * se calcula aca: todo sale tal cual de la API.
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export type ChatResponse = {
-  reply: string;
-  updated_state: Record<string, unknown> | null;
+export type PlayerSummary = {
+  id: string;
+  display_name: string;
+  tr: number;
+  created_at: string;
 };
 
-export async function sendChatMessage(playerId: string, message: string): Promise<ChatResponse> {
-  const res = await fetch(`${API_URL}/api/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ player_id: playerId, message }),
+export type ActiveCard = {
+  resources: number;
+  action_used: boolean;
+  resource_type?: string | null;
+};
+
+/** Forma de rules_engine.PlayerState (solo las claves que pinta el dashboard). */
+export type PlayerState = {
+  tr: number;
+  mc: number;
+  steel: number;
+  titanium: number;
+  plants: number;
+  energy: number;
+  heat: number;
+  mc_production: number;
+  steel_production: number;
+  titanium_production: number;
+  plant_production: number;
+  energy_production: number;
+  heat_production: number;
+  hand: string[];
+  played_cards: string[];
+  active_cards: Record<string, ActiveCard>;
+  tags_played: Record<string, number>;
+  [key: string]: unknown;
+};
+
+export type CardInfo = {
+  id: string;
+  name: string;
+  tags: string[];
+  kind: "cards" | "corporation_cards" | "prelude_cards";
+  cost?: number;
+  is_event?: boolean;
+};
+
+export type StateResponse = {
+  player: PlayerState;
+  cards: Record<string, CardInfo>;
+};
+
+export type GameState = {
+  global_parameters: {
+    temperature: number;
+    oxygen: number;
+    oceans_placed: number;
+    venus: number;
+    city_tiles_placed: number;
+  };
+  turmoil: {
+    ruling_party: string;
+    dominant_party: string | null;
+    chairman: string | null;
+    current_event: string | null;
+    coming_event: string | null;
+    distant_event: string | null;
+  };
+  colonies: string[];
+};
+
+export type ChatResponse = {
+  reply: string;
+  updated_state: PlayerState | null;
+};
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}/api${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
-
   if (!res.ok) {
-    throw new Error(`Chat request failed: ${res.status}`);
+    let detail = `${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    } catch {
+      // cuerpo no-JSON: nos quedamos con el status
+    }
+    throw new Error(detail);
   }
-
   return res.json();
 }
 
-// TODO: agregar getPlayerState(playerId) una vez que GET /api/state este implementado
+export const listPlayers = () => request<PlayerSummary[]>("/players");
+
+export const createPlayer = (displayName: string) =>
+  request<PlayerSummary>("/players", { method: "POST", body: JSON.stringify({ display_name: displayName }) });
+
+export const getPlayerState = (playerId: string) => request<StateResponse>(`/state/${playerId}`);
+
+export const getGame = () => request<GameState>("/game");
+
+export const sendChatMessage = (playerId: string, message: string) =>
+  request<ChatResponse>("/chat", { method: "POST", body: JSON.stringify({ player_id: playerId, message }) });

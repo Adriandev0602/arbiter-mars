@@ -24,7 +24,10 @@ llm_with_tools = llm.bind_tools(ALL_TOOLS)
 
 def call_model(state: AgentState) -> dict:
     """Nodo LLM: parsea intencion y decide si necesita llamar una tool."""
-    messages = [SystemMessage(content=SYSTEM_PROMPT), *state["messages"]]
+    # El player_id viaja en el estado del grafo, pero el LLM solo ve mensajes:
+    # sin esta linea no sabria para que jugador llamar las tools.
+    system = f"{SYSTEM_PROMPT}\nEl jugador de esta conversacion es player_id={state['player_id']}."
+    messages = [SystemMessage(content=system), *state["messages"]]
     response = llm_with_tools.invoke(messages)
     return {"messages": [response]}
 

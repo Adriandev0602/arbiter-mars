@@ -1,6 +1,6 @@
 """
-Contratos de la API (Pydantic). Lo que entra y sale de /api/chat y /api/state
-vive aqui, separado de los modelos internos del grafo.
+Contratos de la API (Pydantic). Lo que entra y sale de /api vive aqui,
+separado de los modelos internos del grafo.
 """
 from pydantic import BaseModel
 
@@ -17,20 +17,28 @@ class ChatResponse(BaseModel):
     updated_state: dict | None = None
 
 
-class PlayerState(BaseModel):
-    """Stock, produccion y TR de un jugador -- misma forma plana que
-    agent.rules_engine.PlayerState / tools.get_player_state()."""
+class CreatePlayerRequest(BaseModel):
+    display_name: str
+
+
+class PlayerSummary(BaseModel):
+    id: str
+    display_name: str
     tr: int
-    mc: int
-    steel: int
-    titanium: int
-    plants: int
-    energy: int
-    heat: int
-    mc_production: int
-    steel_production: int
-    titanium_production: int
-    plant_production: int
-    energy_production: int
-    heat_production: int
-    active_cards: dict
+    created_at: str
+
+
+class PlayerStateResponse(BaseModel):
+    # Misma forma que agent.rules_engine.PlayerState (stock, produccion, TR,
+    # mano, cartas activas, etc.); se deja como dict para no duplicar las
+    # ~40 claves del TypedDict.
+    player: dict
+    # card_id -> {id, name, tags, kind, cost?, is_event?} de las cartas que
+    # aparecen en mano / cartas activas / jugadas.
+    cards: dict[str, dict]
+
+
+class GameState(BaseModel):
+    global_parameters: dict
+    turmoil: dict
+    colonies: list[str]
