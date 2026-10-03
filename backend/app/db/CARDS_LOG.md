@@ -40,7 +40,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `martian_rails` | Martian Rails | 007 | 13 MC | Acción repetible: -1 energía → +1 MC por cada ciudad en Marte |
 | `space_elevator` | Space Elevator | 013 | 27 MC | +1 producción titanio; acción repetible: -1 steel → +5 MC |
 | `equatorial_magnetizer` | Equatorial Magnetizer | 015 | 11 MC | Acción repetible: -1 producción energía → +1 TR |
-| `water_import_from_europa` | Water Import from Europa | 012 | 25 MC | Acción repetible: -12 MC → coloca 1 océano |
+| `water_import_from_europa` | Water Import from Europa | 012 | 25 MC | Tags jovian+space. Acción repetible: -12 MC (**titanio permitido**, `mc_or_titanium`) → coloca 1 océano. **Corregida 2026-10-02** contra el scan: faltaba el tag `space` y la acción no aceptaba titanio |
 | `advanced_alloys` | Advanced Alloys | 071 | 9 MC | Pasivo permanente: steel y titanio valen +1 MC extra al pagar cartas |
 | `media_group` | Media Group | 109 | 6 MC | Pasivo permanente: +3 MC cada vez que se juega un evento |
 | `optimal_aerobraking` | Optimal Aerobraking | 031 | 7 MC | Pasivo permanente: +3 MC y +3 calor cada vez que se juega un evento con tag space |
@@ -279,7 +279,7 @@ de sección 6 de CLAUDE.md, no por falta de tiempo). Cuando dudes, extendé el m
 | `floater_prototypes` | Floater Prototypes | C11 | 2 MC | Tag science, evento. +2 floaters a OTRA carta activa elegida |
 | `floater_technology` | Floater Technology | C12 | 7 MC | Tag science. Acción repetible sin costo: +1 floater a OTRA carta activa elegida |
 | `galilean_waystation` | Galilean Waystation | C13 | 15 MC | Tag power. +1 producción MC por cada tag jovian jugado |
-| `heavy_taxation` | Heavy Taxation | C14 | 3 MC | Doble tag earth. Requiere 2 tags earth jugados. +4 MC, +2 producción MC |
+| `heavy_taxation` | Heavy Taxation | C14 | 3 MC | **UN** tag earth (**corregida 2026-10-02**: el "doble tag" era el requisito leído como tag). Requiere 2 tags earth jugados. +4 MC, +2 producción MC. Imprime **−1 VP** → agregada a `excluded_card_ids` de Vitor |
 | `ice_moon_colony` | Ice Moon Colony | C15 | 23 MC | Tag power. Construye 1 colonia (pieza nueva `build_colony`) y coloca 1 océano |
 | `impactor_swarm` | Impactor Swarm | C16 | 11 MC | Doble tag jovian, evento. Requiere 2 tags jovian jugados. +12 calor (cláusula "remove up to 2 plants from any player" omitida) |
 | `interplanetary_colony_ship` | Interplanetary Colony Ship | C17 | 12 MC | Tags earth+power, evento. Construye 1 colonia |
@@ -1397,6 +1397,9 @@ que usan corporaciones/preludes):
 - `bribed_committee` (112, Corporate Era): **-2 VP fija**, evento "raise TR 2 steps, -2 VP".
 - `vermin` (X75, Promo): **-1 VP condicional** por cada ciudad, SI hay 10+ animales guardados en
   la propia carta — el ícono no es un número fijo sino una fórmula, pero el signo es negativo.
+- `heavy_taxation` (C14, Colonies): **-1 VP fija**. Agregada el 2026-10-02, al verificar su scan
+  por otro motivo (tenía un tag `earth` de más). **Prueba directa de que la lista no era
+  exhaustiva**: hay que auditar los VP negativos del catálogo entero (ver abajo).
 
 **Esta lista NO es necesariamente exhaustiva.** Se armó cruzando el propio historial del proyecto
 (estas tres ya estaban anotadas con "VP no trackeado" en tablas viejas de `CARDS_LOG.md`) con
