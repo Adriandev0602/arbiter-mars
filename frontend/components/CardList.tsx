@@ -25,9 +25,9 @@ export default function CardList({
   compact?: boolean;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
+    <section data-testid={`cards-${title}`} className="rounded-lg border border-slate-200 bg-white p-4">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-        {title} <span className="font-normal text-slate-400">({ids.length})</span>
+        {title} <span data-testid="count" className="font-normal text-slate-400">({ids.length})</span>
       </h2>
       {ids.length === 0 ? (
         <p className="text-sm text-slate-400">{emptyText}</p>

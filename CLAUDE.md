@@ -1105,6 +1105,14 @@ cd frontend
 cp .env.example .env.local    # NEXT_PUBLIC_API_URL=http://localhost:8000
 npm install
 npm run dev
+
+# E2E del frontend con navegador real (Playwright + Chromium del sistema), con backend en :8000
+# y frontend en :3000 corriendo. Crea un jugador, juega 5 turnos por chat y verifica que el
+# dashboard muestre los mismos numeros que la API. Sin ANTHROPIC_API_KEY valida, el chat queda
+# SALTEADO. Capturas en e2e/out/. No correr `npm run build` con `npm run dev` levantado: el
+# build pisa .next y el dev server empieza a devolver 404 en sus JS.
+python3 -m venv e2e/.venv && e2e/.venv/bin/pip install playwright
+e2e/.venv/bin/python e2e/ui_e2e.py
 ```
 
 ## 9. Modelo de datos (Supabase)
