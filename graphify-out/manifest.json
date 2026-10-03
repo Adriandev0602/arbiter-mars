@@ -36,10 +36,10 @@
     "semantic_hash": "e3c4b93e47ab056867096c3d1fade1d1"
   },
   "backend/app/agent/rules_engine.py": {
-    "mtime": 1790976021.0742002,
-    "seen": 1790977148.810622,
-    "ast_hash": "fe4164a74c57154750a8023368f008e0",
-    "semantic_hash": "fe4164a74c57154750a8023368f008e0"
+    "mtime": 1790987098.2502425,
+    "seen": 1790987688.326007,
+    "ast_hash": "dbad29357caf858fa07aa2cb35aad173",
+    "semantic_hash": "dbad29357caf858fa07aa2cb35aad173"
   },
   "backend/app/agent/state.py": {
     "mtime": 1788202760.5684354,
@@ -48,16 +48,16 @@
     "semantic_hash": "efa42bd5b76e0152b2e89f04f76c2bad"
   },
   "backend/app/agent/tools.py": {
-    "mtime": 1790976021.0849338,
-    "seen": 1790977148.8106267,
-    "ast_hash": "b337a4425f73b0f78309cf7ba4d6fa13",
-    "semantic_hash": "b337a4425f73b0f78309cf7ba4d6fa13"
+    "mtime": 1790987325.8091295,
+    "seen": 1790987688.3260155,
+    "ast_hash": "bbfcf588f63cd9db7a594250b8bd3c2e",
+    "semantic_hash": "bbfcf588f63cd9db7a594250b8bd3c2e"
   },
   "backend/app/agent/turmoil.py": {
-    "mtime": 1789035271.520005,
-    "seen": 1790969695.6019394,
-    "ast_hash": "a8a325a49e50291d639adbad8f474807",
-    "semantic_hash": "a8a325a49e50291d639adbad8f474807"
+    "mtime": 1790987289.446926,
+    "seen": 1790987688.3260183,
+    "ast_hash": "ade184782a158bb6b63d952b302616f3",
+    "semantic_hash": "ade184782a158bb6b63d952b302616f3"
   },
   "backend/app/api/__init__.py": {
     "mtime": 1788202760.5684354,
@@ -84,16 +84,16 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "backend/app/db/schema.sql": {
-    "mtime": 1790976526.7921898,
-    "seen": 1790977148.8106408,
-    "ast_hash": "c0cbdf143eb1b36f6b998be1d13127a5",
-    "semantic_hash": "c0cbdf143eb1b36f6b998be1d13127a5"
+    "mtime": 1790987339.4191604,
+    "seen": 1790987688.3260353,
+    "ast_hash": "d2ab39e4eef92e46685f235427fa8028",
+    "semantic_hash": "d2ab39e4eef92e46685f235427fa8028"
   },
   "backend/app/db/seed_cards.sql": {
-    "mtime": 1790974291.2669659,
-    "seen": 1790977148.810643,
-    "ast_hash": "a0b02c8d3261ae57d567ff91ddaed3c2",
-    "semantic_hash": "a0b02c8d3261ae57d567ff91ddaed3c2"
+    "mtime": 1790987098.2603483,
+    "seen": 1790987688.3260396,
+    "ast_hash": "034ab3f134cafddb2371774ec613c53c",
+    "semantic_hash": "034ab3f134cafddb2371774ec613c53c"
   },
   "backend/app/db/seed_corporations.sql": {
     "mtime": 1790976021.0907238,
@@ -102,10 +102,10 @@
     "semantic_hash": "295133db01b21939e3c12b607278233f"
   },
   "backend/app/db/seed_global_events.sql": {
-    "mtime": 1788503770.820553,
-    "seen": 1790969695.6019664,
-    "ast_hash": "99381066e4675c90cb1053a9e587df28",
-    "semantic_hash": "99381066e4675c90cb1053a9e587df28"
+    "mtime": 1790987339.3891602,
+    "seen": 1790987688.3260489,
+    "ast_hash": "f1c6a57ef581616634b47f709d4c49ed",
+    "semantic_hash": "f1c6a57ef581616634b47f709d4c49ed"
   },
   "backend/app/db/seed_preludes.sql": {
     "mtime": 1789035249.7978406,
@@ -186,16 +186,16 @@
     "semantic_hash": "f53ef20f15f3c692de4632e8635cd025"
   },
   "backend/tests/test_rules_engine.py": {
-    "mtime": 1790976021.0982003,
-    "seen": 1790977148.8106823,
-    "ast_hash": "c72ac2841477d70ee910e263448d4e02",
-    "semantic_hash": "c72ac2841477d70ee910e263448d4e02"
+    "mtime": 1790987122.9024386,
+    "seen": 1790987688.3260965,
+    "ast_hash": "ef7103463a5b74af369ccedaed0c9a63",
+    "semantic_hash": "ef7103463a5b74af369ccedaed0c9a63"
   },
   "backend/tests/test_turmoil.py": {
-    "mtime": 1789035271.5210052,
-    "seen": 1790969695.602016,
-    "ast_hash": "3ae2142de48375007e4e49a979d8ad96",
-    "semantic_hash": "3ae2142de48375007e4e49a979d8ad96"
+    "mtime": 1790987367.2153308,
+    "seen": 1790987688.326099,
+    "ast_hash": "5d020d66e4d630cf5624a59fa457d7a0",
+    "semantic_hash": "5d020d66e4d630cf5624a59fa457d7a0"
   },
   "frontend/app/layout.tsx": {
     "mtime": 1788202760.5714014,
@@ -264,28 +264,28 @@
     "semantic_hash": "6bc138820910ea09ded16fc3f0c6b775"
   },
   "AGENTS.md": {
-    "mtime": 1790976608.822842,
-    "seen": 1790977148.810713,
-    "ast_hash": "578384c790a2a4e180281f25e602ec0b",
-    "semantic_hash": "578384c790a2a4e180281f25e602ec0b"
+    "mtime": 1790987569.7791452,
+    "seen": 1790987688.3261366,
+    "ast_hash": "faf9a32de487453f6a4d27fdba6adb5c",
+    "semantic_hash": "faf9a32de487453f6a4d27fdba6adb5c"
   },
   "CLAUDE.md": {
-    "mtime": 1790976608.8266952,
-    "seen": 1790977148.8107224,
-    "ast_hash": "fcce87519a4738e570bac4786f52df0e",
-    "semantic_hash": "fcce87519a4738e570bac4786f52df0e"
+    "mtime": 1790987569.7820814,
+    "seen": 1790987688.3261392,
+    "ast_hash": "2818860a34601654ee3c6500edc3c047",
+    "semantic_hash": "2818860a34601654ee3c6500edc3c047"
   },
   "README.md": {
-    "mtime": 1788829926.7610836,
-    "seen": 1790969695.6020916,
-    "ast_hash": "cbed3991c9d1b4038f143c9123d866f6",
-    "semantic_hash": "cbed3991c9d1b4038f143c9123d866f6"
+    "mtime": 1790987569.7829921,
+    "seen": 1790987688.3261423,
+    "ast_hash": "868887d337c6542f25fdcd609cdea339",
+    "semantic_hash": "868887d337c6542f25fdcd609cdea339"
   },
   "backend/app/db/CARDS_LOG.md": {
-    "mtime": 1790976063.9827902,
-    "seen": 1790977148.8107245,
-    "ast_hash": "2701381e05bd4d2132cd0491adb46190",
-    "semantic_hash": "2701381e05bd4d2132cd0491adb46190"
+    "mtime": 1790987450.7210455,
+    "seen": 1790987688.3261442,
+    "ast_hash": "4d0e94a16aff0a3b63921541b666fa0e",
+    "semantic_hash": "4d0e94a16aff0a3b63921541b666fa0e"
   },
   "backend/app/db/CARDS_PENDING_REVIEW.md": {
     "mtime": 1788232637.7859318,
