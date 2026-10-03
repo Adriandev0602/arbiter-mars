@@ -30,9 +30,8 @@ NAME = f"E2E {int(time.time()) % 100000}"
 KEEP = "--keep" in sys.argv
 
 # Turnos de chat de una partida corta. Cada uno se verifica contra la API despues.
+# El setup (corporacion, mano, preludes) ya lo hace la UI; el chat juega la partida.
 CHAT_TURNS = [
-    "Elegí la corporación Beginner Corporation",
-    "Repartime la mano inicial",
     "¿Cuál es mi estado actual?",
     "Quiero usar el proyecto estándar Planta de energía",
     "Cerrá mi fase de producción",
@@ -111,14 +110,49 @@ with sync_playwright() as p:
     page.screenshot(path=OUT / "01_inicio.png")
 
     def create_player():
-        page.get_by_role("button", name="Nuevo").click()
+        page.get_by_role("button", name="Nuevo jugador").click()
         page.get_by_placeholder("Nombre del jugador").fill(NAME)
-        page.get_by_role("button", name="Crear").click()
+        page.get_by_role("button", name="Crear", exact=True).click()
         expect(page.locator("#player")).to_contain_text(NAME)
     step("crea un jugador desde la UI", create_player)
     pid = player_id_by_name(NAME)
 
-    step("el dashboard coincide con la API (jugador nuevo)", lambda: assert_ui_matches_api(page, pid))
+    # Inicio de partida guiado: corporacion -> mano inicial -> preludes.
+    def setup_corporation():
+        expect(page.get_by_role("heading", name="Elegí tu corporación")).to_be_visible()
+        page.get_by_placeholder("Buscar por nombre o expansión").fill("Beginner")
+        page.get_by_role("button", name="Beginner Corporation").click()
+        page.get_by_role("button", name="Empezar con Beginner Corporation").click()
+        expect(page.get_by_role("heading", name="Repartí tu mano inicial")).to_be_visible()
+    step("setup: elige Beginner Corporation", setup_corporation)
+    page.screenshot(path=OUT / "02a_setup_mano.png")
+
+    def setup_hand():
+        page.get_by_role("button", name="Repartir 10 cartas").click()
+        expect(page.get_by_role("heading", name="¿Jugás con Preludes?")).to_be_visible()
+    step("setup: reparte 10 cartas gratis (Beginner)", setup_hand)
+
+    def setup_preludes():
+        page.get_by_role("button", name="Repartir 4 Preludes").click()
+        expect(page.get_by_role("heading", name="Quedate con 2 Preludes")).to_be_visible()
+        picks = page.locator("section[aria-label='Inicio de partida'] ul button")
+        picks.nth(0).click()
+        picks.nth(1).click()
+        page.get_by_role("button", name="Quedarme con estas 2").click()
+        expect(page.get_by_test_id("resources")).to_be_visible()
+        expect(page.get_by_text("Preludes para jugar")).to_be_visible()
+    step("setup: reparte 4 Preludes y se queda con 2", setup_preludes)
+
+    def setup_matches_engine():
+        api = api_get(f"/state/{pid}")
+        p_ = api["player"]
+        assert api["corporation"]["id"] == "beginner_corporation", api["corporation"]
+        assert len(p_["hand"]) == 10, f"mano {len(p_['hand'])}"
+        assert len(p_["prelude_hand"]) == 2, p_["prelude_hand"]
+        assert (p_["mc"], p_["mc_production"]) == (42, 1), (p_["mc"], p_["mc_production"])
+    step("setup: el motor dejó Beginner con 42 M€, producción +1, 10 cartas y 2 Preludes", setup_matches_engine)
+
+    step("el dashboard coincide con la API (después del setup)", lambda: assert_ui_matches_api(page, pid))
     page.screenshot(path=OUT / "02_jugador.png")
 
     def survives_reload():
@@ -133,10 +167,10 @@ with sync_playwright() as p:
             record(f"chat {i}: {msg}", "SKIP", "sin ANTHROPIC_API_KEY valida en el backend")
             continue
         before = len(bad_responses)
-        page.get_by_placeholder("Quiero jugar la carta X pagando…").fill(msg)
-        page.get_by_role("button", name="Enviar").click()
         try:
-            expect(page.get_by_text(msg, exact=True)).to_be_visible()
+            page.get_by_role("textbox", name="Mensaje para el árbitro").fill(msg, timeout=15_000)
+            page.get_by_role("button", name="Enviar").click()
+            expect(page.get_by_text(msg, exact=True).last).to_be_visible()
             expect(page.get_by_text("El árbitro está calculando…")).to_be_hidden(timeout=180_000)
         except Exception as e:  # noqa: BLE001
             record(f"chat {i}: {msg}", "FAIL", str(e).splitlines()[0][:200])

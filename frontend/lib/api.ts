@@ -34,9 +34,14 @@ export type PlayerState = {
   energy_production: number;
   heat_production: number;
   hand: string[];
+  deck: string[];
   played_cards: string[];
   active_cards: Record<string, ActiveCard>;
   tags_played: Record<string, number>;
+  pending_research: string[];
+  pending_prelude_choice: string[];
+  prelude_hand: string[];
+  pending_corporation_first_action: { corporation_id: string; type: string } | null;
   [key: string]: unknown;
 };
 
@@ -52,6 +57,18 @@ export type CardInfo = {
 export type StateResponse = {
   player: PlayerState;
   cards: Record<string, CardInfo>;
+  /** Corporacion elegida, o null si el jugador todavia no la eligio. */
+  corporation: CardInfo | null;
+  /** Precio por carta que el MOTOR le cobra a este jugador (3, 5 con Polyphemos, 1 con TerraLabs). */
+  research_cost_per_card: number;
+};
+
+export type Corporation = {
+  id: string;
+  name: string;
+  expansion: string;
+  starting_mc: number;
+  tags: string[];
 };
 
 export type GameState = {
@@ -104,6 +121,28 @@ export const createPlayer = (displayName: string) =>
 export const getPlayerState = (playerId: string) => request<StateResponse>(`/state/${playerId}`);
 
 export const getGame = () => request<GameState>("/game");
+
+export const listCorporations = () => request<Corporation[]>("/corporations");
+
+const post = <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+
+export const chooseCorporation = (playerId: string, corporationId: string) =>
+  post<StateResponse>(`/players/${playerId}/corporation`, { corporation_id: corporationId });
+
+export const dealStartingHand = (playerId: string, buy: boolean) =>
+  post<StateResponse>(`/players/${playerId}/starting-hand`, { buy });
+
+export const buyResearch = (playerId: string, cardIds: string[]) =>
+  post<StateResponse>(`/players/${playerId}/research`, { card_ids: cardIds });
+
+export const dealPreludes = (playerId: string) => post<StateResponse>(`/players/${playerId}/preludes/deal`);
+
+export const keepPreludes = (playerId: string, preludeIds: string[]) =>
+  post<StateResponse>(`/players/${playerId}/preludes/keep`, { prelude_ids: preludeIds });
+
+export const playPrelude = (playerId: string, preludeId: string) =>
+  post<StateResponse>(`/players/${playerId}/preludes/${preludeId}/play`);
 
 export const sendChatMessage = (playerId: string, message: string) =>
   request<ChatResponse>("/chat", { method: "POST", body: JSON.stringify({ player_id: playerId, message }) });

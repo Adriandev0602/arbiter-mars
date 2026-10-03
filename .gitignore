@@ -30,3 +30,8 @@ backend/scripts/scan_cache/
 # E2E del frontend (venv local y capturas)
 e2e/.venv/
 e2e/out/
+
+# Impeccable: capturas de revision y cache del hook (locales)
+.impeccable/review/
+.impeccable/hook.cache.json
+frontend/tsconfig.tsbuildinfo

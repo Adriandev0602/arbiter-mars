@@ -1,0 +1,605 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-03T17:51:17.196918+00:00",
+  "title": "Design System: Árbitro de Terraforming Mars",
+  "extensions": {
+    "colorMeta": {
+      "coral": {
+        "role": "primary",
+        "displayName": "Coral de acción",
+        "canonical": "#ff6b4a",
+        "oklch": "oklch(70.7% 0.187 34.1)",
+        "tonalRamp": [
+          "oklch(15% 0.187 34.1)",
+          "oklch(25% 0.187 34.1)",
+          "oklch(36% 0.187 34.1)",
+          "oklch(47% 0.187 34.1)",
+          "oklch(58% 0.187 34.1)",
+          "oklch(69% 0.187 34.1)",
+          "oklch(82% 0.187 34.1)",
+          "oklch(95% 0.187 34.1)"
+        ]
+      },
+      "coral-bright": {
+        "role": "primary",
+        "displayName": "Coral brillante",
+        "canonical": "#ff8467",
+        "oklch": "oklch(74.6% 0.156 34.4)",
+        "tonalRamp": [
+          "oklch(15% 0.156 34.4)",
+          "oklch(25% 0.156 34.4)",
+          "oklch(36% 0.156 34.4)",
+          "oklch(47% 0.156 34.4)",
+          "oklch(58% 0.156 34.4)",
+          "oklch(69% 0.156 34.4)",
+          "oklch(82% 0.156 34.4)",
+          "oklch(95% 0.156 34.4)"
+        ]
+      },
+      "coral-deep": {
+        "role": "primary",
+        "displayName": "Coral profundo",
+        "canonical": "#e2502f",
+        "oklch": "oklch(62.6% 0.188 34.1)",
+        "tonalRamp": [
+          "oklch(15% 0.188 34.1)",
+          "oklch(25% 0.188 34.1)",
+          "oklch(36% 0.188 34.1)",
+          "oklch(47% 0.188 34.1)",
+          "oklch(58% 0.188 34.1)",
+          "oklch(69% 0.188 34.1)",
+          "oklch(82% 0.188 34.1)",
+          "oklch(95% 0.188 34.1)"
+        ]
+      },
+      "coral-ink": {
+        "role": "primary",
+        "displayName": "Tinta sobre coral",
+        "canonical": "#2b0b03",
+        "oklch": "oklch(20.3% 0.056 37.9)",
+        "tonalRamp": [
+          "oklch(15% 0.056 37.9)",
+          "oklch(25% 0.056 37.9)",
+          "oklch(36% 0.056 37.9)",
+          "oklch(47% 0.056 37.9)",
+          "oklch(58% 0.056 37.9)",
+          "oklch(69% 0.056 37.9)",
+          "oklch(82% 0.056 37.9)",
+          "oklch(95% 0.056 37.9)"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Suelo grafito",
+        "canonical": "#0e0c0b",
+        "oklch": "oklch(15.6% 0.004 48.5)",
+        "tonalRamp": [
+          "oklch(15% 0.004 48.5)",
+          "oklch(25% 0.004 48.5)",
+          "oklch(36% 0.004 48.5)",
+          "oklch(47% 0.004 48.5)",
+          "oklch(58% 0.004 48.5)",
+          "oklch(69% 0.004 48.5)",
+          "oklch(82% 0.004 48.5)",
+          "oklch(95% 0.004 48.5)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Superficie",
+        "canonical": "#171513",
+        "oklch": "oklch(19.7% 0.005 67.5)",
+        "tonalRamp": [
+          "oklch(15% 0.005 67.5)",
+          "oklch(25% 0.005 67.5)",
+          "oklch(36% 0.005 67.5)",
+          "oklch(47% 0.005 67.5)",
+          "oklch(58% 0.005 67.5)",
+          "oklch(69% 0.005 67.5)",
+          "oklch(82% 0.005 67.5)",
+          "oklch(95% 0.005 67.5)"
+        ]
+      },
+      "surface-raised": {
+        "role": "neutral",
+        "displayName": "Superficie elevada",
+        "canonical": "#1f1c19",
+        "oklch": "oklch(22.9% 0.007 67.4)",
+        "tonalRamp": [
+          "oklch(15% 0.007 67.4)",
+          "oklch(25% 0.007 67.4)",
+          "oklch(36% 0.007 67.4)",
+          "oklch(47% 0.007 67.4)",
+          "oklch(58% 0.007 67.4)",
+          "oklch(69% 0.007 67.4)",
+          "oklch(82% 0.007 67.4)",
+          "oklch(95% 0.007 67.4)"
+        ]
+      },
+      "surface-sunk": {
+        "role": "neutral",
+        "displayName": "Superficie hundida",
+        "canonical": "#121010",
+        "oklch": "oklch(17.5% 0.003 17.5)",
+        "tonalRamp": [
+          "oklch(15% 0.003 17.5)",
+          "oklch(25% 0.003 17.5)",
+          "oklch(36% 0.003 17.5)",
+          "oklch(47% 0.003 17.5)",
+          "oklch(58% 0.003 17.5)",
+          "oklch(69% 0.003 17.5)",
+          "oklch(82% 0.003 17.5)",
+          "oklch(95% 0.003 17.5)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Tinta",
+        "canonical": "#f5efe8",
+        "oklch": "oklch(95.5% 0.011 71.9)",
+        "tonalRamp": [
+          "oklch(15% 0.011 71.9)",
+          "oklch(25% 0.011 71.9)",
+          "oklch(36% 0.011 71.9)",
+          "oklch(47% 0.011 71.9)",
+          "oklch(58% 0.011 71.9)",
+          "oklch(69% 0.011 71.9)",
+          "oklch(82% 0.011 71.9)",
+          "oklch(95% 0.011 71.9)"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Tinta apagada",
+        "canonical": "#b0a69c",
+        "oklch": "oklch(73.1% 0.018 67.5)",
+        "tonalRamp": [
+          "oklch(15% 0.018 67.5)",
+          "oklch(25% 0.018 67.5)",
+          "oklch(36% 0.018 67.5)",
+          "oklch(47% 0.018 67.5)",
+          "oklch(58% 0.018 67.5)",
+          "oklch(69% 0.018 67.5)",
+          "oklch(82% 0.018 67.5)",
+          "oklch(95% 0.018 67.5)"
+        ]
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Tinta tenue",
+        "canonical": "#8f857b",
+        "oklch": "oklch(62.3% 0.019 67.5)",
+        "tonalRamp": [
+          "oklch(15% 0.019 67.5)",
+          "oklch(25% 0.019 67.5)",
+          "oklch(36% 0.019 67.5)",
+          "oklch(47% 0.019 67.5)",
+          "oklch(58% 0.019 67.5)",
+          "oklch(69% 0.019 67.5)",
+          "oklch(82% 0.019 67.5)",
+          "oklch(95% 0.019 67.5)"
+        ]
+      },
+      "res-mc": {
+        "role": "game",
+        "displayName": "M€ dorado",
+        "canonical": "#f2c14e",
+        "oklch": "oklch(83.4% 0.141 85.4)",
+        "tonalRamp": [
+          "oklch(15% 0.141 85.4)",
+          "oklch(25% 0.141 85.4)",
+          "oklch(36% 0.141 85.4)",
+          "oklch(47% 0.141 85.4)",
+          "oklch(58% 0.141 85.4)",
+          "oklch(69% 0.141 85.4)",
+          "oklch(82% 0.141 85.4)",
+          "oklch(95% 0.141 85.4)"
+        ]
+      },
+      "res-steel": {
+        "role": "game",
+        "displayName": "Acero",
+        "canonical": "#c08a57",
+        "oklch": "oklch(67.5% 0.094 63.5)",
+        "tonalRamp": [
+          "oklch(15% 0.094 63.5)",
+          "oklch(25% 0.094 63.5)",
+          "oklch(36% 0.094 63.5)",
+          "oklch(47% 0.094 63.5)",
+          "oklch(58% 0.094 63.5)",
+          "oklch(69% 0.094 63.5)",
+          "oklch(82% 0.094 63.5)",
+          "oklch(95% 0.094 63.5)"
+        ]
+      },
+      "res-titanium": {
+        "role": "game",
+        "displayName": "Titanio",
+        "canonical": "#bdb5ac",
+        "oklch": "oklch(77.7% 0.016 70.8)",
+        "tonalRamp": [
+          "oklch(15% 0.016 70.8)",
+          "oklch(25% 0.016 70.8)",
+          "oklch(36% 0.016 70.8)",
+          "oklch(47% 0.016 70.8)",
+          "oklch(58% 0.016 70.8)",
+          "oklch(69% 0.016 70.8)",
+          "oklch(82% 0.016 70.8)",
+          "oklch(95% 0.016 70.8)"
+        ]
+      },
+      "res-plants": {
+        "role": "game",
+        "displayName": "Plantas",
+        "canonical": "#7cc463",
+        "oklch": "oklch(75.0% 0.150 138.2)",
+        "tonalRamp": [
+          "oklch(15% 0.150 138.2)",
+          "oklch(25% 0.150 138.2)",
+          "oklch(36% 0.150 138.2)",
+          "oklch(47% 0.150 138.2)",
+          "oklch(58% 0.150 138.2)",
+          "oklch(69% 0.150 138.2)",
+          "oklch(82% 0.150 138.2)",
+          "oklch(95% 0.150 138.2)"
+        ]
+      },
+      "res-energy": {
+        "role": "game",
+        "displayName": "Energía",
+        "canonical": "#b083ee",
+        "oklch": "oklch(69.7% 0.157 301.9)",
+        "tonalRamp": [
+          "oklch(15% 0.157 301.9)",
+          "oklch(25% 0.157 301.9)",
+          "oklch(36% 0.157 301.9)",
+          "oklch(47% 0.157 301.9)",
+          "oklch(58% 0.157 301.9)",
+          "oklch(69% 0.157 301.9)",
+          "oklch(82% 0.157 301.9)",
+          "oklch(95% 0.157 301.9)"
+        ]
+      },
+      "res-heat": {
+        "role": "game",
+        "displayName": "Calor",
+        "canonical": "#f0614f",
+        "oklch": "oklch(67.2% 0.180 29.7)",
+        "tonalRamp": [
+          "oklch(15% 0.180 29.7)",
+          "oklch(25% 0.180 29.7)",
+          "oklch(36% 0.180 29.7)",
+          "oklch(47% 0.180 29.7)",
+          "oklch(58% 0.180 29.7)",
+          "oklch(69% 0.180 29.7)",
+          "oklch(82% 0.180 29.7)",
+          "oklch(95% 0.180 29.7)"
+        ]
+      },
+      "track-temperature": {
+        "role": "game",
+        "displayName": "Rojo de temperatura",
+        "canonical": "#e0634f",
+        "oklch": "oklch(65.1% 0.160 31.1)",
+        "tonalRamp": [
+          "oklch(15% 0.160 31.1)",
+          "oklch(25% 0.160 31.1)",
+          "oklch(36% 0.160 31.1)",
+          "oklch(47% 0.160 31.1)",
+          "oklch(58% 0.160 31.1)",
+          "oklch(69% 0.160 31.1)",
+          "oklch(82% 0.160 31.1)",
+          "oklch(95% 0.160 31.1)"
+        ]
+      },
+      "track-oxygen": {
+        "role": "game",
+        "displayName": "Verde de oxígeno",
+        "canonical": "#8fc46b",
+        "oklch": "oklch(76.3% 0.131 133.8)",
+        "tonalRamp": [
+          "oklch(15% 0.131 133.8)",
+          "oklch(25% 0.131 133.8)",
+          "oklch(36% 0.131 133.8)",
+          "oklch(47% 0.131 133.8)",
+          "oklch(58% 0.131 133.8)",
+          "oklch(69% 0.131 133.8)",
+          "oklch(82% 0.131 133.8)",
+          "oklch(95% 0.131 133.8)"
+        ]
+      },
+      "track-oceans": {
+        "role": "game",
+        "displayName": "Azul de océanos",
+        "canonical": "#4f9fe0",
+        "oklch": "oklch(68.0% 0.124 245.6)",
+        "tonalRamp": [
+          "oklch(15% 0.124 245.6)",
+          "oklch(25% 0.124 245.6)",
+          "oklch(36% 0.124 245.6)",
+          "oklch(47% 0.124 245.6)",
+          "oklch(58% 0.124 245.6)",
+          "oklch(69% 0.124 245.6)",
+          "oklch(82% 0.124 245.6)",
+          "oklch(95% 0.124 245.6)"
+        ]
+      },
+      "track-venus": {
+        "role": "game",
+        "displayName": "Ocre de Venus",
+        "canonical": "#d6a35c",
+        "oklch": "oklch(74.9% 0.107 74.0)",
+        "tonalRamp": [
+          "oklch(15% 0.107 74.0)",
+          "oklch(25% 0.107 74.0)",
+          "oklch(36% 0.107 74.0)",
+          "oklch(47% 0.107 74.0)",
+          "oklch(58% 0.107 74.0)",
+          "oklch(69% 0.107 74.0)",
+          "oklch(82% 0.107 74.0)",
+          "oklch(95% 0.107 74.0)"
+        ]
+      },
+      "good": {
+        "role": "status",
+        "displayName": "Bien",
+        "canonical": "#7cc463",
+        "oklch": "oklch(75.0% 0.150 138.2)",
+        "tonalRamp": [
+          "oklch(15% 0.150 138.2)",
+          "oklch(25% 0.150 138.2)",
+          "oklch(36% 0.150 138.2)",
+          "oklch(47% 0.150 138.2)",
+          "oklch(58% 0.150 138.2)",
+          "oklch(69% 0.150 138.2)",
+          "oklch(82% 0.150 138.2)",
+          "oklch(95% 0.150 138.2)"
+        ]
+      },
+      "bad": {
+        "role": "status",
+        "displayName": "Mal",
+        "canonical": "#ff7a66",
+        "oklch": "oklch(73.1% 0.166 30.3)",
+        "tonalRamp": [
+          "oklch(15% 0.166 30.3)",
+          "oklch(25% 0.166 30.3)",
+          "oklch(36% 0.166 30.3)",
+          "oklch(47% 0.166 30.3)",
+          "oklch(58% 0.166 30.3)",
+          "oklch(69% 0.166 30.3)",
+          "oklch(82% 0.166 30.3)",
+          "oklch(95% 0.166 30.3)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Línea",
+        "canonical": "rgb(255 240 225 / 0.08)",
+        "tonalRamp": []
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Línea fuerte",
+        "canonical": "rgb(255 240 225 / 0.14)",
+        "tonalRamp": []
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Solo TR y M€ (3.75rem en celular, 4.5rem desde sm)."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Stock de los otros cinco recursos."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Títulos de paso del setup; variantes 1.25rem/1.125rem para valores de parámetros y bloque pendiente."
+      },
+      "card-name": {
+        "displayName": "Nombre de carta",
+        "purpose": "Filas de cartas en listas y selectores."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Chat y explicaciones."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Etiquetas de recurso y parámetro, producción."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Tags, términos de Turmoil, ayudas."
+      }
+    },
+    "shadows": [
+      {
+        "name": "panel",
+        "value": "inset 0 1px 0 rgb(255 240 225 / 0.05), 0 1px 2px rgb(0 0 0 / 0.5), 0 18px 40px -24px rgb(0 0 0 / 0.8)",
+        "purpose": "Todo contenedor .panel."
+      },
+      {
+        "name": "pill",
+        "value": "inset 0 1px 0 rgb(255 255 255 / 0.35), inset 0 -1px 0 rgb(0 0 0 / 0.18), 0 1px 2px rgb(0 0 0 / 0.45), 0 10px 24px -10px rgb(255 107 74 / 0.6)",
+        "purpose": "Botón primario coral."
+      },
+      {
+        "name": "pill-quiet",
+        "value": "inset 0 1px 0 rgb(255 255 255 / 0.07), 0 1px 2px rgb(0 0 0 / 0.5)",
+        "purpose": "Botones silenciosos y primario deshabilitado."
+      }
+    ],
+    "motion": [
+      {
+        "name": "value-pulse",
+        "value": "1600ms cubic-bezier(0.16, 1, 0.3, 1); 0% color #ff8467, vuelve al color propio",
+        "purpose": "Número del motor que cambió."
+      },
+      {
+        "name": "delta-in",
+        "value": "220ms cubic-bezier(0.16, 1, 0.3, 1); de opacity 0, translateY(6px) scale(0.92) blur(2px) a reposo",
+        "purpose": "Entrada del chip antes X."
+      },
+      {
+        "name": "state",
+        "value": "200ms ease-out",
+        "purpose": "Hover, foco y selección de controles."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px",
+        "purpose": "Dos columnas: dashboard + chat de 400px; debajo, chat apilado con composer fijo abajo."
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón primario",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Acción primaria de la zona: confirmar paso, crear jugador, enviar al árbitro.",
+      "html": "<button class=\"ds-btn-primary\">Confirmar mano</button>",
+      "css": ".ds-btn-primary{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;display:inline-flex;align-items:center;gap:8px;border:0;border-radius:9999px;background:#ff6b4a;color:#2b0b03;padding:10px 20px;font-size:14px;font-weight:600;box-shadow:inset 0 1px 0 rgb(255 255 255/.35),inset 0 -1px 0 rgb(0 0 0/.18),0 1px 2px rgb(0 0 0/.45),0 10px 24px -10px rgb(255 107 74/.6);transition:background-color .2s ease-out,transform .2s ease-out;cursor:pointer}.ds-btn-primary:hover{background:#ff8467}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid #ff6b4a;outline-offset:2px}.ds-btn-primary:disabled{background:#1f1c19;color:#8f857b;box-shadow:inset 0 1px 0 rgb(255 255 255/.07),0 1px 2px rgb(0 0 0/.5);cursor:not-allowed}"
+    },
+    {
+      "name": "Botón silencioso",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Acciones secundarias: Jugar, Nuevo, actualizar.",
+      "html": "<button class=\"ds-btn-quiet\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"6 3 20 12 6 21 6 3\"/></svg>Jugar</button>",
+      "css": ".ds-btn-quiet{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;display:inline-flex;align-items:center;gap:8px;border:1px solid rgb(255 240 225/.14);border-radius:9999px;background:#1f1c19;color:#f5efe8;padding:8px 16px;font-size:14px;font-weight:500;box-shadow:inset 0 1px 0 rgb(255 255 255/.07),0 1px 2px rgb(0 0 0/.5);transition:color .2s ease-out,border-color .2s ease-out;cursor:pointer}.ds-btn-quiet:hover{border-color:rgb(255 107 74/.5);color:#fff}.ds-btn-quiet:focus-visible{outline:2px solid #ff6b4a;outline-offset:2px}"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Caja del chat, búsqueda de corporación, nombre de jugador.",
+      "html": "<input class=\"ds-field\" placeholder=\"Quiero jugar la carta X pagando…\">",
+      "css": ".ds-field{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;width:320px;border:1px solid rgb(255 240 225/.14);border-radius:9999px;background:#121010;color:#f5efe8;padding:10px 16px;font-size:14px;caret-color:#ff6b4a;transition:border-color .2s ease-out}.ds-field::placeholder{color:#8f857b}.ds-field:focus{outline:none;border-color:rgb(255 107 74/.6)}"
+    },
+    {
+      "name": "Pestañas de cartas",
+      "kind": "nav",
+      "description": "Mano / Activas / Jugadas; la activa lleva subrayado coral.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-on\">Mano <span>(2)</span></button><button class=\"ds-tab\">Activas <span>(0)</span></button><button class=\"ds-tab\">Jugadas <span>(1)</span></button></div>",
+      "css": ".ds-tabs{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;display:flex;gap:4px;border-bottom:1px solid rgb(255 240 225/.08);padding:12px 12px 0;background:#171513}.ds-tab{position:relative;background:none;border:0;padding:6px 14px 12px;font-size:14px;font-weight:500;color:#8f857b;cursor:pointer;transition:color .2s}.ds-tab span{font-weight:400;color:#8f857b;font-variant-numeric:tabular-nums}.ds-tab:hover{color:#b0a69c}.ds-tab:focus-visible{outline:2px solid #ff6b4a;outline-offset:2px;border-radius:6px}.ds-tab-on{color:#f5efe8}.ds-tab-on::after{content:'';position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:9999px;background:#ff6b4a}"
+    },
+    {
+      "name": "Chip de costo",
+      "kind": "chip",
+      "refersTo": "cost-chip",
+      "description": "Costo de carta en M€ con el dorado del juego.",
+      "html": "<span class=\"ds-cost\">20 M€</span>",
+      "css": ".ds-cost{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;display:inline-block;border-radius:9999px;background:rgb(242 193 78/.1);color:#f2c14e;padding:2px 10px;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Celda de recurso con antes X",
+      "kind": "custom",
+      "refersTo": "before-chip",
+      "description": "Número del motor que acaba de cambiar: pulso coral y valor anterior superpuesto, sin mover el layout.",
+      "html": "<div class=\"ds-res\"><span class=\"ds-res-label\"><i></i>M€</span><span class=\"ds-before\">antes 59</span><span class=\"ds-res-num\">45</span><span class=\"ds-res-prod\">producción +5</span></div>",
+      "css": ".ds-res{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;position:relative;width:180px;padding:24px;background:#171513;border:1px solid rgb(255 240 225/.08);border-radius:16px;display:flex;flex-direction:column;gap:12px;color:#f5efe8}.ds-res-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#b0a69c}.ds-res-label i{width:10px;height:10px;border-radius:9999px;background:#f2c14e}.ds-res-num{font-size:72px;font-weight:600;line-height:1;letter-spacing:-.035em;color:#f2c14e;font-variant-numeric:tabular-nums;animation:ds-pulse 1600ms cubic-bezier(.16,1,.3,1) backwards}.ds-res-prod{font-size:13px;color:#b0a69c}.ds-before{position:absolute;right:16px;top:16px;border-radius:9999px;background:rgb(255 107 74/.15);color:#ff8467;padding:2px 8px;font-size:11px;font-weight:500;line-height:16px;font-variant-numeric:tabular-nums;animation:ds-delta 220ms cubic-bezier(.16,1,.3,1) both}@keyframes ds-pulse{0%{color:#ff8467}}@keyframes ds-delta{0%{opacity:0;transform:translateY(6px) scale(.92);filter:blur(2px)}100%{opacity:1;transform:none;filter:none}}"
+    },
+    {
+      "name": "Pista de parámetro global",
+      "kind": "custom",
+      "description": "Una muesca por paso, alcanzadas en el color del tablero.",
+      "html": "<div class=\"ds-track-wrap\"><div class=\"ds-track-head\"><span>Temperatura</span><b>-20°C</b></div><div class=\"ds-track\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>",
+      "css": ".ds-track-wrap{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;width:240px;color:#f5efe8}.ds-track-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}.ds-track-head span{font-size:13px;font-weight:500;color:#b0a69c}.ds-track-head b{font-size:20px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}.ds-track{display:flex;gap:3px;height:8px}.ds-track i{flex:1;border-radius:2px;background:rgb(255 255 255/.07)}.ds-track i.on{background:#e0634f}"
+    },
+    {
+      "name": "Lista de celdas divididas",
+      "kind": "card",
+      "description": "Selector de cartas: celdas gap-px dentro de un solo contenedor; elegida con tinte coral y check.",
+      "html": "<ul class=\"ds-cells\"><li><button class=\"ds-cell ds-cell-on\"><span>Mining Area<small>building</small></span><em>4 M€</em><i>✓</i></button></li><li><button class=\"ds-cell\"><span>Capital<small>building · city</small></span><em>26 M€</em><i></i></button></li></ul>",
+      "css": ".ds-cells{font-family:'Inter Tight',ui-sans-serif,system-ui,sans-serif;list-style:none;margin:0;padding:0;width:360px;display:grid;gap:1px;overflow:hidden;border-radius:12px;border:1px solid rgb(255 240 225/.08);background:rgb(255 240 225/.08)}.ds-cells li{background:#171513}.ds-cell{width:100%;display:flex;align-items:flex-start;gap:12px;border:0;background:transparent;color:#f5efe8;padding:14px 16px;text-align:left;cursor:pointer;transition:background-color .2s}.ds-cell:hover{background:rgb(255 255 255/.03)}.ds-cell:focus-visible{outline:2px solid #ff6b4a;outline-offset:-2px}.ds-cell span{flex:1;font-size:15px;font-weight:500;letter-spacing:-.02em}.ds-cell small{display:block;margin-top:6px;font-size:12px;font-weight:400;color:#b0a69c;letter-spacing:0}.ds-cell em{font-style:normal;font-size:14px;font-weight:600;color:#f2c14e}.ds-cell i{width:20px;height:20px;border-radius:9999px;border:1px solid rgb(255 240 225/.14);display:grid;place-items:center;font-style:normal;font-size:12px}.ds-cell-on{background:rgb(255 107 74/.09)}.ds-cell-on i{background:#ff6b4a;border-color:#ff6b4a;color:#2b0b03}"
+    }
+  ],
+  "narrative": {
+    "northStar": "El libro de cuentas en la mesa",
+    "overview": "La interfaz es la hoja de cuentas de un jugador sentado a la mesa de Terraforming Mars, no un panel de métricas. Lo que el motor de reglas calculó se lee de un vistazo: TR y M€ en cifras enormes arriba a la izquierda, los otros cinco recursos al lado, la partida debajo, y a la derecha el chat con el árbitro, donde vive la acción primaria. Cada número que se muestra viene tal cual de la API; la interfaz nunca resta, suma ni deduce un valor del juego.\n\nEl mundo es grafito cálido casi negro, con un único acento coral reservado a dos cosas: lo que el jugador puede hacer (botón primario, pestaña activa, selección, paso actual) y lo que el motor acaba de cambiar. El resto del color pertenece al propio juego: dorado para M€, marrón para acero, verde para plantas, violeta para energía, rojo para calor, y en las pistas de parámetros globales los colores del tablero. Inter Tight con tracking cerrado lleva toda la jerarquía; las cifras del motor son siempre tabulares. Los botones son píldoras con sombra en capas (brillo interno arriba, sombra corta, halo cálido) tomadas de la referencia fijada por el usuario.\n\nLa densidad es de tablero, no de landing: celdas divididas por líneas de un píxel dentro de un solo contenedor, en lugar de una grilla de tarjetas iguales. El dashboard de tarjetas iguales es el anti-referente explícito.",
+    "keyCharacteristics": [
+      "Grafito cálido en tres niveles tonales (hundido, superficie, elevado) sobre un fondo casi negro.",
+      "Coral solo para acción y cambio; todo otro color es semántica del juego.",
+      "Cifras del motor grandes, semibold, tracking de display, tabulares.",
+      "Listas como celdas divididas `gap-px` dentro de un contenedor, nunca tarjetas anidadas.",
+      "El cambio se muestra con un pulso coral y el valor anterior del motor (\"antes X\"), sin mover el layout."
+    ],
+    "rules": [
+      {
+        "name": "The Coral Is a Verb Rule",
+        "body": "Coral marca solo lo que se puede hacer o lo que acaba de cambiar. Un elemento estático, decorativo o informativo nunca es coral, aunque su color del juego se le parezca.",
+        "section": "colors"
+      },
+      {
+        "name": "The Board Owns Its Colors Rule",
+        "body": "Las pistas de parámetros globales y los recursos usan los colores del tablero, nunca el coral. La pista de temperatura es rojo de tablero (`track-temperature`), un hexadecimal distinto del coral, y debe seguir siéndolo.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Engine Rule",
+        "body": "Todo número que sale del motor lleva `.num` (tabular). Las cifras no bailan cuando cambian.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence-Case Rule",
+        "body": "Etiquetas en minúscula de oración, en español, sin mayúsculas sostenidas ni tracking abierto. No hay kickers ni eyebrows sobre los títulos.",
+        "section": "typography"
+      },
+      {
+        "name": "The Ledger Order Rule",
+        "body": "TR y M€ arriba a la izquierda, grandes, con su producción; nada se interpone por encima del libro de recursos.",
+        "section": "layout"
+      },
+      {
+        "name": "The One Container Rule",
+        "body": "Un panel es la única superficie con sombra en su zona. Lo que vive adentro se divide con líneas de un píxel, nunca con tarjetas anidadas con sombra o borde propio.",
+        "section": "elevation"
+      },
+      {
+        "name": "The No Arithmetic Rule",
+        "body": "La UI guarda el número anterior que devolvió el motor; nunca calcula una diferencia, un total ni un valor del juego.",
+        "section": "components"
+      },
+      {
+        "name": "The Zero-Layout Delta Rule",
+        "body": "El chip \"antes X\" nunca ocupa lugar: va superpuesto en absoluto en una esquina de su celda o en un hueco que la fila ya reserva. Aparecer o irse no mueve nada.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** reservar coral (`#ff6b4a`) para acción y cambio: botón primario, pestaña activa, selección, paso actual, pulso y chip \"antes X\".",
+      "**Do** pintar recursos, costos y pistas con los colores del juego (`res-*`, `track-*`).",
+      "**Do** poner cada lista dentro de un solo contenedor como celdas `gap-px` sobre fondo `line`.",
+      "**Do** marcar con `.num` toda cifra del motor y mostrarla tal cual llega de la API.",
+      "**Do** mostrar el cambio con el pulso coral y \"antes X\" superpuesto, sin desplazar el layout.",
+      "**Do** usar píldoras completas con sombra en capas para botones y campos, y paneles de 16px con la sombra Panel.",
+      "**Do** mantener en celular la barra sticky en una fila y la caja del chat fija abajo."
+    ],
+    "donts": [
+      "**Don't** construir un dashboard de tarjetas iguales ni anidar tarjetas con borde o sombra dentro de un panel.",
+      "**Don't** usar coral para datos estáticos, decoración o una pista de parámetro global.",
+      "**Don't** calcular, restar ni sumar valores del juego en el frontend, ni siquiera para mostrar una diferencia.",
+      "**Don't** dejar que \"antes X\" empuje filas o cambie la altura de una celda.",
+      "**Don't** poner kickers, eyebrows ni etiquetas en mayúsculas con tracking abierto sobre los títulos.",
+      "**Don't** poner texto blanco sobre coral; va `coral-ink`."
+    ]
+  }
+}

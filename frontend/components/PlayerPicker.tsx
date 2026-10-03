@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChevronDown, Plus } from "lucide-react";
 import { createPlayer, listPlayers, type PlayerSummary } from "@/lib/api";
 
 /** Elegir un jugador existente o crear uno nuevo (TR 20, valores iniciales del schema). */
 export default function PlayerPicker({
   playerId,
   onSelect,
+  version = 0,
 }: {
   playerId: string | null;
   onSelect: (id: string | null) => void;
+  /** Se incrementa cuando otro lugar de la UI crea un jugador, para recargar la lista. */
+  version?: number;
 }) {
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [creating, setCreating] = useState(false);
@@ -25,7 +29,7 @@ export default function PlayerPicker({
       })
       .catch(() => setPlayers([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [version]);
 
   async function handleCreate() {
     if (!name.trim()) return;
@@ -43,52 +47,57 @@ export default function PlayerPicker({
 
   if (creating) {
     return (
-      <div className="flex items-center gap-2">
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleCreate();
+        }}
+      >
         <input
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleCreate();
-            if (e.key === "Escape") setCreating(false);
-          }}
+          onKeyDown={(e) => e.key === "Escape" && setCreating(false)}
           placeholder="Nombre del jugador"
-          className="w-44 rounded border border-slate-300 px-2 py-1.5 text-sm"
+          aria-label="Nombre del jugador"
+          className="field w-44 py-2"
         />
-        <button onClick={handleCreate} className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700">
+        <button type="submit" className="btn-primary px-4 py-2" disabled={!name.trim()}>
           Crear
         </button>
-        <button onClick={() => setCreating(false)} className="px-2 py-1.5 text-sm text-slate-500 hover:text-slate-800">
+        <button type="button" onClick={() => setCreating(false)} className="px-2 py-2 text-sm text-ink-muted hover:text-ink">
           Cancelar
         </button>
-        {error && <span className="text-xs text-red-600">{error}</span>}
-      </div>
+        {error && <span className="w-full text-xs text-bad">{error}</span>}
+      </form>
     );
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <label htmlFor="player" className="text-sm text-slate-500">
+    <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
+      <label htmlFor="player" className="sr-only">
         Jugador
       </label>
-      <select
-        id="player"
-        value={playerId ?? ""}
-        onChange={(e) => onSelect(e.target.value || null)}
-        className="w-40 rounded border border-slate-300 sm:w-48 bg-white px-2 py-1.5 text-sm"
-      >
-        <option value="">— Elegir —</option>
-        {players.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.display_name} (TR {p.tr})
-          </option>
-        ))}
-      </select>
-      <button
-        onClick={() => setCreating(true)}
-        className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
-      >
-        Nuevo
+      <div className="relative min-w-0 flex-1 sm:flex-none">
+        <select
+          id="player"
+          value={playerId ?? ""}
+          onChange={(e) => onSelect(e.target.value || null)}
+          className="field w-full appearance-none py-2 pr-9 sm:w-56"
+        >
+          <option value="">Elegí un jugador</option>
+          {players.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.display_name} · TR {p.tr}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+      </div>
+      <button onClick={() => setCreating(true)} className="btn-quiet py-2" aria-label="Nuevo jugador">
+        <Plus size={16} />
+        <span className="hidden sm:inline">Nuevo</span>
       </button>
     </div>
   );

@@ -138,7 +138,44 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-10-02, auditoría completa del catálogo, rama `feat/auditoria-catalogo`)
+### 📍 Punto de retoma (última sesión: 2026-10-03, frontend v2: rediseño + inicio de partida, rama `feat/frontend-v2`)
+
+**Rediseño de la app con la referencia que eligió el usuario** (Paymark de Lovable: fondo oscuro,
+coral, Inter Tight, botones píldora con sombra en capas), más un **inicio de partida guiado en la
+UI**. Rama `feat/frontend-v2`, sobre `feat/auditoria-catalogo`. Se hizo con el skill impeccable.
+- **`PRODUCT.md`** (raíz) registra el producto: usuarios = jugadores en la mesa, principio "el
+  número es del motor", marca sin afiliación con FryxGames. **`DESIGN.md`** registra el sistema
+  visual construido; leerlo antes de tocar la UI.
+- **Reglas del sistema:**
+  - El coral es solo para acción y cambio.
+  - Las pistas de parámetros usan los colores del tablero.
+  - Las listas son celdas divididas en un solo contenedor; nunca tarjetas anidadas.
+  - La UI nunca calcula: por ejemplo, la compra de cartas muestra el precio por carta del motor y
+    la cantidad elegida, sin total.
+- **Interacción propia:** cuando un número del motor cambia, late en coral y muestra "antes X"
+  (el valor anterior, que también viene del motor) hasta el próximo cambio, sin mover el layout.
+  Hook: `frontend/lib/useChanged.ts`.
+- **Inicio de partida en la UI** (`SetupFlow.tsx`):
+  1. Corporación (buscador).
+  2. Mano inicial: gratis con Beginner; si no, se compra con el precio del motor.
+  3. Preludes: se reparten 4 y te quedás con 2, o se puede saltear.
+  - Después, `PendingActions.tsx` muestra lo pendiente: preludes por jugar (las que piden elegir
+    algo se juegan por chat), la investigación y la first action de la corporación.
+- **API nueva:**
+  - `GET /api/corporations`.
+  - `POST /api/players/{id}/corporation|starting-hand|research|preludes/deal|preludes/keep|preludes/{p}/play`.
+  - `/api/state` suma `corporation` y `research_cost_per_card`.
+  - Un id que no es UUID ahora devuelve 404, no 500.
+- **Celular:** el encabezado queda fijo en una sola fila y la caja del chat, fija abajo.
+- **Verificación:**
+  - Revisión final independiente: veredicto **ship** después de 8 arreglos y 3 regresiones
+    resueltas.
+  - El E2E (`e2e/ui_e2e.py`) recorre el setup por la UI y pasa entero; sin consola con errores.
+  - Tests: 718 de 718.
+- **Sigue pendiente:** probar el chat de punta a punta, porque `ANTHROPIC_API_KEY` sigue siendo el
+  placeholder.
+
+### 📍 Punto de retoma anterior (2026-10-02, auditoría completa del catálogo, rama `feat/auditoria-catalogo`)
 
 **Se auditó el catálogo entero antes de seguir con el frontend** (pedido del usuario: "audita el
 catálogo para descartar fallas futuras"). Rama `feat/auditoria-catalogo`, sobre `feat/frontend-v1`.
@@ -1004,10 +1041,13 @@ arbiter-mars/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example
+├── PRODUCT.md / DESIGN.md      # producto y sistema visual (impeccable); leer antes de tocar la UI
+├── e2e/ui_e2e.py              # E2E del frontend con navegador real (Playwright)
 └── frontend/
     ├── app/ (layout.tsx, page.tsx, globals.css)
-    ├── components/ (Dashboard.tsx, SidebarChat.tsx, ResourcePanel.tsx)
-    ├── lib/api.ts
+    ├── components/ (Dashboard, ResourcePanel, GlobalParameters, CardList, CardPicker,
+    │               SetupFlow, PendingActions, PlayerPicker, SidebarChat)
+    ├── lib/ (api.ts, useChanged.ts)
     └── package.json
 ```
 
