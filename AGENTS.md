@@ -138,7 +138,37 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-10-02, pendientes y huecos cerrados + grafo graphify)
+### 📍 Punto de retoma (última sesión: 2026-10-02, frontend v1, rama `feat/frontend-v1`)
+
+**Primera iteración del frontend: genérica pero funcional** (pedido del usuario: "empezar con un
+diseño genérico pero funcional e ir iterando"). Rama `feat/frontend-v1`, sobre
+`feat/pendientes-y-huecos` (PR #59, todavía sin mergear).
+
+- **API nueva:**
+  - `GET/POST /api/players` para listar y crear jugadores.
+  - `GET /api/state/{id}` devuelve `{player, cards}`: el estado completo más el
+    nombre/costo/tags de las cartas en mano o en juego. Si el jugador no existe, 404.
+  - `GET /api/game` trae parámetros globales, resumen de Turmoil y colonias en juego.
+  - `POST /api/chat` devuelve `updated_state` y mapea los errores de Anthropic: key inválida →
+    503, rate limit → 429.
+- **Bug corregido:** el grafo nunca le pasaba el `player_id` al LLM. Ahora va en el system
+  prompt.
+- **Frontend (Next 14.2.35 + Tailwind):**
+  - Selector y creación de jugador, recordado en localStorage o por `?player=<id>`.
+  - Parámetros globales con barras de progreso; recursos con producción y TR.
+  - Mano, cartas activas y jugadas.
+  - Chat que refresca el dashboard. Layout responsivo: en celular el chat va abajo.
+- **Verificado:** build OK, y capturas con Chromium headless en escritorio y celular. **Falta probar el chat de punta a
+  punta: `ANTHROPIC_API_KEY` en `backend/.env` es el placeholder.**
+- **Catálogo:** al mirar la mano en la UI aparecieron dos cartas mal cargadas, corregidas contra
+  sus scans:
+  - Heavy Taxation tenía un `earth` de más (el requisito leído como tag) y su −1 VP faltaba en
+    `excluded_card_ids` de Vitor.
+  - Water Import from Europa no tenía el tag `space` y su acción no aceptaba titanio.
+  - **Indica que conviene una auditoría completa de tags, requisitos y VP negativos del catálogo
+    base** con `tag_contact_sheet.py`.
+
+### 📍 Punto de retoma anterior (2026-10-02, pendientes y huecos cerrados + grafo graphify)
 
 **Se cerraron todos los pendientes y huecos que listaba el grafo de `graphify-out/`.** Trabajo
 hecho con 5 subagentes en worktrees aislados (A-E) e integrado en `feat/pendientes-y-huecos`.
