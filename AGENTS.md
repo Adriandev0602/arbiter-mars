@@ -138,7 +138,46 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-10-03, frontend v2: rediseño + inicio de partida, rama `feat/frontend-v2`)
+### 📍 Punto de retoma (última sesión: 2026-10-03, tablero en el frontend, rama `feat/tablero-ui`)
+
+**El mapa Tharsis ya se ve y se juega desde la UI** (pedido del usuario: "implementar el tablero en
+el front a ver qué tanto aguanta"). Rama `feat/tablero-ui`, sobre `feat/frontend-v2`.
+- **API nueva:**
+  - `GET /api/board?player_id=` devuelve los 61 hexágonos: geometría, bonus impreso y
+    disponible, tile actual y, por jugador, `can_place_ocean/city/greenery`.
+    - La legalidad la decide `board.py`.
+    - `can_place_ocean` también es falso si ya hay 9 océanos.
+    - `owners` trae el nombre de cada dueño.
+  - `POST /api/players/{id}/place` con `{action, hex_id}`:
+    - `city`, `greenery` y `aquifer` van a `use_standard_project`.
+    - `plants_to_greenery` va a `convert_resources`.
+    - Los errores de colocación o de recursos devuelven 400 con el mensaje del motor.
+- **`MarsBoard.tsx`:** hexágonos SVG con punta arriba.
+  - Muestra tiles con los colores del tablero, iconos de bonus (uno por unidad), volcanes,
+    Noctis punteado, dueño (punto lleno si es tuyo) y el número de cada hexágono, para pedírselo
+    al árbitro.
+  - Al elegir una jugada, los hexágonos legales se ven en coral y el resto se atenúa. Elegís uno,
+    confirmás, y el motor cobra.
+  - Un tile nuevo entra con animación (`animate-tile-in`).
+  - Las colocaciones de CARTAS siguen yendo por chat.
+- **Bug preexistente arreglado (`supabase_client.py`):**
+  - El cliente por defecto de supabase-py multiplexa todo sobre UNA conexión HTTP/2. Cuando
+    Supabase la cerraba, caían juntas todas las consultas en vuelo ("Server disconnected", 500 en
+    `/api/game`), y con el dashboard pidiendo estado, tablero y parámetros en paralelo pasaba
+    seguido.
+  - Ahora usa un `httpx.Client` HTTP/1.1 propio que reintenta solo GET/HEAD; las escrituras nunca
+    se reintentan.
+- **Bug del selector de jugadores:** una lista vieja que llegaba tarde duplicaba o "olvidaba" al
+  jugador recién creado. Ahora solo vale la respuesta del último pedido.
+- **E2E:**
+  - Paso nuevo de tablero: los hexágonos legales de la UI son exactamente los de la API. Coloca
+    una ciudad y compara el dashboard con la API.
+  - **El tablero es estado COMPARTIDO**, así que el E2E copia `global_parameters` antes y lo
+    restaura siempre al final.
+  - Resultado: todo OK, sin errores de consola (chat SALTEADO: sigue sin `ANTHROPIC_API_KEY`).
+- **Tests:** 718 de 718.
+
+### 📍 Punto de retoma anterior ( 2026-10-03, frontend v2: rediseño + inicio de partida, rama `feat/frontend-v2`)
 
 **Rediseño de la app con la referencia que eligió el usuario** (Paymark de Lovable: fondo oscuro,
 coral, Inter Tight, botones píldora con sombra en capas), más un **inicio de partida guiado en la
@@ -1045,8 +1084,8 @@ arbiter-mars/
 ├── e2e/ui_e2e.py              # E2E del frontend con navegador real (Playwright)
 └── frontend/
     ├── app/ (layout.tsx, page.tsx, globals.css)
-    ├── components/ (Dashboard, ResourcePanel, GlobalParameters, CardList, CardPicker,
-    │               SetupFlow, PendingActions, PlayerPicker, SidebarChat)
+    ├── components/ (Dashboard, ResourcePanel, GlobalParameters, MarsBoard, CardList,
+    │               CardPicker, SetupFlow, PendingActions, PlayerPicker, SidebarChat)
     ├── lib/ (api.ts, useChanged.ts)
     └── package.json
 ```

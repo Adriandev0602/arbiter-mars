@@ -6,7 +6,7 @@ import Dashboard from "@/components/Dashboard";
 import PlayerPicker from "@/components/PlayerPicker";
 import { setupStep } from "@/components/SetupFlow";
 import SidebarChat from "@/components/SidebarChat";
-import { getGame, getPlayerState, type GameState, type StateResponse } from "@/lib/api";
+import { getBoard, getGame, getPlayerState, type BoardState, type GameState, type StateResponse } from "@/lib/api";
 
 const PLAYER_KEY = "arbiter.playerId";
 const skipKey = (id: string) => `arbiter.skipPreludes.${id}`;
@@ -38,6 +38,7 @@ export default function Home() {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [state, setState] = useState<StateResponse | null>(null);
   const [game, setGame] = useState<GameState | null>(null);
+  const [board, setBoard] = useState<BoardState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [skipPreludes, setSkipPreludes] = useState(false);
@@ -62,9 +63,14 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      const [gameRes, stateRes] = await Promise.all([getGame(), playerId ? getPlayerState(playerId) : Promise.resolve(null)]);
+      const [gameRes, stateRes, boardRes] = await Promise.all([
+        getGame(),
+        playerId ? getPlayerState(playerId) : Promise.resolve(null),
+        getBoard(playerId),
+      ]);
       setGame(gameRes);
       setState(stateRes);
+      setBoard(boardRes);
       setPlayersVersion((v) => v + 1); // el TR del selector tambien sale de la API
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
@@ -80,6 +86,7 @@ export default function Home() {
   const onState = (s: StateResponse) => {
     setState(s);
     getGame().then(setGame).catch(() => undefined);
+    getBoard(playerId).then(setBoard).catch(() => undefined);
   };
 
   const step = state ? setupStep(state, skipPreludes) : null;
@@ -109,6 +116,7 @@ export default function Home() {
           )}
           <Dashboard
             game={game}
+            board={board}
             state={state}
             playerId={playerId}
             step={step}

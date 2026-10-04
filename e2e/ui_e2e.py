@@ -39,6 +39,29 @@ CHAT_TURNS = [
 
 results: list[tuple[str, str, str]] = []
 
+# El tablero es estado COMPARTIDO (global_parameters, fila 'default'): colocar un tile en la
+# prueba lo cambia para todos. Se guarda una copia antes y se restaura siempre al final.
+BOARD_SNAPSHOT = OUT / "global_parameters_snapshot.json"
+_DB = (
+    "import json, sys; sys.path.insert(0, '.')\n"
+    "from app.db.supabase_client import supabase\n"
+    "t = supabase.table('global_parameters')\n"
+    "if sys.argv[1] == 'snap':\n"
+    "    json.dump(t.select('*').eq('game_id', 'default').single().execute().data, open(sys.argv[2], 'w'))\n"
+    "else:\n"
+    "    row = json.load(open(sys.argv[2]))\n"
+    "    t.update({k: v for k, v in row.items() if k != 'game_id'}).eq('game_id', 'default').execute()\n"
+    "    print(t.select('*').eq('game_id', 'default').single().execute().data == row)\n"
+)
+
+
+def global_parameters(action: str) -> str:
+    res = subprocess.run(
+        [str(ROOT / "backend/.venv/bin/python"), "-c", _DB, action, str(BOARD_SNAPSHOT)],
+        cwd=ROOT / "backend", capture_output=True, text=True, check=True,
+    )
+    return res.stdout.strip()
+
 
 def record(name: str, status: str, detail: str = "") -> None:
     results.append((name, status, detail))
@@ -70,7 +93,8 @@ def ui_numbers(page) -> dict:
     for key in ("mc", "steel", "titanium", "plants", "energy", "heat"):
         tile = section.get_by_test_id(f"resource-{key}")
         stock = int(tile.get_by_test_id("stock").inner_text())
-        prod = int(tile.get_by_test_id("production").inner_text().replace("producción", "").strip())
+        # "producción +2", seguido de "(antes +1)" si acaba de cambiar: vale el valor actual.
+        prod = int(tile.get_by_test_id("production").inner_text().replace("producción", "").split()[0])
         out[key] = (stock, prod)
     return out
 
@@ -97,6 +121,8 @@ def assert_ui_matches_api(page, pid: str) -> None:
         diffs.append(f"mano ui={hand_ui} api={len(api['hand'])}")
     assert not diffs, "; ".join(diffs)
 
+
+global_parameters("snap")
 
 with sync_playwright() as p:
     browser = p.chromium.launch(executable_path="/usr/bin/chromium", args=["--no-sandbox"])
@@ -161,6 +187,25 @@ with sync_playwright() as p:
         expect(page.get_by_text("Terraform Rating")).to_be_visible()
     step("recuerda el jugador al recargar", survives_reload)
 
+    def board_city():
+        board = page.get_by_test_id("board")
+        board.scroll_into_view_if_needed()
+        board.get_by_role("button", name="Ciudad", exact=True).click()
+        legal = page.locator("[data-legal]")
+        expect(legal.first).to_be_visible()
+        hex_id = legal.first.get_attribute("data-hex")
+        api_legal = [h["id"] for h in api_get(f"/board?player_id={pid}")["hexes"] if h["can_place_city"]]
+        ui_legal = legal.evaluate_all("els => els.map(e => e.dataset.hex)")
+        assert sorted(ui_legal) == sorted(api_legal), f"hexagonos legales ui={len(ui_legal)} api={len(api_legal)}"
+        legal.first.click()
+        board.get_by_role("button", name="Colocar").click()
+        expect(page.locator(f'[data-hex="{hex_id}"] .animate-tile-in')).to_be_attached(timeout=15_000)
+        tile = next(h for h in api_get(f"/board?player_id={pid}")["hexes"] if h["id"] == hex_id)["tile"]
+        assert tile and tile["tile_type"] == "city" and tile["owner"] == pid, f"tile en {hex_id}: {tile}"
+        page.screenshot(path=OUT / "02b_tablero.png")
+    step("tablero: resalta lo que el motor permite y coloca una ciudad", board_city)
+    step("el dashboard coincide con la API (después de la ciudad)", lambda: assert_ui_matches_api(page, pid))
+
     chat_available = True
     for i, msg in enumerate(CHAT_TURNS, 1):
         if not chat_available:
@@ -201,6 +246,9 @@ with sync_playwright() as p:
     step("celular: carga el jugador y no hay scroll horizontal", mobile_ok)
     mobile.screenshot(path=OUT / "04_mobile.png", full_page=True)
     browser.close()
+
+restored = global_parameters("restore")
+record("tablero compartido restaurado", "OK" if restored == "True" else "FAIL", "" if restored == "True" else restored)
 
 if pid and not KEEP:
     cleanup = (

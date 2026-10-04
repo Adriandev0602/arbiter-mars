@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Plus } from "lucide-react";
 import { createPlayer, listPlayers, type PlayerSummary } from "@/lib/api";
 
@@ -19,10 +19,15 @@ export default function PlayerPicker({
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Solo vale la respuesta del ultimo pedido: una lista vieja que llega tarde
+  // no trae al jugador recien creado y lo "olvidaria".
+  const latest = useRef(0);
 
   useEffect(() => {
+    const request = ++latest.current;
     listPlayers()
       .then((list) => {
+        if (request !== latest.current) return;
         setPlayers(list);
         // Si el jugador recordado ya no existe, se olvida.
         if (playerId && !list.some((p) => p.id === playerId)) onSelect(null);
@@ -36,7 +41,7 @@ export default function PlayerPicker({
     setError(null);
     try {
       const player = await createPlayer(name);
-      setPlayers((prev) => [...prev, player]);
+      setPlayers((prev) => (prev.some((p) => p.id === player.id) ? prev : [...prev, player]));
       setName("");
       setCreating(false);
       onSelect(player.id);

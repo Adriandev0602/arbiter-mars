@@ -4,10 +4,11 @@ import { useState } from "react";
 import { ArrowRight, LoaderCircle } from "lucide-react";
 import CardTabs from "@/components/CardList";
 import GlobalParameters from "@/components/GlobalParameters";
+import MarsBoard from "@/components/MarsBoard";
 import PendingActions from "@/components/PendingActions";
 import ResourcePanel from "@/components/ResourcePanel";
 import SetupFlow, { type SetupStep } from "@/components/SetupFlow";
-import { createPlayer, type GameState, type StateResponse } from "@/lib/api";
+import { createPlayer, type BoardState, type GameState, type StateResponse } from "@/lib/api";
 
 /** Estado vacio con su accion: crear el jugador ahi mismo. */
 function CreatePlayer({ onCreated }: { onCreated: (id: string) => void }) {
@@ -55,6 +56,7 @@ function CreatePlayer({ onCreated }: { onCreated: (id: string) => void }) {
  */
 export default function Dashboard({
   game,
+  board,
   state,
   playerId,
   step,
@@ -63,6 +65,7 @@ export default function Dashboard({
   onSkipPreludes,
 }: {
   game: GameState | null;
+  board: BoardState | null;
   state: StateResponse | null;
   playerId: string | null;
   step: SetupStep | null;
@@ -115,6 +118,7 @@ export default function Dashboard({
       )}
       <ResourcePanel player={state.player} playerId={playerId} />
       <PendingActions playerId={playerId} state={state} onState={onState} />
+      {board && <MarsBoard board={board} playerId={playerId} onState={onState} />}
       {game && <GlobalParameters game={game} />}
       <CardTabs
         cards={state.cards}

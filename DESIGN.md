@@ -266,6 +266,20 @@ Columna `surface`. Encabezado "Árbitro" con una línea de explicación. Sugeren
 ### Pistas de parámetros globales
 Una muesca por paso real del parámetro (19 de temperatura, 14 de oxígeno, 9 de océanos, 15 de Venus), alcanzadas en el color del tablero y el resto en blanco al 7%. Valor a la derecha de la etiqueta en 20px semibold con unidad; el máximo ("/ 8°C") aparece en tenue solo desde `xl`.
 
+### Mapa de Marte (`MarsBoard`)
+- **Forma:** hexágonos SVG con punta arriba sobre un disco de óxido muy tenue (`#3a1d14` → transparente).
+- **Hexágonos vacíos:** la tierra es `#2a1a14`; la reserva de océano es `#132634` con borde azul.
+  Noctis lleva borde punteado.
+- **Tiles:** usan los colores del tablero, igual que las pistas: océano `#4f9fe0`, greenery
+  `#7cb35f`, ciudad `#aaa39b` y especial `#c08a57`, con un ícono oscuro encima.
+- **Bonus impreso:** un ícono por unidad, como en el tablero físico, con los colores de recurso.
+- **El coral es solo "legal ahora":**
+  - Al elegir una jugada, los hexágonos que el motor permite llevan un borde coral al 50%.
+  - Al pasar o elegir uno, el borde se enciende; el resto baja al 30% de opacidad.
+  - Sin jugada elegida no hay coral en el mapa.
+- **Tile recién colocado:** entra con `tile-in` (escala desde 0.55 y borde coral que se apaga).
+  Es la versión espacial del pulso de "antes X".
+
 ### Número del motor con "antes X" (componente distintivo)
 Cuando una lectura de la API cambia un número respecto de la lectura anterior del mismo ámbito (jugador o partida), el número se vuelve a montar y late: arranca en `coral-bright` y vuelve a su color propio en 1600ms (`cubic-bezier(0.16, 1, 0.3, 1)`). A su lado aparece el valor anterior que devolvió el motor, "antes X", como píldora de 11px en `coral-bright` sobre coral al 15%, que entra en 220ms subiendo 6px desde 92% de escala con un desenfoque de 2px. Queda visible hasta el próximo cambio o hasta cambiar de jugador. La producción muestra "(antes +N)" en línea, en el renglón que ya le pertenece.
 

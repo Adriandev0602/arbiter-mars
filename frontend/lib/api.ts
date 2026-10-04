@@ -90,6 +90,37 @@ export type GameState = {
   colonies: string[];
 };
 
+export type HexBonus = { resource: "steel" | "titanium" | "plant" | "card"; amount: number };
+
+export type HexTile = {
+  tile_type: "city" | "greenery" | "ocean" | "special" | "nomad" | "community";
+  owner: string | null;
+  bonus_consumed: boolean;
+  card: string | null;
+  cathedral?: boolean;
+};
+
+/** Un hexagono del mapa Tharsis: definicion fija + tile actual + legalidad segun el motor. */
+export type Hex = {
+  id: string;
+  row: number;
+  x: number;
+  hex_type: "land" | "ocean";
+  volcanic: boolean;
+  volcano_name: string | null;
+  reserved_city: string | null;
+  bonus: HexBonus[];
+  bonus_available: HexBonus[];
+  tile: HexTile | null;
+  can_place_ocean: boolean;
+  can_place_city: boolean;
+  can_place_greenery: boolean;
+};
+
+export type BoardState = { hexes: Hex[]; owners: Record<string, string> };
+
+export type PlaceAction = "city" | "greenery" | "aquifer" | "plants_to_greenery";
+
 export type ChatResponse = {
   reply: string;
   updated_state: PlayerState | null;
@@ -143,6 +174,12 @@ export const keepPreludes = (playerId: string, preludeIds: string[]) =>
 
 export const playPrelude = (playerId: string, preludeId: string) =>
   post<StateResponse>(`/players/${playerId}/preludes/${preludeId}/play`);
+
+export const getBoard = (playerId: string | null) =>
+  request<BoardState>(`/board${playerId ? `?player_id=${encodeURIComponent(playerId)}` : ""}`);
+
+export const placeTile = (playerId: string, action: PlaceAction, hexId: string) =>
+  post<StateResponse>(`/players/${playerId}/place`, { action, hex_id: hexId });
 
 export const sendChatMessage = (playerId: string, message: string) =>
   request<ChatResponse>("/chat", { method: "POST", body: JSON.stringify({ player_id: playerId, message }) });

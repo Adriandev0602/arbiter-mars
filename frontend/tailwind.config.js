@@ -43,10 +43,17 @@ module.exports = {
         "value-pulse": {
           "0%": { color: "#ff8467" },
         },
+        // Un tile recien colocado en el mapa: cae en su hexagono con un borde coral que se apaga.
+        "tile-in": {
+          "0%": { opacity: "0", transform: "scale(0.55)", stroke: "#ff8467", "stroke-width": "4" },
+          "35%": { opacity: "1", transform: "scale(1.06)" },
+          "100%": { transform: "scale(1)" },
+        },
       },
       animation: {
         "delta-in": "delta-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both",
         "value-pulse": "value-pulse 1600ms cubic-bezier(0.16, 1, 0.3, 1) backwards",
+        "tile-in": "tile-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both",
       },
     },
   },

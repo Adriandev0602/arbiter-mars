@@ -8,13 +8,14 @@ from fastapi import APIRouter, HTTPException
 from postgrest.exceptions import APIError
 from langchain_core.messages import HumanMessage
 
+from app.agent import board as boardlib
 from app.agent import rules_engine as engine
 from app.agent import tools
 from app.agent.graph import compiled_graph
 from app.db.supabase_client import supabase
 from app.models.schemas import (
-    ChatRequest, ChatResponse, ChooseCorporationRequest, CorporationSummary, CreatePlayerRequest,
-    DealHandRequest, GameState, KeepPreludesRequest, PlayerStateResponse, PlayerSummary, ResearchRequest,
+    BoardResponse, ChatRequest, ChatResponse, ChooseCorporationRequest, CorporationSummary, CreatePlayerRequest,
+    DealHandRequest, GameState, KeepPreludesRequest, PlaceTileRequest, PlayerStateResponse, PlayerSummary, ResearchRequest,
 )
 
 router = APIRouter()
@@ -122,7 +123,8 @@ def get_game():
 
 _GAME_ERRORS = (
     ValueError, engine.CardEffectError, engine.InsufficientResourcesError,
-    engine.CardNotInHandError, engine.CardRequirementNotMetError,
+    engine.CardNotInHandError, engine.CardRequirementNotMetError, engine.GlobalParameterMaxedError,
+    boardlib.InvalidPlacementError, boardlib.HexOccupiedError, boardlib.UnknownHexError,
 )
 
 
@@ -184,6 +186,60 @@ def play_prelude(player_id: str, prelude_id: str):
     se juegan por chat, donde el arbitro pregunta lo que falta."""
     _player_or_404(player_id)
     _run_tool(tools.play_prelude, player_id=player_id, prelude_id=prelude_id)
+    return get_state(player_id)
+
+
+# ---------------------------------------------------------------------------
+# Tablero (mapa Tharsis). La legalidad de cada hexagono la decide board.py;
+# la UI solo resalta los que el motor marca como validos.
+# ---------------------------------------------------------------------------
+
+@router.get("/board", response_model=BoardResponse)
+def get_board(player_id: str | None = None):
+    """Los 61 hexagonos con su tile actual. Con `player_id`, cada hexagono
+    trae ademas si ese jugador puede colocar ahi oceano, ciudad o greenery."""
+    if player_id is not None:
+        _player_or_404(player_id)
+    board = tools._load_board()
+    oceans_left = tools._load_global_parameters()["oceans_placed"] < engine.OCEANS_MAX
+    hexes = []
+    for hex_id, hex_def in boardlib.HEX_DEFS.items():
+        tile = board.get(hex_id)
+        hexes.append({
+            "id": hex_id,
+            "row": hex_def["row"],
+            "x": hex_def["x"],
+            "hex_type": hex_def["hex_type"],
+            "volcanic": hex_def["volcanic"],
+            "volcano_name": hex_def["volcano_name"],
+            "reserved_city": hex_def["reserved_city"],
+            "bonus": [{"resource": r, "amount": n} for r, n in hex_def["bonus"]],
+            "bonus_available": [{"resource": r, "amount": n} for r, n in boardlib.resolve_hex_bonus(board, hex_id)],
+            "tile": tile,
+            "can_place_ocean": oceans_left and boardlib.can_place_ocean(board, hex_id),
+            "can_place_city": boardlib.can_place_city(board, hex_id),
+            "can_place_greenery": player_id is not None and boardlib.can_place_greenery(board, hex_id, player_id),
+        })
+    owner_ids = sorted({t["owner"] for t in board.values() if t.get("owner")})
+    owners: dict[str, str] = {}
+    if owner_ids:
+        try:
+            res = supabase.table("players").select("id,display_name").in_("id", owner_ids).execute()
+            owners = {row["id"]: row["display_name"] for row in res.data or []}
+        except APIError:
+            owners = {}
+    return {"hexes": hexes, "owners": owners}
+
+
+@router.post("/players/{player_id}/place")
+def place_tile(player_id: str, request: PlaceTileRequest):
+    """Coloca un tile desde el mapa: proyecto estandar (ciudad, greenery,
+    acuifero) o 8 plantas -> greenery. Cobra, valida y calcula el motor."""
+    _player_or_404(player_id)
+    if request.action == "plants_to_greenery":
+        _run_tool(tools.convert_resources, player_id=player_id, conversion="plants_to_greenery", hex_id=request.hex_id)
+    else:
+        _run_tool(tools.use_standard_project, player_id=player_id, project_name=request.action, hex_id=request.hex_id)
     return get_state(player_id)
 
 
