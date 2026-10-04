@@ -138,7 +138,112 @@ y cuáles quedan "Fuera de alcance" por diseño. `backend/app/db/CARDS_PENDING_R
 **deprecado** desde 2026-08-31 (congelado en el bloque 10) — no es la fuente de verdad, usar
 `card_review_queue`.
 
-### 📍 Punto de retoma (última sesión: 2026-10-02, frontend v1, rama `feat/frontend-v1`)
+### 📍 Punto de retoma (última sesión: 2026-10-03, tablero en el frontend, rama `feat/tablero-ui`)
+
+**El mapa Tharsis ya se ve y se juega desde la UI** (pedido del usuario: "implementar el tablero en
+el front a ver qué tanto aguanta"). Rama `feat/tablero-ui`, sobre `feat/frontend-v2`.
+- **API nueva:**
+  - `GET /api/board?player_id=` devuelve los 61 hexágonos: geometría, bonus impreso y
+    disponible, tile actual y, por jugador, `can_place_ocean/city/greenery`.
+    - La legalidad la decide `board.py`.
+    - `can_place_ocean` también es falso si ya hay 9 océanos.
+    - `owners` trae el nombre de cada dueño.
+  - `POST /api/players/{id}/place` con `{action, hex_id}`:
+    - `city`, `greenery` y `aquifer` van a `use_standard_project`.
+    - `plants_to_greenery` va a `convert_resources`.
+    - Los errores de colocación o de recursos devuelven 400 con el mensaje del motor.
+- **`MarsBoard.tsx`:** hexágonos SVG con punta arriba.
+  - Muestra tiles con los colores del tablero, iconos de bonus (uno por unidad), volcanes,
+    Noctis punteado, dueño (punto lleno si es tuyo) y el número de cada hexágono, para pedírselo
+    al árbitro.
+  - Al elegir una jugada, los hexágonos legales se ven en coral y el resto se atenúa. Elegís uno,
+    confirmás, y el motor cobra.
+  - Un tile nuevo entra con animación (`animate-tile-in`).
+  - Las colocaciones de CARTAS siguen yendo por chat.
+- **Bug preexistente arreglado (`supabase_client.py`):**
+  - El cliente por defecto de supabase-py multiplexa todo sobre UNA conexión HTTP/2. Cuando
+    Supabase la cerraba, caían juntas todas las consultas en vuelo ("Server disconnected", 500 en
+    `/api/game`), y con el dashboard pidiendo estado, tablero y parámetros en paralelo pasaba
+    seguido.
+  - Ahora usa un `httpx.Client` HTTP/1.1 propio que reintenta solo GET/HEAD; las escrituras nunca
+    se reintentan.
+- **Bug del selector de jugadores:** una lista vieja que llegaba tarde duplicaba o "olvidaba" al
+  jugador recién creado. Ahora solo vale la respuesta del último pedido.
+- **E2E:**
+  - Paso nuevo de tablero: los hexágonos legales de la UI son exactamente los de la API. Coloca
+    una ciudad y compara el dashboard con la API.
+  - **El tablero es estado COMPARTIDO**, así que el E2E copia `global_parameters` antes y lo
+    restaura siempre al final.
+  - Resultado: todo OK, sin errores de consola (chat SALTEADO: sigue sin `ANTHROPIC_API_KEY`).
+- **Tests:** 718 de 718.
+
+### 📍 Punto de retoma anterior ( 2026-10-03, frontend v2: rediseño + inicio de partida, rama `feat/frontend-v2`)
+
+**Rediseño de la app con la referencia que eligió el usuario** (Paymark de Lovable: fondo oscuro,
+coral, Inter Tight, botones píldora con sombra en capas), más un **inicio de partida guiado en la
+UI**. Rama `feat/frontend-v2`, sobre `feat/auditoria-catalogo`. Se hizo con el skill impeccable.
+- **`PRODUCT.md`** (raíz) registra el producto: usuarios = jugadores en la mesa, principio "el
+  número es del motor", marca sin afiliación con FryxGames. **`DESIGN.md`** registra el sistema
+  visual construido; leerlo antes de tocar la UI.
+- **Reglas del sistema:**
+  - El coral es solo para acción y cambio.
+  - Las pistas de parámetros usan los colores del tablero.
+  - Las listas son celdas divididas en un solo contenedor; nunca tarjetas anidadas.
+  - La UI nunca calcula: por ejemplo, la compra de cartas muestra el precio por carta del motor y
+    la cantidad elegida, sin total.
+- **Interacción propia:** cuando un número del motor cambia, late en coral y muestra "antes X"
+  (el valor anterior, que también viene del motor) hasta el próximo cambio, sin mover el layout.
+  Hook: `frontend/lib/useChanged.ts`.
+- **Inicio de partida en la UI** (`SetupFlow.tsx`):
+  1. Corporación (buscador).
+  2. Mano inicial: gratis con Beginner; si no, se compra con el precio del motor.
+  3. Preludes: se reparten 4 y te quedás con 2, o se puede saltear.
+  - Después, `PendingActions.tsx` muestra lo pendiente: preludes por jugar (las que piden elegir
+    algo se juegan por chat), la investigación y la first action de la corporación.
+- **API nueva:**
+  - `GET /api/corporations`.
+  - `POST /api/players/{id}/corporation|starting-hand|research|preludes/deal|preludes/keep|preludes/{p}/play`.
+  - `/api/state` suma `corporation` y `research_cost_per_card`.
+  - Un id que no es UUID ahora devuelve 404, no 500.
+- **Celular:** el encabezado queda fijo en una sola fila y la caja del chat, fija abajo.
+- **Verificación:**
+  - Revisión final independiente: veredicto **ship** después de 8 arreglos y 3 regresiones
+    resueltas.
+  - El E2E (`e2e/ui_e2e.py`) recorre el setup por la UI y pasa entero; sin consola con errores.
+  - Tests: 718 de 718.
+- **Sigue pendiente:** probar el chat de punta a punta, porque `ANTHROPIC_API_KEY` sigue siendo el
+  placeholder.
+
+### 📍 Punto de retoma anterior (2026-10-02, auditoría completa del catálogo, rama `feat/auditoria-catalogo`)
+
+**Se auditó el catálogo entero antes de seguir con el frontend** (pedido del usuario: "audita el
+catálogo para descartar fallas futuras"). Rama `feat/auditoria-catalogo`, sobre `feat/frontend-v1`.
+Detalle completo en `CARDS_LOG.md`, sección "Auditoría del catálogo (2026-10-02)".
+
+- **Método:** dos fuentes, y el scan decide.
+  - `scripts/audit_catalog.py` (herramienta nueva y permanente) cruza todas las cartas contra la
+    implementación open-source de referencia: costo, tags, evento, VP negativo.
+  - Cada diferencia se verificó contra el scan oficial.
+  - Una pasada aparte comparó los valores de los requisitos y los efectos numéricos.
+- **Resultado:** 81 diferencias.
+  - **78 cartas corregidas:** 55 de tags, 16 eventos sin marcar, Kaguya Tech costaba 2 y cuesta
+    10, 9 VP negativos que faltaban en la lista de Vitor, y 3 efectos (Red Appeasement, Mass
+    Converter, Nitrogen-Rich Asteroid).
+  - **En 3 la referencia se equivocaba:** quedan en `KNOWN_OK`.
+- **Errores típicos** (para no repetirlos):
+  - Requisito leído como tag.
+  - Falta el tag `city` en las ciudades.
+  - Falta el tag `space`.
+  - Eventos sin marcar.
+  - Costo leído del recuadro de producción.
+  - Efectos inventados a partir del texto del requisito.
+- **Hallazgo de motor:** `choice` y `tag_count_choice` ignoran en silencio las claves hermanas
+  (`return` temprano). Se barrió el catálogo y ninguna carta pierde efectos por eso.
+- **Ya aplicado a Supabase.** Prueba de humo contra la base real: 19 de 19. Tests: 718 de 718.
+- **Regla nueva del flujo de catálogo:** después de cargar o tocar cartas, correr
+  `scripts/audit_catalog.py` y verificar cada diferencia contra el scan.
+
+### 📍 Punto de retoma anterior (2026-10-02, frontend v1, rama `feat/frontend-v1`)
 
 **Primera iteración del frontend: genérica pero funcional** (pedido del usuario: "empezar con un
 diseño genérico pero funcional e ir iterando"). Rama `feat/frontend-v1`, sobre
@@ -917,7 +1022,8 @@ El flujo de trabajo, si vuelve a haber cartas para revisar: consultar la cola en
 `SUPABASE_DB_URL` de `.env` tiene un `@` dentro de la password que rompe el parseo de
 `psycopg2.connect(url)` con un solo string), descargar los scans espaciados 3s, leer cada uno,
 decidir vocabulario (extender el motor si hace falta), cargar en `seed_cards.sql` + tests,
-probar contra Supabase real, marcar `card_review_queue`, actualizar `CARDS_LOG.md`, commitear.
+probar contra Supabase real, **correr `scripts/audit_catalog.py` y verificar contra el scan
+cada diferencia que reporte**, marcar `card_review_queue`, actualizar `CARDS_LOG.md`, commitear.
 
 ## 5. Stack tecnológico
 
@@ -974,10 +1080,13 @@ arbiter-mars/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example
+├── PRODUCT.md / DESIGN.md      # producto y sistema visual (impeccable); leer antes de tocar la UI
+├── e2e/ui_e2e.py              # E2E del frontend con navegador real (Playwright)
 └── frontend/
     ├── app/ (layout.tsx, page.tsx, globals.css)
-    ├── components/ (Dashboard.tsx, SidebarChat.tsx, ResourcePanel.tsx)
-    ├── lib/api.ts
+    ├── components/ (Dashboard, ResourcePanel, GlobalParameters, MarsBoard, CardList,
+    │               CardPicker, SetupFlow, PendingActions, PlayerPicker, SidebarChat)
+    ├── lib/ (api.ts, useChanged.ts)
     └── package.json
 ```
 
@@ -1075,6 +1184,14 @@ cd frontend
 cp .env.example .env.local    # NEXT_PUBLIC_API_URL=http://localhost:8000
 npm install
 npm run dev
+
+# E2E del frontend con navegador real (Playwright + Chromium del sistema), con backend en :8000
+# y frontend en :3000 corriendo. Crea un jugador, juega 5 turnos por chat y verifica que el
+# dashboard muestre los mismos numeros que la API. Sin ANTHROPIC_API_KEY valida, el chat queda
+# SALTEADO. Capturas en e2e/out/. No correr `npm run build` con `npm run dev` levantado: el
+# build pisa .next y el dev server empieza a devolver 404 en sus JS.
+python3 -m venv e2e/.venv && e2e/.venv/bin/pip install playwright
+e2e/.venv/bin/python e2e/ui_e2e.py
 ```
 
 ## 9. Modelo de datos (Supabase)

@@ -673,7 +673,9 @@ insert into corporation_cards (id, name, expansion, tags, starting_mc, effects) 
     ('vitor', 'Vitor', 'Prelude', '{earth}', 45,
      '{"passive": {"on_card_played_with_vp_icon": {
          "mc_delta": 3,
-         "excluded_card_ids": ["nuclear_zone", "bribed_committee", "vermin", "heavy_taxation"]}}}'::jsonb)
+         "excluded_card_ids": ["nuclear_zone", "bribed_committee", "vermin", "heavy_taxation",
+         "hackers", "indentured_workers", "conscription", "heat_trappers", "corporate_stronghold",
+         "energy_tapping", "flooding", "biomass_combustors", "aerial_lenses"]}}}'::jsonb)
 on conflict (id) do update set
     name = excluded.name, expansion = excluded.expansion, tags = excluded.tags,
     starting_mc = excluded.starting_mc, effects = excluded.effects;

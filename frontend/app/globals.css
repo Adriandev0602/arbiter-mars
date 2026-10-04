@@ -1,3 +1,79 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    background: theme("colors.ground");
+  }
+
+  body {
+    @apply bg-ground font-sans text-ink antialiased;
+    font-feature-settings: "ss01", "cv11";
+    caret-color: theme("colors.coral.DEFAULT");
+  }
+
+  ::selection {
+    background: rgb(255 107 74 / 0.35);
+    color: theme("colors.ink.DEFAULT");
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.coral.DEFAULT");
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Scrollbars del mismo mundo: finos, grafito, sin la barra gris del sistema. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 240 225 / 0.16) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgb(255 240 225 / 0.14);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+}
+
+@layer components {
+  /* Numeros del motor: siempre tabulares, para que no bailen al cambiar. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .panel {
+    @apply rounded-2xl border border-line bg-surface shadow-panel;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-coral px-5 py-2.5 text-sm font-semibold text-coral-ink shadow-pill transition-[background-color,transform,box-shadow] duration-200 ease-out hover:bg-coral-bright active:translate-y-px disabled:cursor-not-allowed disabled:bg-surface-raised disabled:text-ink-faint disabled:shadow-pill-quiet;
+  }
+
+  .btn-quiet {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-line-strong bg-surface-raised px-4 py-2 text-sm font-medium text-ink shadow-pill-quiet transition-colors duration-200 ease-out hover:border-coral/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .field {
+    @apply rounded-full border border-line-strong bg-surface-sunk px-4 py-2.5 text-sm text-ink placeholder:text-ink-faint transition-colors duration-200 focus:border-coral/60 focus:outline-none;
+  }
+
+  .label {
+    @apply text-[13px] font-medium text-ink-muted;
+  }
+}

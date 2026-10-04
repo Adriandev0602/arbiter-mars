@@ -32,7 +32,7 @@ insert into prelude_cards (id, name, tags, effects) values
      '{"production_deltas": {"plant_production": 1, "mc_production": 2}}'::jsonb),
     ('donation', 'Donation', '{}',
      '{"mc_delta": 21}'::jsonb),
-    ('early_settlement', 'Early Settlement', '{city}',
+    ('early_settlement', 'Early Settlement', '{building,city}',
      '{"place_city_tiles": 1, "production_deltas": {"plant_production": 1}}'::jsonb),
     ('experimental_forest', 'Experimental Forest', '{plant}',
      '{"place_greenery": {}, "raise_oxygen_steps": 1,
@@ -104,11 +104,11 @@ insert into prelude_cards (id, name, tags, effects) values
      '{"place_oceans": 1, "place_city_tiles": 1, "place_greenery": {}, "discard_cards": {"n": 3}}'::jsonb),
     ('recession', 'Recession', '{}',
      '{"mc_delta": 10}'::jsonb),
-    ('venus_l1_shade', 'Venus L1 Shade', '{wild}',
+    ('venus_l1_shade', 'Venus L1 Shade', '{space}',
      '{"raise_venus_steps": 3}'::jsonb),
     ('rise_to_power', 'Rise to Power', '{}',
      '{"production_deltas": {"mc_production": 3}, "place_delegates": 3}'::jsonb),
-    ('space_lanes', 'Space Lanes', '{wild}',
+    ('space_lanes', 'Space Lanes', '{space}',
      '{"resource_deltas": {"titanium": 3},
        "passive": {"card_cost_discount_mc": 2, "tag_filter": ["jovian", "earth", "venus"]}}'::jsonb),
     ('planetary_alliance', 'Planetary Alliance', '{earth,jovian,venus}',
@@ -123,13 +123,13 @@ insert into prelude_cards (id, name, tags, effects) values
     ('head_start', 'Head Start', '{}',
      '{"resource_deltas": {"steel": 2},
        "resource_delta_per_capped_counter": {"counter": "hand_size", "resource": "mc", "per_unit": 2, "cap": null, "influence_direction": "none"}}'::jsonb),
-    ('anti_desertification_techniques', 'Anti-Desertification Techniques', '{plant,building}',
+    ('anti_desertification_techniques', 'Anti-Desertification Techniques', '{microbe,plant}',
      '{"production_deltas": {"plant_production": 1, "steel_production": 1}, "resource_deltas": {"mc": 3}}'::jsonb),
     ('established_methods', 'Established Methods', '{}',
      '{"resource_deltas": {"mc": 30}}'::jsonb),
-    ('giant_solar_collector', 'Giant Solar Collector', '{power,venus}',
+    ('giant_solar_collector', 'Giant Solar Collector', '{power,space}',
      '{"production_deltas": {"energy_production": 2}, "raise_venus_steps": 1}'::jsonb),
-    ('strategic_base_planning', 'Strategic Base Planning', '{city,building,venus}',
+    ('strategic_base_planning', 'Strategic Base Planning', '{building,city,space}',
      '{"resource_deltas": {"mc": -3}, "place_city_tiles": 1, "build_colony": true}'::jsonb),
     ('albedo_plants', 'Albedo Plants', '{plant}',
      '{"production_deltas": {"plant_production": 1}, "resource_deltas": {"plants": 1},
@@ -470,3 +470,8 @@ on conflict (id) do update set
 update prelude_review_queue q set reviewed = true, prelude_id = m.pid
 from (values ('P10','ecology_experts'), ('P45','board_of_directors')) as m(scan, pid)
 where q.scan_number = m.scan;
+
+-- Auditoria del catalogo (2026-10-02): tags corregidos contra el scan en Early
+-- Settlement (+building), Venus L1 Shade y Space Lanes (space, no wild), Anti-
+-- Desertification Techniques (microbe+plant, no building), Giant Solar Collector
+-- y Strategic Base Planning (space, no venus). Ver CARDS_LOG.md.
